@@ -5446,16 +5446,33 @@ static void createStaticProfileOutFile()
 }
 
 
-static FILE * getStaticProfileOutFile()
+static FILE * getLSProfileOutFile()
 {
    FILE *result = NULL;
-   result = fopen("profile.out", "a");
+   result = fopen("profile-ls.out", "a");
    return result;
 }
 
-static void writeToProfileOut(const char * debugCounterID, int64_t count, const char * debutType)
+static FILE * getSSRAProfileOutFile()
 {
-   FILE *outFile = getStaticProfileOutFile();
+   FILE *result = NULL;
+   result = fopen("profile-ssra.out", "a");
+   return result;
+}
+
+static void writeToSSRAProfileOut(const char * debugCounterID, int64_t count, const char * debutType)
+{
+   FILE *outFile = getSSRAProfileOutFile();
+   if(outFile)
+   {
+      fprintf(outFile, "%s\t%s\t%li\n",debutType,debugCounterID,count);
+      fclose(outFile);
+   }
+}
+
+static void writeToLSProfileOut(const char * debugCounterID, int64_t count, const char * debutType)
+{
+   FILE *outFile = getLSProfileOutFile();
    if(outFile)
    {
       fprintf(outFile, "%s\t%s\t%li\n",debutType,debugCounterID,count);
@@ -5478,7 +5495,7 @@ static void printSSRADebugCounterOut(const char * counterName, int64_t count)
          std::string counter_name_string(counterName);
          std::string ID = counter_name_string.substr (10,strlen(counterName));
          const char * idChars = ID.c_str();
-         writeToProfileOut(idChars,count,"LOAD");
+         writeToLSProfileOut(idChars,count,"LOAD");
          
       }
       else if(strncmp(counterName,PROFILE_STORE_PREFIX,11)==0)
@@ -5486,28 +5503,28 @@ static void printSSRADebugCounterOut(const char * counterName, int64_t count)
          std::string counter_name_string(counterName);
          std::string ID = counter_name_string.substr (11,strlen(counterName));
          const char * idChars = ID.c_str();
-         writeToProfileOut(idChars,count,"STORE");
+         writeToLSProfileOut(idChars,count,"STORE");
       }
       else if(strncmp(counterName,CALLSITE_COUNTER_PREFIX,9)==0)
       {
          std::string counter_name_string(counterName);
          std::string ID = counter_name_string.substr (9,strlen(counterName));
          const char * idChars = ID.c_str();
-         writeToProfileOut(idChars,count,"CSC");
+         writeToSSRAProfileOut(idChars,count,"CSC");
       }
       else if(strncmp(counterName,RETURNSITE_COUNTER_PREFIX,9)==0)
       {
          std::string counter_name_string(counterName);
          std::string ID = counter_name_string.substr (9,strlen(counterName));
          const char * idChars = ID.c_str();
-         writeToProfileOut(idChars,count,"RSC");
+         writeToSSRAProfileOut(idChars,count,"RSC");
       }
       else if(strncmp(counterName,STATICASSIGNSITE_COUNTER_PREFIX,10)==0)
       {
          std::string counter_name_string(counterName);
          std::string ID = counter_name_string.substr (10,strlen(counterName));
          const char * idChars = ID.c_str();
-         writeToProfileOut(idChars,count,"SASC");
+         writeToSSRAProfileOut(idChars,count,"SASC");
       }
    }
 }
