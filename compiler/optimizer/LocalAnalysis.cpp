@@ -611,9 +611,25 @@ int TR_LocalAnalysisInfo::hasOldExpressionOnRhs(TR::Node *node, bool recalcConta
             other->setNumChildren(otherStoreNumChildren);
 
             if (otherStoreNumChildren == 3)
-               TR::Node::recreate(other, TR::awrtbari);
+               {
+                  TR::Node::recreate(other, TR::awrtbari);
+                 
+               }
+               
             else
-               TR::Node::recreate(other, TR::awrtbar);
+               {
+                  TR::Node::recreate(other, TR::awrtbar);
+                  /** AR07 Debug*/
+                  // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+                  // {
+                  //    // if(other->getLocalIndex() == 14)
+                  //    // {
+                  //       printf("\n # Num Children: %d BCI: %d",node->getNumChildren(),node->getByteCodeIndex());
+                  //       printf("\n2: Write Barrier inside ELF class with local index 14.");
+                  //    // }
+                  // }
+                  /** AR07 Debug End*/
+               }
             }
          else if (seenOtherIndirectStore)
             {
@@ -634,14 +650,45 @@ int TR_LocalAnalysisInfo::hasOldExpressionOnRhs(TR::Node *node, bool recalcConta
                node->setNumChildren(storeNumChildren);
 
                if (storeNumChildren == 3)
+               {
                   TR::Node::recreate(node, TR::awrtbari);
+                   /** AR07 Debug*/
+                  // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+                  //    {
+                  //       // if(node->getLocalIndex() == 14)
+                  //       // {
+                  //          printf("\n Num Children: %d BCI: %d",node->getNumChildren(),node->getByteCodeIndex());
+                  //          printf("\n3: Write Barrier inside ELF class with local index 14.");
+                  //       // }
+                  //    }
+                  /** AR07 Debug End*/
+               }
+                  
                else
+               {
                   TR::Node::recreate(node, TR::awrtbar);
+                  /** AR07 Debug*/
+                  // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+                  //    {
+                  //       // if(node->getLocalIndex() == 14)
+                  //       // {
+                  //          printf("\n# Num Children: %d BCI: %d",node->getNumChildren(),node->getByteCodeIndex());
+                  //          printf("\n4: Write Barrier inside ELF class with local index 14.");
+                  //       // }
+                  //    }
+                  /** AR07 Debug End*/
+               }
+                  
                }
             else if (seenIndirectStore)
                {
                node->setNumChildren(storeNumChildren);
-
+               /** AR07 Debug*/
+               // if(node->getOpCodeValue() == TR::awrtbari && strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+               //    {
+               //       printf("\n Code11 Num Children: %d BCI: %d",node->getNumChildren(),node->getByteCodeIndex());
+               //    }
+               /** AR07 Debug End*/
 #ifdef J9_PROJECT_SPECIFIC
                if (seenIndirectBCDStore)
                   node->setBCDStoreIsTemporarilyALoad(false);
@@ -668,9 +715,33 @@ int TR_LocalAnalysisInfo::hasOldExpressionOnRhs(TR::Node *node, bool recalcConta
       node->setNumChildren(storeNumChildren);
 
       if (storeNumChildren == 3)
+      {
          TR::Node::recreate(node, TR::awrtbari);
+         /** AR07 Debug*/
+         // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+         //    {
+         //       // if(node->getLocalIndex() == 14)
+         //       // {
+         //          printf("\n Num Children: %d BCI: %d",node->getNumChildren(),node->getByteCodeIndex());
+         //          printf("\n5: Write Barrier inside ELF class with local index 14.");
+         //       // }
+         //    }
+         /** AR07 Debug End*/
+      }
       else
+      {
          TR::Node::recreate(node, TR::awrtbar);
+         /** AR07 Debug*/
+         // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+         //    {
+         //       // if(node->getLocalIndex() == 14)
+         //       // {
+         //          printf("\n # Num Children: %d BCI: %d",node->getNumChildren(),node->getByteCodeIndex());
+         //          printf("\n6: Write Barrier inside ELF class with local index 14.");
+         //       // }
+         //    }
+         /** AR07 Debug End*/
+      }
       }
    else if (seenIndirectStore)
       {

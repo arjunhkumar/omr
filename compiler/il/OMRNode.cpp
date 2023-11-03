@@ -520,12 +520,24 @@ OMR::Node::copyValidProperties(TR::Node *fromNode, TR::Node *toNode)
 TR::Node *
 OMR::Node::recreate(TR::Node *originalNode, TR::ILOpCodes op)
    {
+      /** AR07 Debug*/
+      // if(op == TR::awrtbari && originalNode->getGlobalIndex() == 1857)
+      // {
+      //       printf("\n 2. Thank god!");
+      // }
+      /** AR07 Debug End*/
    return TR::Node::recreateAndCopyValidPropertiesImpl(originalNode, op, NULL);
    }
 
 TR::Node *
 OMR::Node::recreateWithSymRef(TR::Node *originalNode, TR::ILOpCodes op, TR::SymbolReference *newSymRef)
    {
+   /** AR07 Debug*/
+   // if(op == TR::awrtbari && originalNode->getGlobalIndex() == 1857)
+   // {
+   //       printf("\n 1. Thank god!");
+   // }
+   /** AR07 Debug End*/
    return TR::Node::recreateAndCopyValidPropertiesImpl(originalNode, op, newSymRef);
    }
 
@@ -541,6 +553,12 @@ OMR::Node::recreateWithSymRef(TR::Node *originalNode, TR::ILOpCodes op, TR::Symb
 TR::Node *
 OMR::Node::recreateAndCopyValidPropertiesImpl(TR::Node *originalNode, TR::ILOpCodes op, TR::SymbolReference *newSymRef)
    {
+   /** AR07 Debug*/
+   if(originalNode->getGlobalIndex() == 1857 && op == TR::awrtbari)
+   {
+      printf("\n @Found node!");
+   }
+   /** AR07 Debug End*/
    TR_ASSERT(originalNode != NULL, "trying to recreate node from a NULL originalNode.");
    if (originalNode->getOpCodeValue() == op)
       {
@@ -598,6 +616,12 @@ OMR::Node::recreateAndCopyValidPropertiesImpl(TR::Node *originalNode, TR::ILOpCo
 
    // add originalNodeCopy back to the node pool
    comp->getNodePool().deallocate(originalNodeCopy);
+   /** AR07 Debug*/
+   if(node->getGlobalIndex() == 1857 && op == TR::awrtbari)
+   {
+      printf("\nFound node!");
+   }
+   /** AR07 Debug End*/
    return node;
    }
 
@@ -608,6 +632,12 @@ OMR::Node::createInternal(TR::Node *originatingByteCodeNode, TR::ILOpCodes op, u
       return new (TR::comp()->getNodePool()) TR::Node(originatingByteCodeNode, op, numChildren);
    else
       {
+      /** AR07 Debug*/
+      // if(originatingByteCodeNode->getGlobalIndex() == 1857 && op == TR::awrtbari)
+      // {
+      //    printf("\n @Found node!");
+      // }
+      /** AR07 Debug End*/
       // Recreate node from originalNode, ignore originatingByteCodeNode
       ncount_t globalIndex = originalNode->getGlobalIndex();
       vcount_t visitCount = originalNode->getVisitCount();
@@ -626,7 +656,12 @@ OMR::Node::createInternal(TR::Node *originatingByteCodeNode, TR::ILOpCodes op, u
       node->setReferenceCount(referenceCount);
       node->setKnownObjectIndex(knownObjectIndex);
       node->_unionA = unionA;
-
+      /** AR07 Debug*/
+      if(node->getGlobalIndex() == 1857 && op == TR::awrtbari)
+      {
+         printf("\nFound node!");
+      }
+      /** AR07 Debug End*/
       return node;
       }
    }
@@ -1550,6 +1585,15 @@ OMR::Node::createConstDead(TR::Node *originatingByteCodeNode, TR::DataType dt, i
 TR::Node*
 OMR::Node::createCompressedRefsAnchor(TR::Node *firstChild)
    {
+      /** AR07 Debug*/
+   // if(strncmp("avrora/avrora/syntax/elf/ELFParser",TR::comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+   // {
+   //    if(firstChild->getByteCodeIndex() == 0)
+   //    {
+   //       printf("\n1: LS Compressed refs. BCI: %d.", firstChild->getByteCodeIndex());
+   //    }
+   // } 
+   /** AR07 Debug End*/
    TR::Node *heapBaseKonst = TR::Node::create(firstChild, TR::lconst, 0, 0);
    return TR::Node::create(TR::compressedRefs, 2, firstChild, heapBaseKonst);
    }

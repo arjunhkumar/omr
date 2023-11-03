@@ -2596,6 +2596,12 @@ bool TR_LoopVersioner::detectInvariantAwrtbaris(List<TR::TreeTop> *awrtbariTrees
 
       if (node->getOpCodeValue() == TR::awrtbari)
          {
+         /** AR07 Debug*/
+         // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+         // {
+         //    printf("\n1. Num Children: %d BCI: %d , localIndex %d",node->getNumChildren(),node->getByteCodeIndex(),node->getLocalIndex());
+         // }
+         /** AR07 Debug End*/
          if (trace())
             traceMsg(comp(), "base invariant 1 in %p\n", node);
          //printf("base invariant 1 in %s\n", comp()->signature());
@@ -2760,6 +2766,12 @@ bool TR_LoopVersioner::hasWrtbarBeenSeen(List<TR::TreeTop> *awrtbariTrees, TR::N
 
       if (node->getOpCodeValue() == TR::awrtbari)
          {
+         /** AR07 Debug*/
+         // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+         // {
+         //    printf("\n2. Num Children: %d BCI: %d , localIndex %d",node->getNumChildren(),node->getByteCodeIndex(),node->getLocalIndex());
+         // }
+         /** AR07 Debug End*/
          if (node == awrtbariNode)
            return true;
          }
@@ -3321,6 +3333,16 @@ bool TR_LoopVersioner::detectChecksToBeEliminated(TR_RegionStructure *whileLoop,
                 TR::Compiler->om.writeBarrierType() == gc_modron_wrtbar_oldcheck)
                {
                TR::Node *possibleAwrtbariNode = currentTree->getNode();
+               /** AR07 Debug*/
+               // if((possibleAwrtbariNode->getOpCodeValue() == TR::awrtbari) && strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+               // {
+               //    if(possibleAwrtbariNode->getFirstChild()->getLocalIndex() == 14)
+               //    {
+               //       printf("\nThank god!");
+               //    }
+                  
+               // }
+               /** AR07 Debug End*/
                if ((currentOpCode.getOpCodeValue() != TR::awrtbari) &&
                   (possibleAwrtbariNode->getNumChildren() > 0))
                   possibleAwrtbariNode = possibleAwrtbariNode->getFirstChild();
@@ -3333,7 +3355,12 @@ bool TR_LoopVersioner::detectChecksToBeEliminated(TR_RegionStructure *whileLoop,
                      traceMsg(comp(), "awrtbari %p\n", currentTree->getNode());
 
                   awrtbariTrees->add(currentTree);
-
+                  /** AR07 Debug*/
+                  // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+                  // {
+                  //    printf("\n8. Num Children: %d BCI: %d , localIndex %d",currentTree->getNode()->getNumChildren(),currentTree->getNode()->getByteCodeIndex(),currentTree->getNode()->getLocalIndex());
+                  // }
+                  /** AR07 Debug End*/
                   if (dupOfThisBlockAlreadyExecutedBeforeLoop)
                      _checksInDupHeader.add(currentTree);
                   }
@@ -5378,7 +5405,12 @@ void TR_LoopVersioner::RemoveWriteBarrier::improveLoop()
       "Removing write barrier n%un [%p]\n",
       _awrtbariNode->getGlobalIndex(),
       _awrtbariNode);
-
+   /** AR07 Debug*/
+   // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+   // {
+   //    printf("\n5. Num Children: %d BCI: %d , localIndex %d",_awrtbariNode->getNumChildren(),_awrtbariNode->getByteCodeIndex(),_awrtbariNode->getLocalIndex());
+   // }
+   /** AR07 Debug End*/
    TR_ASSERT_FATAL(_awrtbariNode->getOpCodeValue() == TR::awrtbari, "unexpected opcode");
    _awrtbariNode->setSkipWrtBar(true);
    }
@@ -5563,6 +5595,12 @@ void TR_LoopVersioner::RemoveArrayStoreCheck::improveLoop()
    if (child->getOpCodeValue() == TR::awrtbari && TR::Compiler->om.writeBarrierType() == gc_modron_wrtbar_none &&
       performTransformation(comp(), "%sChanging awrtbari node [%p] to an iastore\n", OPT_DETAILS_LOOP_VERSIONER, child))
       {
+      /** AR07 Debug*/
+      // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+      // {
+      //    printf("\n6. Num Children: %d BCI: %d , localIndex %d",child->getNumChildren(),child->getByteCodeIndex(),child->getLocalIndex());
+      // }
+      /** AR07 Debug End*/
       TR::Node::recreate(child, TR::astorei);
       child->getChild(2)->recursivelyDecReferenceCount();
       child->setNumChildren(2);
@@ -5577,6 +5615,12 @@ void TR_LoopVersioner::RemoveArrayStoreCheck::improveLoop()
       if (child->getOpCodeValue() == TR::awrtbari && TR::Compiler->om.writeBarrierType() == gc_modron_wrtbar_none &&
           performTransformation(comp(), "%sChanging awrtbari node [%p] to an iastore\n", OPT_DETAILS_LOOP_VERSIONER, child))
          {
+         /** AR07 Debug*/
+         // if(strncmp("avrora/avrora/syntax/elf/ELFParser",comp()->getMethodBeingCompiled()->classNameChars(),34) == 0)
+         // {
+         //    printf("\n7. Num Children: %d BCI: %d , localIndex %d",child->getNumChildren(),child->getByteCodeIndex(),child->getLocalIndex());
+         // }
+         /** AR07 Debug End*/
          TR::Node::recreate(child, TR::astorei);
          child->getChild(2)->recursivelyDecReferenceCount();
          child->setNumChildren(2);
