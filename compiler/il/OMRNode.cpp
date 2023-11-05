@@ -554,10 +554,10 @@ TR::Node *
 OMR::Node::recreateAndCopyValidPropertiesImpl(TR::Node *originalNode, TR::ILOpCodes op, TR::SymbolReference *newSymRef)
    {
    /** AR07 Debug*/
-   if(originalNode->getGlobalIndex() == 1857 && op == TR::awrtbari)
-   {
-      printf("\n @Found node!");
-   }
+   // if(originalNode->getGlobalIndex() == 1857 && op == TR::awrtbari)
+   // {
+   //    printf("\n @Found node!");
+   // }
    /** AR07 Debug End*/
    TR_ASSERT(originalNode != NULL, "trying to recreate node from a NULL originalNode.");
    if (originalNode->getOpCodeValue() == op)
@@ -617,10 +617,10 @@ OMR::Node::recreateAndCopyValidPropertiesImpl(TR::Node *originalNode, TR::ILOpCo
    // add originalNodeCopy back to the node pool
    comp->getNodePool().deallocate(originalNodeCopy);
    /** AR07 Debug*/
-   if(node->getGlobalIndex() == 1857 && op == TR::awrtbari)
-   {
-      printf("\nFound node!");
-   }
+   // if(node->getGlobalIndex() == 1857 && op == TR::awrtbari)
+   // {
+   //    printf("\nFound node!");
+   // }
    /** AR07 Debug End*/
    return node;
    }
@@ -657,10 +657,10 @@ OMR::Node::createInternal(TR::Node *originatingByteCodeNode, TR::ILOpCodes op, u
       node->setKnownObjectIndex(knownObjectIndex);
       node->_unionA = unionA;
       /** AR07 Debug*/
-      if(node->getGlobalIndex() == 1857 && op == TR::awrtbari)
-      {
-         printf("\nFound node!");
-      }
+      // if(node->getGlobalIndex() == 1857 && op == TR::awrtbari)
+      // {
+      //    printf("\nFound node!");
+      // }
       /** AR07 Debug End*/
       return node;
       }
