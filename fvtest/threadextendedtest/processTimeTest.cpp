@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "AtomicSupport.hpp"
@@ -60,7 +60,7 @@ userTimeCpuBurn()
 	}
 }
 
-TEST(ThreadCpuTime, userCpuTimeIncreasesMonotonically)
+TEST(ProcessCpuTime, userCpuTimeIncreasesMonotonically)
 {
 	omrthread_process_time_t cpuTime;
 	omrthread_process_time_t prevCpuTime;
@@ -74,7 +74,7 @@ TEST(ThreadCpuTime, userCpuTimeIncreasesMonotonically)
 	}
 }
 
-TEST(ThreadCpuTime, systemCpuTimeIncreasesMonotonically)
+TEST(ProcessCpuTime, systemCpuTimeIncreasesMonotonically)
 {
 	omrthread_process_time_t cpuTime;
 	omrthread_process_time_t prevCpuTime;
@@ -369,3 +369,38 @@ TEST(ThreadExtendedTest, DISABLED_TestThreadCpuTime)
 	 */
 	ASSERT_TRUE(cpuUsageAft.systemJvmCpuTime >= cpuUsageBef.systemJvmCpuTime);
 }
+
+/* Currently, omrthread_get_thread_times is only supported on certain platforms. */
+#if defined(LINUX) \
+	|| (defined(OMR_OS_WINDOWS) && !defined(BREW)) \
+	|| defined(AIXPPC)
+TEST(ThreadCpuTime, userCpuTimeIncreasesMonotonically)
+{
+	omrthread_thread_time_t cpuTime;
+	omrthread_thread_time_t prevCpuTime;
+	ASSERT_EQ(omrthread_get_thread_times(&prevCpuTime), 0);
+
+	for (size_t i = 0; i < 500; i += 1) {
+		userTimeCpuBurn();
+		ASSERT_EQ(omrthread_get_thread_times(&cpuTime), 0);
+		ASSERT_GE(cpuTime.userTime, prevCpuTime.userTime);
+		prevCpuTime = cpuTime;
+	}
+}
+
+TEST(ThreadCpuTime, systemCpuTimeIncreasesMonotonically)
+{
+	omrthread_thread_time_t cpuTime;
+	omrthread_thread_time_t prevCpuTime;
+	ASSERT_EQ(omrthread_get_thread_times(&prevCpuTime), 0);
+
+	for (size_t i = 0; i < 500; i += 1) {
+		systemTimeCpuBurn();
+		ASSERT_EQ(omrthread_get_thread_times(&cpuTime), 0);
+		ASSERT_GE(cpuTime.sysTime, prevCpuTime.sysTime);
+		prevCpuTime = cpuTime;
+	}
+}
+#endif /* defined(LINUX) \
+	|| (defined(OMR_OS_WINDOWS) && !defined(BREW)) \
+	|| defined(AIXPPC) */

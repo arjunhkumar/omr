@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(OMRPORTSOCKTYPES_H_)
@@ -82,7 +82,7 @@
 #if defined(OMR_OS_WINDOWS)
 typedef SOCKET omr_os_socket;
 typedef struct sockaddr_storage omr_os_sockaddr_storage; /* For IPv4 or IPv6 addresses */
-typedef struct addrinfoW omr_os_addrinfo;  /* addrinfo structure – Unicode, for IPv4 or IPv6 */
+typedef struct addrinfoW omr_os_addrinfo; /* addrinfo structure - Unicode, for IPv4 or IPv6 */
 #else /* defined(OMR_OS_WINDOWS) */
 typedef int omr_os_socket;
 typedef struct sockaddr_storage omr_os_sockaddr_storage; /* For IPv4 or IPv6 addresses */

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef thread_api_h
@@ -61,6 +61,11 @@ typedef struct omrthread_process_time_t {
 	int64_t _systemTime;
 	int64_t _userTime;
 } omrthread_process_time_t;
+
+typedef struct omrthread_thread_time_t {
+	int64_t userTime;
+	int64_t sysTime;
+} omrthread_thread_time_t;
 
 typedef struct omrthread_state_t {
 	uintptr_t flags;
@@ -552,8 +557,8 @@ intptr_t
 omrthread_monitor_get_acquired_count(omrthread_monitor_t monitor);
 
 /**
- * Return thread that currently owns the monitor. Null 
- * will be returned if monitor is not owned.
+ * Return thread that currently owns the monitor.
+ * Null will be returned if monitor is not owned.
  * @param monitor
  * @return omrthread_t
  */
@@ -1239,6 +1244,15 @@ omrthread_get_jvm_cpu_usage_info(J9ThreadsCpuUsage *cpuUsage);
  */
 void
 omrthread_get_jvm_cpu_usage_info_error_recovery(void);
+
+/**
+ * Gets the system and user CPU time of the current thread.
+ *
+ * @param[out] threadTime the pointer to the thread time structure
+ * @return 0 on success or -1 on failure
+ */
+intptr_t
+omrthread_get_thread_times(omrthread_thread_time_t *threadTime);
 
 /* ---------------- omrthreadattr.c ---------------- */
 

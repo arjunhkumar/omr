@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -465,7 +465,6 @@ omrsysinfo_shutdown(struct OMRPortLibrary *portLibrary)
 int32_t
 omrsysinfo_startup(struct OMRPortLibrary *portLibrary)
 {
-	PPG_isRunningInContainer = FALSE;
 	return 0;
 }
 
@@ -652,10 +651,10 @@ omrsysinfo_get_CPU_utilization(struct OMRPortLibrary *portLibrary, struct J9Sysi
  * @param[out] cpuLoad the cumulative CPU utilization of all CPUs on the system
  *
  * @return
- * 	- 0 on success
- *		- \arg OMRPORT_ERROR_OPFAILED on the first two invocations of this API
- *		- \arg OMRPORT_ERROR_OPFAILED if less than 10ns have passed since the second call to this API
- *		- negative portable error code on other failures
+ *  \arg 0 on success
+ *  \arg OMRPORT_ERROR_INSUFFICIENT_DATA if only one data point has been recorded
+ *  \arg OMRPORT_ERROR_OPFAILED if less than 10 ms have passed since the last call to this API
+ *  \arg negative portable error code on other failures
  */
 intptr_t
 omrsysinfo_get_CPU_load(struct OMRPortLibrary *portLibrary, double *cpuLoad)
@@ -1095,7 +1094,7 @@ omrsysinfo_get_cgroup_subsystem_list(struct OMRPortLibrary *portLibrary)
 BOOLEAN
 omrsysinfo_is_running_in_container(struct OMRPortLibrary *portLibrary)
 {
-	return PPG_isRunningInContainer;
+	return FALSE;
 }
 
 /**
@@ -1178,4 +1177,29 @@ void
 omrsysinfo_cgroup_subsystem_iterator_destroy(struct OMRPortLibrary *portLibrary, struct OMRCgroupMetricIteratorState *state)
 {
 	return;
+}
+
+/**
+ * Get the process start time in ns precision epoch time.
+ * @param[in] portLibrary The port library
+ * @param[in] pid The process ID
+ * @param[in/out] processStartTimeInNanoseconds The pointer to uint64_t that stores the process start time in ns precision epoch time
+ * @return 0 on success, error code on failure
+ */
+int32_t
+omrsysinfo_get_process_start_time(struct OMRPortLibrary *portLibrary, uintptr_t pid, uint64_t *processStartTimeInNanoseconds)
+{
+	return OMRPORT_ERROR_NOT_SUPPORTED_ON_THIS_PLATFORM;
+}
+
+/**
+ * Get the number of context switches of the OS.
+ * @param[in] portLibrary The port library
+ * @param[out] numSwitches Pointer to the number of context switches
+ * @return 0 on success, error code on failure
+ */
+int32_t
+omrsysinfo_get_number_context_switches(struct OMRPortLibrary *portLibrary, uint64_t *numSwitches)
+{
+	return OMRPORT_ERROR_NOT_SUPPORTED_ON_THIS_PLATFORM;
 }

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 
@@ -157,9 +157,9 @@ MM_ParallelDispatcher::workerEntryPoint(MM_EnvironmentBase *env)
 	
 	omrthread_monitor_enter(_workerThreadMutex);
 
-	while(worker_status_dying != _statusTable[workerID]) {
+	while (worker_status_dying != _statusTable[workerID]) {
 		/* Wait for a task to be dispatched to the worker thread */
-		while(worker_status_waiting == _statusTable[workerID]) {
+		while (worker_status_waiting == _statusTable[workerID]) {
 			if (_workerThreadsReservedForGC && (_threadsToReserve > 0)) {
 				_threadsToReserve -= 1;
 				_statusTable[workerID] = worker_status_reserved;
@@ -179,7 +179,7 @@ MM_ParallelDispatcher::workerEntryPoint(MM_EnvironmentBase *env)
 			Assert_MM_true(_inShutdown && (worker_status_dying == _statusTable[workerID]));
 		}
 
-		if(worker_status_reserved == _statusTable[workerID]) {
+		if (worker_status_reserved == _statusTable[workerID]) {
 			/* Found a task to dispatch to - do prep work for dispatch */
 			acceptTask(env);
 			omrthread_monitor_exit(_workerThreadMutex);	
@@ -212,7 +212,7 @@ MM_ParallelDispatcher::newInstance(MM_EnvironmentBase *env, omrsig_handler_fn ha
 	dispatcher = (MM_ParallelDispatcher *)env->getForge()->allocate(sizeof(MM_ParallelDispatcher), OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
 	if (dispatcher) {
 		new(dispatcher) MM_ParallelDispatcher(env, handler, handler_arg, defaultOSStackSize);
-		if(!dispatcher->initialize(env)) {
+		if (!dispatcher->initialize(env)) {
 			dispatcher->kill(env);
 			return NULL;
 		}
@@ -225,28 +225,32 @@ MM_ParallelDispatcher::kill(MM_EnvironmentBase *env)
 {
 	OMR::GC::Forge *forge = env->getForge();
 
-	if(_workerThreadMutex) {
+	if (NULL != _workerThreadMutex) {
 		omrthread_monitor_destroy(_workerThreadMutex);
 		_workerThreadMutex = NULL;
 	}
-    if(_dispatcherMonitor) {
-        omrthread_monitor_destroy(_dispatcherMonitor);
-        _dispatcherMonitor = NULL;
-    }
-	if(_synchronizeMutex) {
+
+	if (NULL != _dispatcherMonitor) {
+		omrthread_monitor_destroy(_dispatcherMonitor);
+		_dispatcherMonitor = NULL;
+	}
+
+	if (NULL != _synchronizeMutex) {
 		omrthread_monitor_destroy(_synchronizeMutex);
 		_synchronizeMutex = NULL;
 	}
 
-	if(_taskTable) {
+	if (NULL != _taskTable) {
 		forge->free(_taskTable);
 		_taskTable = NULL;
 	}
-	if(_statusTable) {
+
+	if (NULL != _statusTable) {
 		forge->free(_statusTable);
 		_statusTable = NULL;
 	}
-	if(_threadTable) {
+
+	if (NULL != _threadTable) {
 		forge->free(_threadTable);
 		_threadTable = NULL;
 	}
@@ -275,19 +279,19 @@ MM_ParallelDispatcher::initialize(MM_EnvironmentBase *env)
 
 	/* Initialize the thread tables */
 	_threadTable = (omrthread_t *)forge->allocate(_threadCountMaximum * sizeof(omrthread_t), OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
-	if(!_threadTable) {
+	if (NULL == _threadTable) {
 		goto error_no_memory;
 	}
 	memset(_threadTable, 0, _threadCountMaximum * sizeof(omrthread_t));
 
 	_statusTable = (uintptr_t *)forge->allocate(_threadCountMaximum * sizeof(uintptr_t *), OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
-	if(!_statusTable) {
+	if (NULL == _statusTable) {
 		goto error_no_memory;
 	}
 	memset(_statusTable, 0, _threadCountMaximum * sizeof(uintptr_t *));
 
 	_taskTable = (MM_Task **)forge->allocate(_threadCountMaximum * sizeof(MM_Task *), OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
-	if(!_taskTable) {
+	if (NULL == _taskTable) {
 		goto error_no_memory;
 	}
 	memset(_taskTable, 0, _threadCountMaximum * sizeof(MM_Task *));
@@ -355,13 +359,14 @@ MM_ParallelDispatcher::internalStartupThreads(uintptr_t workerThreadCount, uintp
 			omrthread_monitor_wait(_dispatcherMonitor);
 		} while (!workerInfo.workerFlags);
 
-		if(workerInfo.workerFlags != WORKER_INFO_FLAG_OK ) {
+		if (workerInfo.workerFlags != WORKER_INFO_FLAG_OK ) {
 			goto error;
 		}
 
 		_threadShutdownCount += 1;
 		workerThreadCount += 1;
 	}
+
 	omrthread_monitor_exit(_dispatcherMonitor);
 
 	return true;
@@ -392,13 +397,14 @@ MM_ParallelDispatcher::shutDownThreads()
 	}
 
 	/* Set the worker thread mode to dying */
-	for (uintptr_t index=0; index < _threadCountMaximum; index++) {
+	for (uintptr_t index = 0; index < _threadCountMaximum; index++) {
 		_statusTable[index] = worker_status_dying;
 	}
 
-	/* Set the active parallel thread count to 1 */
-	/* This allows worker threads to cause a GC during their detach, */
-	/* making them the main in a single threaded GC */
+	/* Set the active parallel thread count to 1. This allows
+	 * worker threads to cause a GC during their detach,
+	 * making them the main in a single threaded GC.
+	 */
 	_threadCount = 1;
 
 	wakeUpThreads(_threadShutdownCount);
@@ -437,19 +443,6 @@ MM_ParallelDispatcher::wakeUpThreads(uintptr_t count)
 }
 
 /**
- * Let tasks run with reduced thread count.
- * After the task is complete the thread count should be restored.
- * Dispatcher may additionally adjust (reduce) the count.
- */
-void
-MM_ParallelDispatcher::setThreadCount(uintptr_t threadCount)
-{
-	Assert_MM_true(threadCount <= _threadCountMaximum);
-	Assert_MM_true(0 < threadCount);
- 	_threadCount = threadCount;
-}
-
-/**
  * Decide how many threads should be active for a given task.
  */
 uintptr_t
@@ -485,7 +478,7 @@ MM_ParallelDispatcher::recomputeActiveThreadCountForTask(MM_EnvironmentBase *env
 		/* Bound the recommended thread count. Determine the  upper bound for the thread count,
 		 * This will either be the user specified gcMaxThreadCount (-XgcmaxthreadsN) or else default max
 		 */
-		taskActiveThreadCount = OMR_MIN(_threadCount, task->getRecommendedWorkingThreads());
+		taskActiveThreadCount = OMR_MIN(taskActiveThreadCount, task->getRecommendedWorkingThreads());
 
 		_activeThreadCount = taskActiveThreadCount;
 
@@ -501,8 +494,8 @@ MM_ParallelDispatcher::adjustThreadCount(uintptr_t maxThreadCount)
 {
 	uintptr_t toReturn = maxThreadCount;
 	
-	/* Did user specify number of gc threads? */
-	if(!_extensions->gcThreadCountForced) {
+	/* Did user force a fixed number of gc threads? */
+	if (!_extensions->gcThreadCountForced) {
 		/* No ...Use a sensible number of threads for current heap size. Using too many 
 		 * can lead to unacceptable pause times due to insufficient parallelism. Additionally,
 		 * it can lead to excessive fragmentation, causing aborts and percolates. 
@@ -532,12 +525,15 @@ MM_ParallelDispatcher::prepareThreadsForTask(MM_EnvironmentBase *env, MM_Task *t
 {
 	omrthread_monitor_enter(_workerThreadMutex);
 	
+	uintptr_t activeThreads = recomputeActiveThreadCountForTask(env, task, threadCount);
+	task->mainSetup(env);
+
 	/* Set _workerThreadsReservedForGC to true so that shutdown will not 
 	 * attempt to kill the worker threads until after this task is completed
 	 */
 	_workerThreadsReservedForGC = true; 
 
-	Assert_MM_true(_task == NULL);
+	Assert_MM_true(NULL == _task);
 	_task = task;
 
 	task->setSynchronizeMutex(_synchronizeMutex);
@@ -547,8 +543,8 @@ MM_ParallelDispatcher::prepareThreadsForTask(MM_EnvironmentBase *env, MM_Task *t
 	_taskTable[env->getWorkerID()] = task;
 
 	/* Main thread doesn't need to be woken up */
-	Assert_MM_true(_threadsToReserve == 0);
-	_threadsToReserve = threadCount - 1;
+	Assert_MM_true(0 == _threadsToReserve);
+	_threadsToReserve = activeThreads - 1;
 	wakeUpThreads(_threadsToReserve);
 
 	omrthread_monitor_exit(_workerThreadMutex);
@@ -598,9 +594,7 @@ MM_ParallelDispatcher::cleanupAfterTask(MM_EnvironmentBase *env)
 void
 MM_ParallelDispatcher::run(MM_EnvironmentBase *env, MM_Task *task, uintptr_t newThreadCount)
 {
-	uintptr_t activeThreads = recomputeActiveThreadCountForTask(env, task, newThreadCount);
-	task->mainSetup(env);
-	prepareThreadsForTask(env, task, activeThreads);
+	prepareThreadsForTask(env, task, newThreadCount);
 	acceptTask(env);
 	task->run(env);
 	completeTask(env);
@@ -633,26 +627,22 @@ MM_ParallelDispatcher::setThreadInitializationComplete(MM_EnvironmentBase *env)
 	omrthread_monitor_exit(_dispatcherMonitor);
 }
 
+#if defined(J9VM_OPT_CRIU_SUPPORT)
 void
-MM_ParallelDispatcher::reinitAfterFork(MM_EnvironmentBase *env, uintptr_t newThreadCount)
+MM_ParallelDispatcher::prepareForCheckpoint(MM_EnvironmentBase *env, uintptr_t newThreadCount)
 {
-	/* Set the worker thread mode to dying */
-	for(uintptr_t index=0; index < _threadCountMaximum; index++) {
-		_statusTable[index] = worker_status_dying;
-	}
-
-	if (newThreadCount < _threadCountMaximum) {
-		_threadCountMaximum = newThreadCount;
-	}
-
-	startUpThreads();
+	contractThreadPool(env, newThreadCount);
 }
 
-#if defined(J9VM_OPT_CRIU_SUPPORT)
+bool
+MM_ParallelDispatcher::reinitializeForRestore(MM_EnvironmentBase *env)
+{
+	return expandThreadPool(env);
+}
+
 void
 MM_ParallelDispatcher::contractThreadPool(MM_EnvironmentBase *env, uintptr_t newThreadCount)
 {
-	Assert_MM_false(_workerThreadsReservedForGC);
 	Assert_MM_false(_inShutdown);
 
 	Assert_MM_true(_threadShutdownCount == (_poolMaxCapacity - 1));
@@ -671,9 +661,19 @@ MM_ParallelDispatcher::contractThreadPool(MM_EnvironmentBase *env, uintptr_t new
 	if (newThreadCount < _threadCountMaximum) {
 		Trc_MM_ParallelDispatcher_contractThreadPool_Attempt();
 
+		_inShutdown = true;
+
 		omrthread_monitor_enter(_workerThreadMutex);
 
-		_inShutdown = true;
+		while (_workerThreadsReservedForGC) {
+			omrthread_monitor_wait(_workerThreadMutex);
+		}
+
+		/* Set the active parallel thread count to 1. This allows
+		 * worker threads to cause a GC during their detach,
+		 * making them the main in a single threaded GC.
+		 */
+		_threadCount = 1;
 
 		/* Clip the thread pool past newThreadCount. */
 		for (uintptr_t index = newThreadCount; index < _threadCountMaximum; index++) {
@@ -701,7 +701,6 @@ MM_ParallelDispatcher::contractThreadPool(MM_EnvironmentBase *env, uintptr_t new
 
 		Assert_MM_true(_threadShutdownCount == expectedThreadShutdownThread);
 
-		_extensions->gcThreadCount = newThreadCount;
 		_activeThreadCount = newThreadCount;
 		_threadCount = newThreadCount;
 		_threadCountMaximum = newThreadCount;
@@ -733,7 +732,7 @@ MM_ParallelDispatcher::expandThreadPool(MM_EnvironmentBase *env)
 
 	Trc_MM_ParallelDispatcher_expandThreadPool_params(
 			newThreadCount, _poolMaxCapacity,
-			_extensions->configuration->supportedGCThreadCount(env), preExpandThreadCount);
+			_extensions->configuration->defaultGCThreadCount(env), preExpandThreadCount);
 
 	result = reinitializeThreadPool(env, newThreadCount);
 
@@ -748,7 +747,6 @@ MM_ParallelDispatcher::expandThreadPool(MM_EnvironmentBase *env)
 				newThreadCount = _threadShutdownCount + 1;
 			}
 
-			_extensions->gcThreadCount = newThreadCount;
 			_threadCount = newThreadCount;
 			_threadCountMaximum = newThreadCount;
 		}

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -265,6 +265,7 @@ isNewPageSize(uintptr_t pageSize, uintptr_t pageFlags)
  * On z/OS, 1M fixed and 2G fixed pages can be used only to allocate above 2G bar.
  * Only 4K and 1M pageable pages can be used to allocate memory below the bar.
  */
+BOOLEAN
 isPageSizeSupportedBelowBar(uintptr_t pageSize, uintptr_t pageFlags)
 {
 	if ((FOUR_KB == pageSize) ||
@@ -1645,7 +1646,7 @@ TEST(PortVmemTest, vmem_testReserveMemoryExTopDown)
 /**
  * See @ref omrvmem_testReserveMemoryEx_impl
  */
-TEST(PortVmemTest, vmem_testReserveMemoryExStrictAdress)
+TEST(PortVmemTest, vmem_testReserveMemoryExStrictAddress)
 {
 	OMRPORT_ACCESS_FROM_OMRPORT(portTestEnv->getPortLibrary());
 	if (memoryIsAvailable(OMRPORTLIB, TRUE)) {

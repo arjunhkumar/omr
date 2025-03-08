@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_REAL_REGISTER_INCL
@@ -72,16 +72,16 @@ class OMR_EXTENSIBLE RealRegister : public TR::Register
       } RegMask;
 
     // PseudoRegisters are the union of all hardware backed registers (ex. GPR0)
-    // and constructs such as TR::RealRegister::NoReg or TR::RealRegister::AssignAny. 
-    // These pseudo registers are used to assign register dependencies during the 
+    // and constructs such as TR::RealRegister::NoReg or TR::RealRegister::AssignAny.
+    // These pseudo registers are used to assign register dependencies during the
     // Register Allocation phase. The enum below is meant to hold all pseudo registers.
-    // However, to avoid compilation failures, we cannot include 
+    // However, to avoid compilation failures, we cannot include
     // codegen/RealRegisterEnum.hpp again. In order to include it twice, these two enums
     // must be scoped. However, not all of our minimum compiler toolchains support this
-    // feature yet (MSVC 2010). So we only include PseudoRegisterEnum below, and cast any 
-    // RegNum to RegDep when using it to set a register dependency. If MSVC 2010 support is 
+    // feature yet (MSVC 2010). So we only include PseudoRegisterEnum below, and cast any
+    // RegNum to RegDep when using it to set a register dependency. If MSVC 2010 support is
     // no longer required, then this can be cleaned up by using scoped enums instead. An issue
-    // to track this is open here: https://github.com/eclipse/omr/issues/2590 
+    // to track this is open here: https://github.com/eclipse-omr/omr/issues/2590
     typedef enum
        {
        #include "codegen/PseudoRegisterEnum.hpp"

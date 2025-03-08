@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/CodeGenerator.hpp"
@@ -361,11 +361,11 @@ TR::Register *OMR::X86::TreeEvaluator::l2aEvaluator(TR::Node *node, TR::CodeGene
    // evaluator in use only for cg->comp()->useCompressedPointers
    //
    // pattern match the sequence under the l2a
-   //    iaload f      l2a                       <- node
+   //    aloadi f      l2a                       <- node
    //       aload O       ladd
    //                       lshl
    //                          i2l
-   //                            iiload f        <- load
+   //                            iloadi f        <- load
    //                               aload O
    //                          iconst shftKonst
    //                       lconst HB
@@ -373,7 +373,7 @@ TR::Register *OMR::X86::TreeEvaluator::l2aEvaluator(TR::Node *node, TR::CodeGene
    // -or- if the load is known to be null or usingLowMemHeap
    //  l2a
    //    i2l
-   //      iiload f
+   //      iloadi f
    //         aload O
    //
    TR::Node *firstChild = node->getFirstChild();
@@ -454,4 +454,16 @@ TR::Register *OMR::X86::TreeEvaluator::su2iEvaluator(TR::Node *node, TR::CodeGen
 TR::Register *OMR::X86::TreeEvaluator::c2iEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    return TR::TreeEvaluator::conversionAnalyser(node, TR::InstOpCode::MOVZXReg4Mem2, TR::InstOpCode::MOVZXReg4Reg2, cg);
+   }
+
+TR::Register *OMR::X86::TreeEvaluator::ipopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR::Node *child = node->getFirstChild();
+   TR::Register *inputReg = cg->intClobberEvaluate(child);
+
+   generateRegRegInstruction(TR::InstOpCode::POPCNT4RegReg, node, inputReg, inputReg, cg);
+
+   node->setRegister(inputReg);
+   cg->decReferenceCount(child);
+   return inputReg;
    }

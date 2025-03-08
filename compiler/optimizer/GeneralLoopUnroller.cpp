@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/GeneralLoopUnroller.hpp"
@@ -1667,6 +1667,12 @@ bool TR_LoopUnroller::haveIdenticalOffsets(IntrnPtr *intrnPtr1, IntrnPtr *intrnP
    return false;
    }
 
+bool TR_LoopUnroller::isSymRefSameTypeArrayShadow(TR::Node *node)
+   {
+   // Checks that node symbolReference is an array-shadow with the same data type as the node.
+   return (node->getSymbolReference()->getReferenceNumber() == comp()->getSymRefTab()->getArrayShadowIndex(node->getDataType()));
+   }
+
 void TR_LoopUnroller::examineArrayAccesses()
    {
    // What we are trying to achieve here is to allow the possibility to schedule array accesses
@@ -1696,34 +1702,47 @@ void TR_LoopUnroller::examineArrayAccesses()
       //
       bool canProve = true;
       ListIterator<ArrayAccess> it1(loaa->list);
-      ArrayAccess *aa1;
-      ArrayAccess *aa2;
-      for (aa1 = it1.getFirst(); aa1 && (aa2 = it1.getNext()); aa1 = aa2)
-         {
-         if (trace())
-            traceMsg(comp(), "\tComparing array accesses %p and %p\n", aa1->aaNode, aa2->aaNode);
+      ArrayAccess *aa1, *aa2;
+      aa1 = it1.getFirst();
 
-         // Do not take care of array accesses without internal pointers at this point.
-         //
-         if (!aa1->intrnPtrNode || !aa2->intrnPtrNode)
+      // Ensures that the symbolReference is an array-shadow with the same data type as the node.
+      if (!isSymRefSameTypeArrayShadow(aa1->aaNode))
+         canProve = false;
+      else
+         {
+         for (; aa1 && (aa2 = it1.getNext()); aa1 = aa2)
             {
+            if (trace())
+               traceMsg(comp(), "\tComparing array accesses %p and %p\n", aa1->aaNode, aa2->aaNode);
+
+            if (!isSymRefSameTypeArrayShadow(aa2->aaNode))
+               {
+               canProve = false;
+               break;
+               }
+
+            // Do not take care of array accesses without internal pointers at this point.
+            //
+            if (!aa1->intrnPtrNode || !aa2->intrnPtrNode)
+               {
+               canProve = false;
+               break;
+               }
+
+            IntrnPtr *intrnPtr1 = findIntrnPtr(aa1->intrnPtrNode->getSymbolReference()->getReferenceNumber());
+            IntrnPtr *intrnPtr2 = findIntrnPtr(aa2->intrnPtrNode->getSymbolReference()->getReferenceNumber());
+            if (intrnPtr1 && intrnPtr2)
+               {
+               if (aa1->intrnPtrNode == aa2->intrnPtrNode)
+                  continue;
+               if (intrnPtr1->offsetNode == intrnPtr2->offsetNode)
+                  continue;
+               if (haveIdenticalOffsets(intrnPtr1, intrnPtr2))
+                  continue;
+               }
             canProve = false;
             break;
             }
-
-         IntrnPtr *intrnPtr1 = findIntrnPtr(aa1->intrnPtrNode->getSymbolReference()->getReferenceNumber());
-         IntrnPtr *intrnPtr2 = findIntrnPtr(aa2->intrnPtrNode->getSymbolReference()->getReferenceNumber());
-         if (intrnPtr1 && intrnPtr2)
-            {
-            if (aa1->intrnPtrNode == aa2->intrnPtrNode)
-               continue;
-            if (intrnPtr1->offsetNode == intrnPtr2->offsetNode)
-               continue;
-            if (haveIdenticalOffsets(intrnPtr1, intrnPtr2))
-               continue;
-            }
-         canProve = false;
-         break;
          }
 
       if (!canProve || !aa1->intrnPtrNode) // if cannot prove or if there is only one element in the list
@@ -3566,21 +3585,42 @@ TR_GeneralLoopUnroller::perform()
       Q.remove(top);
 
       if (top->_cost > budget)
-         continue;
+         {
+         dumpOptDetails(
+            comp(),
+            "Loop %d unroll cost %d > %d remaining budget\n",
+            top->_loop->getNumber(),
+            top->_cost,
+            budget);
 
-      budget -= top->_cost;
+         continue;
+         }
 
       if (trace())
          traceMsg(comp(), "<unroll loop=\"%d\">\n", top->_loop->getNumber());
 
+      bool didUnroll = false;
       if (top->_loop->getPrimaryInductionVariable())
-         TR_LoopUnroller::unroll(comp(), top->_loop, top->_loop->getPrimaryInductionVariable(),
-                                 top->_unrollKind, top->_unrollCount, top->_peelCount, optimizer());
+         {
+         didUnroll = TR_LoopUnroller::unroll(
+            comp(),
+            top->_loop,
+            top->_loop->getPrimaryInductionVariable(),
+            top->_unrollKind,
+            top->_unrollCount,
+            top->_peelCount, optimizer());
+         }
       else
-         TR_LoopUnroller::unroll(comp(), top->_loop, top->_unrollCount, top->_peelCount, optimizer());
+         {
+         didUnroll = TR_LoopUnroller::unroll(
+            comp(), top->_loop, top->_unrollCount, top->_peelCount, optimizer());
+         }
 
       if (trace())
          traceMsg(comp(), "</unroll>\n");
+
+      if (didUnroll)
+         budget -= top->_cost;
       }
 
    return 1;
@@ -4200,13 +4240,13 @@ TR_GeneralLoopUnroller::canUnrollUnCountedLoop(TR_RegionStructure *loop,
    // Detect Small loops like:
    //   [0x37047e24] BBStart (block 133) (frequency 127) (is in loop 133)
    //   [0x37047f58]   astore #392[0x36e8c8e4]
-   //   [0x37047ef8]     iaload #549[0x37047c9c]+24
+   //   [0x37047ef8]     aloadi #549[0x37047c9c]+24
    //   [0x37047ed0]       aload #392[0x36e8c8e4]  Auto[<temp slot 8>]   <flags:"0x4" (X!=0 )/>
    //   [0x375191d4]   NULLCHK on [0x37047ef8] #18[0x36a24b1c]  Method[jitThrowNullPointerException]
-   //   [0x375191fc]     iaload #549[0x37047c9c]+24
-   //                      ==>iaload at [0x37047ef8]
+   //   [0x375191fc]     aloadi #549[0x37047c9c]+24
+   //                      ==>aloadi at [0x37047ef8]
    //   [0x3751925c]   ifacmpne --> block 133 BBStart at [0x37047e24]
-   //                    ==>iaload at [0x375191fc]
+   //                    ==>aloadi at [0x375191fc]
    //   [0x37519288]     aconst NULL   <flags:"0x2" (X==0 )/>
    //   [0x37519144]   BBEnd (block 133)
 

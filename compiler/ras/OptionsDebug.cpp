@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdint.h>
@@ -50,16 +50,16 @@
 #define DEFAULT_OPTION_LINE_WIDTH  80
 
 static char  optionCategories[] = {' ','C','O','L','D','R','I','M',0}; // Must match categories[] in codegen.dev/Options.cpp
-static char *optionCategoryNames[] = {"\nGeneral options:\n",
-                                      "\nCode generation options:\n",
-                                      "\nOptimization options:\n",
-                                      "\nLogging and display options:\n",
-                                      "\nDebugging options:\n",
-                                      "\nRecompilation and profiling options:\n",
-                                      "\nInternal options:\n",
-                                      "\nOther options:\n",
-                                      0 // Fail quickly if we run past the end of this array
-                                      };
+static const char *optionCategoryNames[] = {"\nGeneral options:\n",
+                                            "\nCode generation options:\n",
+                                            "\nOptimization options:\n",
+                                            "\nLogging and display options:\n",
+                                            "\nDebugging options:\n",
+                                            "\nRecompilation and profiling options:\n",
+                                            "\nInternal options:\n",
+                                            "\nOther options:\n",
+                                            0 // Fail quickly if we run past the end of this array
+                                           };
 
 
 
@@ -162,7 +162,7 @@ void TR_Debug::dumpOptionHelp(TR::OptionTable * firstOjit, TR::OptionTable * fir
    TR::OptionTable * entry;
 
    TR_VerboseLog::CriticalSection vlogLock;
-   TR_VerboseLog::writeLine(TR_Vlog_INFO,"Usage: -Xjit:option([,option]*)\n");
+   TR_VerboseLog::writeLine(TR_Vlog_INFO,"Usage: -Xjit:option([,option]*)");
 
    for (int32_t cat = 0; optionCategories[cat]; cat++)
       {
@@ -280,9 +280,9 @@ void TR_Debug::dumpOptionHelp(TR::OptionTable * firstOjit, TR::OptionTable * fir
 
 void
 TR_Debug::dumpOptions(
-      char *optionsType,
-      char *options,
-      char *envOptions,
+      const char *optionsType,
+      const char *options,
+      const char *envOptions,
       TR::Options *cmdLineOptions,
       TR::OptionTable *ojit,
       TR::OptionTable *ofe,
@@ -493,7 +493,7 @@ TR_Debug::dumpOptions(
             //since java uses different function, we need to check for that to get our verbose options printed
             TR_VerboseLog::write("{");
             base = (char*)cmdLineOptions;
-            char *sep = "";
+            const char *sep = "";
             for (int i=0; i < TR_NumVerboseOptions; i++)
                {
                TR_VerboseFlags flag = (TR_VerboseFlags)i;
@@ -513,7 +513,6 @@ TR_Debug::dumpOptions(
 #ifdef J9_PROJECT_SPECIFIC
    if (fej9->generateCompressedPointers())
       {
-      TR_VerboseLog::writeLine("");
       TR_VerboseLog::writeLine(TR_Vlog_INFO, "     compressedRefs shiftAmount=%d", TR::Compiler->om.compressedReferenceShift());
       }
 #endif

@@ -17,7 +17,7 @@ OpenJDK Assembly Exception [2].
 [1] https://www.gnu.org/software/classpath/license.html
 [2] https://openjdk.org/legal/assembly-exception.html
 
-SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 -->
 
 # Eclipse OMR
@@ -115,7 +115,7 @@ We operate under the [Eclipse Code of Conduct][coc] to promote fairness, opennes
 * Join the Eclipse OMR developer community [mailing list](https://accounts.eclipse.org/mailing-list/omr-dev).
   The community primarily uses this list for project announcements and administrative
   discussions amongst committers.  Questions are welcome here as well.
-* Ask a question or start a discussion via a [GitHub issue](https://github.com/eclipse/omr/issues).
+* Ask a question or start a discussion via a [GitHub issue](https://github.com/eclipse-omr/omr/issues).
 
 Contributing
 ============
@@ -124,7 +124,7 @@ If you would like to contribute to OMR, check out the [contributing guide][contr
 We also have curated a set of [good first issues][beg] for newcomers to tackle.
 
 [contrib]: CONTRIBUTING.md
-[beg]: https://github.com/eclipse/omr/issues?q=is%3Aopen+is%3Aissue+label%3A%22good%20first%20issue%22
+[beg]: https://github.com/eclipse-omr/omr/issues?q=is%3Aopen+is%3Aissue+label%3A%22good%20first%20issue%22
 
 How Do I Use it?
 ================

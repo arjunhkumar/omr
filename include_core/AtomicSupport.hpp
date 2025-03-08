@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(ATOMIC_SUPPORT_HPP_)
@@ -33,7 +33,7 @@
 #include <tpf/cmpswp.h>
 #endif
 
-#if defined(__xlC__) && defined(AIXPPC)
+#if (defined(__xlC__) || defined(__open_xl__)) && defined(AIXPPC)
 #include <sys/atomic_op.h>
 #endif
 
@@ -74,17 +74,19 @@
 		inline void __dropSMT() {  __asm__ __volatile__ ("or 31,31,31"); }
 		inline void __restoreSMT() {  __asm__ __volatile__ ("or 6,6,6"); }
 
-#elif defined(_MSC_VER) /* defined (LINUXPPC) */
+#elif defined(_MSC_VER) /* defined(LINUXPPC) */
 		inline void __yield() { _mm_pause(); }
-#elif defined(__GNUC__) && (defined(J9X86) || defined(J9HAMMER))
+#elif defined(__GNUC__) && (defined(J9X86) || defined(J9HAMMER)) /* defined(_MSC_VER) */
 		inline void __yield() { __asm volatile ("pause"); }
-#elif defined(J9ZOS390)
+#elif defined(J9ZOS390) /* defined(__GNUC__) && (defined(J9X86) || defined(J9HAMMER)) */
 #pragma convlit(suspend)
 		inline void __yield() { __asm__ volatile (" nop 0"); }
 #pragma convlit(resume)
-#else
+#elif defined(AARCH64) /* defined(J9ZOS390) */
+		inline void __yield() { __asm__ volatile ("yield"); }
+#else /* defined(AARCH64) */
 		inline void __yield() { __asm volatile ("# AtomicOperations::__yield"); }
-#endif /* __GNUC__ && (J9X86 || J9HAMMER) */
+#endif /* defined(AIXPPC) */
 
 #if defined(_MSC_VER)
 		/* use compiler intrinsic */
@@ -182,7 +184,7 @@ public:
 		_ReadWriteBarrier();
 #elif defined(J9ZOS390) /* _MSC_VER */
 		__fence();
-#elif defined(__xlC__) /* J9ZOS390 */
+#elif defined(__xlC__) || defined(__open_xl__) /* J9ZOS390 */
 		asm volatile("");
 #else /* __xlC__ */
 #error Unknown compiler
@@ -350,7 +352,7 @@ public:
 #if defined(OMRZTPF)
 		cs((cs_t *)&oldValue, (cs_t *)address, (cs_t)newValue);
 		return oldValue;
-#elif defined(__xlC__) /* defined(OMRZTPF) */
+#elif defined(__xlC__) || defined(__open_xl__) /* defined(OMRZTPF) */
 		__compare_and_swap((volatile int*)address, (int*)&oldValue, (int)newValue);
 		return oldValue;
 #elif defined(__GNUC__)  /* defined(__xlC__) */
@@ -416,7 +418,7 @@ public:
 #elif defined(OMRZTPF) /* defined(OMR_ARCH_POWER) && !defined(OMR_ENV_DATA64) */
 		csg((csg_t *)&oldValue, (csg_t *)address, (csg_t)newValue);
 		return oldValue;
-#elif defined(__xlC__) /* defined(OMRZTPF) */
+#elif defined(__xlC__)|| defined(__open_xl__) /* defined(OMRZTPF) */
 #if defined(__64BIT__) || !defined(AIXPPC)
 		__compare_and_swaplp((volatile long*)address, (long*)&oldValue, (long)newValue);
 #else /* defined(__64BIT__) */

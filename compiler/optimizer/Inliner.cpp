@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,9 +16,9 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
-#ifdef J9ZTPF
+#ifdef OMRZTPF
 #define __TPF_DO_NOT_MAP_ATOE_REMOVE
 #endif
 
@@ -50,7 +50,6 @@
 #include "control/Options_inlines.hpp"
 #include "control/Recompilation.hpp"
 #include "cs2/allocator.h"
-#include "cs2/bitvectr.h"
 #include "cs2/sparsrbit.h"
 #include "env/ClassEnv.hpp"
 #include "env/CompilerEnv.hpp"
@@ -319,7 +318,7 @@ TR_InlinerBase::setInlineThresholds(TR::ResolvedMethodSymbol *callerSymbol)
 
    _callerWeightLimit -= size;
 
-   _nodeCountThreshold = 16000;
+   _nodeCountThreshold = (comp()->getOption(TR_NotCompileTimeSensitive) || comp()->getMethodHotness() >= hot ) ? 16000 : 3000;
    _methodInWarmBlockByteCodeSizeThreshold = _methodByteCodeSizeThreshold = 155;
    _methodInColdBlockByteCodeSizeThreshold = 30;
    _maxInliningCallSites = 4095;
@@ -375,6 +374,11 @@ TR_InlinerBase::setInlineThresholds(TR::ResolvedMethodSymbol *callerSymbol)
       else
          _nodeCountThreshold *= 2;
       }
+
+   static const char *g = feGetEnv("TR_MaxInliningCallSites");
+   if (g)
+      _maxInliningCallSites = atoi(g);
+
 
    //call random functions to allow randomness to change limits
    if (comp()->getOption(TR_Randomize))
@@ -707,11 +711,11 @@ OMR_InlinerPolicy::inlineRecognizedMethod(TR::RecognizedMethod method)
 
 // only dumbinliner uses this and includes checking for variable initialization
 bool
-TR_DumbInliner::tryToInline(char *message, TR_CallTarget *calltarget)
+TR_DumbInliner::tryToInline(const char *message, TR_CallTarget *calltarget)
    {
    TR_ResolvedMethod *method = calltarget->_calleeSymbol->getResolvedMethod();
 
-   if (getPolicy()->tryToInline(calltarget,NULL,true))
+   if (getPolicy()->tryToInline(calltarget, NULL, true))
       {
       if (comp()->trace(OMR::inlining))
          traceMsg(comp(), "tryToInline pattern matched; %s for %s\n", message, method->signature(comp()->trMemory()));
@@ -1557,6 +1561,30 @@ static bool blocksHaveSameStartingByteCodeInfo(TR::Block *aBlock, TR::Block *bBl
    return (a.getCallerIndex() == b.getCallerIndex()) && (a.getByteCodeIndex() == b.getByteCodeIndex());
    }
 
+static TR::TreeTop *fixRdBarInDuplicatedNode(TR::Node *duplicatedNode, TR::TreeTop *rematPoint, TR::SparseBitVector &visitedNodes, TR::Compilation *comp)
+   {
+   visitedNodes[duplicatedNode->getGlobalIndex()] = true;
+   if (duplicatedNode->getOpCode().isReadBar())
+      {
+      TR::Node *newttNode = TR::Node::create(TR::treetop, 1, duplicatedNode);
+      TR::TreeTop *newtt = TR::TreeTop::create(comp, newttNode);
+      rematPoint->insertAfter(newtt);
+      return newtt;
+      }
+   else
+      {
+      for (int32_t i = 0; i < duplicatedNode->getNumChildren(); i++)
+         {
+         TR::Node* child = duplicatedNode->getChild(i);
+         if (child && !visitedNodes.ValueAt(child->getGlobalIndex()))
+            {
+            rematPoint = fixRdBarInDuplicatedNode(child, rematPoint, visitedNodes, comp);
+            }
+         }
+      }
+   return rematPoint;
+   }
+
 /**
  * Root function for privatized inliner argument rematerialization - this handles calculating remat
  * safety and performing the remat.
@@ -1683,6 +1711,8 @@ void TR_InlinerBase::rematerializeCallArguments(TR_TransformInlinedFunction & ti
             if (rematTree == argStoreTree)
                {
                TR::Node *duplicateStore = argStore->duplicateTree();
+               TR::SparseBitVector visitedNodes(comp()->allocator());
+               rematPoint = fixRdBarInDuplicatedNode(duplicateStore, rematPoint, visitedNodes, comp());
                if (performTransformation(comp(), "O^O GUARDED CALL REMAT: Rematerialize [%p] as [%p]\n", argStore, duplicateStore))
                   {
                   rematPoint = TR::TreeTop::create(comp(), rematPoint, duplicateStore);
@@ -3362,11 +3392,11 @@ TR::TreeTop * OMR_InlinerUtil::storeValueInATemp(
          if (value->getOpCode().hasSymbolReference() && value->getSymbolReference()->getSymbol()->isNotCollected())
             valueRef->getSymbol()->setNotCollected();
 
-         else if (value->getOpCode().isArrayRef())
+         else if (value->getOpCode().isArrayRef() || value->isDataAddrPointer())
             value->setIsInternalPointer(true);
 
          TR::AutomaticSymbol *pinningArray = NULL;
-         if (value->getOpCode().isArrayRef())
+         if (value->getOpCode().isArrayRef() || value->isDataAddrPointer())
             {
             TR::Node *valueChild = value->getFirstChild();
             if (valueChild->isInternalPointer() &&
@@ -3612,7 +3642,7 @@ bool TR_TransformInlinedFunction::findCallNodeInTree(TR::Node * callNode, TR::No
 bool TR_TransformInlinedFunction::findReturnValueInTree(TR::Node * rvStoreNode, TR::Node * node, TR::Compilation *comp)
    {
    TR::SymbolReference *rvSymRef = rvStoreNode->getSymbolReference();
-   // ibload
+   // bloadi
    //    loadaddr rvSymRef
    if (node->getOpCode().isLoadIndirect() &&
        node->getFirstChild()->getOpCodeValue() == TR::loadaddr &&
@@ -4256,20 +4286,13 @@ void TR_InlinerBase::applyPolicyToTargets(TR_CallStack *callStack, TR_CallSite *
    return;
    }
 
-//return true if the call is dominated hot call
-bool TR_InlinerBase::callMustBeInlinedRegardlessOfSize(TR_CallSite *callsite)
-   {
-
-   return false;
-   }
-
 static bool traceIfMatchesPattern(TR::Compilation* comp)
    {
-   static char* cRegex = feGetEnv ("TR_printIfRegex");
+   static const char *cRegex = feGetEnv ("TR_printIfRegex");
 
    if (cRegex && comp->getOptions() && comp->getOptions()->getDebug())
       {
-      static TR::SimpleRegex * regex = TR::SimpleRegex::create(cRegex);
+      static TR::SimpleRegex *regex = TR::SimpleRegex::create(cRegex);
       if (TR::SimpleRegex::match(regex, comp->signature(), false))
          {
          return true;
@@ -4406,11 +4429,11 @@ TR_CallSite* TR_InlinerBase::findAndUpdateCallSiteInGraph(TR_CallStack *callStac
       int32_t k=0;
       for (k = 0; k < callsite->numRemovedTargets(); k++)
          {
-         tracer()->insertCounter(callsite->getRemovedTarget(k)->getCallTargetFailureReason(), callsite->_callNodeTreeTop);
+         tracer()->insertCounter(callsite->getRemovedTarget(k)->getCallTargetFailureReason(), tt);
          }
       if (k == 0)  //if you never found a target in the first place.
          {
-         tracer()->insertCounter(callsite->getCallSiteFailureReason(), callsite->_callNodeTreeTop);
+         tracer()->insertCounter(callsite->getCallSiteFailureReason(), tt);
          }
       }
 
@@ -4779,7 +4802,16 @@ bool TR_InlinerBase::inlineCallTarget2(TR_CallStack * callStack, TR_CallTarget *
       calleeSymbol->setUnsynchronised();
       }
 
+   TR_ASSERT_FATAL(
+      comp()->currentILGenCallTarget() == NULL,
+      "unexpected recursive call to inlineCallTarget2 during ilgen: "
+      "existing target %p vs. new %p",
+      comp()->currentILGenCallTarget(),
+      calltarget);
+
+   comp()->setCurrentILGenCallTarget(calltarget);
    genILSucceeded = tryToGenerateILForMethod(calleeSymbol, callerSymbol, calltarget);
+   comp()->setCurrentILGenCallTarget(NULL);
 
    if (wasSynchronized)
       calleeSymbol->setSynchronised();
@@ -5505,10 +5537,7 @@ OMR_InlinerPolicy::callMustBeInlined(TR_CallTarget *calltarget)
 bool
 TR_InlinerBase::forceInline(TR_CallTarget *calltarget)
    {
-   if (getPolicy()->callMustBeInlined(calltarget) || callMustBeInlinedRegardlessOfSize(calltarget->_myCallSite))
-      return true;
-
-   return false;
+   return getPolicy()->callMustBeInlined(calltarget);
    }
 
 void TR_CallSite::tagcalltarget(int32_t index, TR_InlinerTracer *tracer, TR_InlinerFailureReason reason)
@@ -5582,7 +5611,8 @@ void TR_CallSite::removeAllTargets(TR_InlinerTracer *tracer, TR_InlinerFailureRe
    removeTargets(tracer, 0, reason);
    }
 
-TR_CallTarget::TR_CallTarget(TR_CallSite *callsite,
+TR_CallTarget::TR_CallTarget(TR::Region &memRegion,
+                             TR_CallSite *callsite,
                              TR::ResolvedMethodSymbol *calleeSymbol,
                              TR_ResolvedMethod *calleeMethod,
                              TR_VirtualGuardSelection *guard,
@@ -5596,7 +5626,8 @@ TR_CallTarget::TR_CallTarget(TR_CallSite *callsite,
    _receiverClass(receiverClass),
    _frequencyAdjustment(freqAdj),
    _prexArgInfo(NULL),
-   _ecsPrexArgInfo(ecsPrexArgInfo)
+   _ecsPrexArgInfo(ecsPrexArgInfo),
+   _requiredConsts(memRegion)
    {
    _weight=0;
    _callGraphAdjustedWeight=0;
@@ -5714,7 +5745,28 @@ TR_CallSite::addTarget(TR_Memory* mem, TR_InlinerBase *inliner, TR_VirtualGuardS
       myPrexArgInfo = new (comp()->trHeapMemory()) TR_PrexArgInfo(_ecsPrexArgInfo, comp()->trMemory());
       }
 
-   TR_CallTarget *result = new (mem,allocKind) TR_CallTarget(this,_initialCalleeSymbol,implementer,guard,receiverClass,myPrexArgInfo,ratio);
+   TR::Region *memRegion = NULL;
+   switch (allocKind)
+      {
+      case heapAlloc:
+         memRegion = &mem->heapMemoryRegion();
+         break;
+      case stackAlloc:
+         memRegion = &mem->currentStackRegion();
+         break;
+      default:
+         TR_ASSERT_FATAL(false, "unexpected alloc kind %d for call target", (int)allocKind);
+      }
+
+   TR_CallTarget *result = new (*memRegion) TR_CallTarget(
+      *memRegion,
+      this,
+      _initialCalleeSymbol,
+      implementer,
+      guard,
+      receiverClass,
+      myPrexArgInfo,
+      ratio);
 
    addTarget(result);
 
@@ -5739,7 +5791,7 @@ TR_CallSite::calleeClass()
       TR::StackMemoryRegion stackMemoryRegion(*_comp->trMemory());
 
       int32_t len = _interfaceMethod->classNameLength();
-      char * s = TR::Compiler->cls.classNameToSignature(_interfaceMethod->classNameChars(), len, _comp, stackAlloc);
+      char *s = TR::Compiler->cls.classNameToSignature(_interfaceMethod->classNameChars(), len, _comp, stackAlloc);
       TR_OpaqueClassBlock *result = _comp->fe()->getClassFromSignature(s, len, _callerResolvedMethod, true);
 
       return result;
@@ -5856,7 +5908,13 @@ void TR_InlinerTracer::partialTraceM ( const char * fmt, ...)
 
 void TR_InlinerTracer::insertCounter (TR_InlinerFailureReason reason, TR::TreeTop *tt)
    {
-   const char *name = TR::DebugCounter::debugCounterName(comp(), "inliner.callSites/failed/%s",getFailureReasonString(reason));
+   const char *name = TR::DebugCounter::debugCounterName(
+      comp(),
+      "inliner.callSites/failed/%s/(%s)/%s",
+      getFailureReasonString(reason),
+      comp()->signature(),
+      comp()->getHotnessName());
+
    TR::DebugCounter::prependDebugCounter(comp(), name, tt);
    }
 
@@ -6162,7 +6220,7 @@ const char * TR_InlinerTracer::getGuardTypeString(TR_VirtualGuardSelection *guar
       return "???Test";
    }
 
-TR_InlinerDelimiter::TR_InlinerDelimiter(TR_InlinerTracer *tracer, char * tag)
+TR_InlinerDelimiter::TR_InlinerDelimiter(TR_InlinerTracer *tracer, const char *tag)
    :_tracer(tracer),_tag(tag)
    {
    debugTrace(tracer,"<%s>",_tag);

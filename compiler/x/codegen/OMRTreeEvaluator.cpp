@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <algorithm>
@@ -77,6 +77,7 @@
 #include "codegen/InstOpCode.hpp"
 #include "x/codegen/BinaryCommutativeAnalyser.hpp"
 #include "x/codegen/SubtractAnalyser.hpp"
+#include "x/codegen/X86OpcodeTable.hpp"
 
 class TR_OpaqueClassBlock;
 class TR_OpaqueMethodBlock;
@@ -576,7 +577,7 @@ TR::Register *OMR::X86::TreeEvaluator::performIload(TR::Node *node, TR::MemoryRe
    return reg;
    }
 
-// also handles iaload
+// also handles aloadi
 TR::Register *OMR::X86::TreeEvaluator::aloadEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    TR::MemoryReference  *sourceMR = generateX86MemoryReference(node, cg);
@@ -685,7 +686,7 @@ bool OMR::X86::TreeEvaluator::genNullTestSequence(TR::Node *node,
    }
 
 
-// also handles iiload
+// also handles iloadi
 TR::Register *OMR::X86::TreeEvaluator::iloadEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    TR::MemoryReference  *sourceMR = generateX86MemoryReference(node, cg);
@@ -715,7 +716,7 @@ TR::Register *OMR::X86::TreeEvaluator::iloadEvaluator(TR::Node *node, TR::CodeGe
    return reg;
    }
 
-// also handles ibload
+// also handles bloadi
 TR::Register *OMR::X86::TreeEvaluator::bloadEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    TR::MemoryReference  *sourceMR = generateX86MemoryReference(node, cg);
@@ -731,7 +732,7 @@ TR::Register *OMR::X86::TreeEvaluator::bloadEvaluator(TR::Node *node, TR::CodeGe
    return reg;
    }
 
-// also handles isload
+// also handles sloadi
 TR::Register *OMR::X86::TreeEvaluator::sloadEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    TR::MemoryReference  *sourceMR = generateX86MemoryReference(node, cg);
@@ -767,27 +768,28 @@ OMR::X86::TreeEvaluator::fwrtbariEvaluator(TR::Node *node, TR::CodeGenerator *cg
    return TR::TreeEvaluator::floatingPointStoreEvaluator(node, cg);
    }
 
-// iiload handled by iloadEvaluator
+// iloadi handled by iloadEvaluator
 
-// ilload handled by lloadEvaluator
+// lloadi handled by lloadEvaluator
 
-// ialoadEvaluator handled by iloadEvaluator
+// aloadiEvaluator handled by iloadEvaluator
 
-// ibloadEvaluator handled by bloadEvaluator
+// bloadiEvaluator handled by bloadEvaluator
 
-// isloadEvaluator handled by sloadEvaluator
+// sloadiEvaluator handled by sloadEvaluator
 
-// also used for iistore, astore and iastore
+// also used for istorei, astore and astorei
 TR::Register *OMR::X86::TreeEvaluator::integerStoreEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-
-   TR::Node *valueChild;
+   TR::Node *valueChild = NULL;
    TR::Register *valueReg = NULL;
    bool genLockedOpOutOfline = true;
    TR::Compilation *comp = cg->comp();
 
    bool usingCompressedPointers = false;
-   bool usingLowMemHeap = false;
+   TR::Node *origRef = NULL; // input to compression sequence (when there is one)
+   bool isCompressedNullStore = false;
+   bool isCompressedWithoutShift = false;
 
    node->getFirstChild()->oneParentSupportsLazyClobber(comp);
    if (node->getOpCode().isIndirect())
@@ -797,38 +799,24 @@ TR::Register *OMR::X86::TreeEvaluator::integerStoreEvaluator(TR::Node *node, TR:
       if (comp->useCompressedPointers() &&
             (node->getSymbolReference()->getSymbol()->getDataType() == TR::Address))
          {
-         // pattern match the sequence
-         //     iistore f     iistore f         <- node
-         //       aload O       aload O
-         //     value           l2i
-         //                       lshr
-         //                         lsub        <- translatedNode
-         //                           a2l
-         //                             value   <- valueChild
-         //                           lconst HB
-         //                         iconst shftKonst
-         //
-         // -or- if the field is known to be null or usingLowMemHeap
-         // iistore f
-         //    aload O
-         //    l2i
-         //      a2l
-         //        value  <- valueChild
-         //
-         TR::Node *translatedNode = valueChild;
-         bool isSequence = false;
-         if (translatedNode->getOpCodeValue() == TR::l2i)
+         if (valueChild->getOpCodeValue() == TR::l2i)
             {
-            translatedNode = translatedNode->getFirstChild();
-            isSequence = true;
+            TR::Node *inner = valueChild->getChild(0);
+            bool haveShift = inner->getOpCode().isRightShift();
+            if (haveShift)
+               inner = inner->getChild(0);
+
+            if (inner->getOpCodeValue() == TR::a2l)
+               {
+               usingCompressedPointers = true;
+               origRef = inner->getChild(0);
+               isCompressedNullStore =
+                  valueChild->isZero() || inner->isZero() || origRef->isNull();
+
+               // Ignore the shift (if any) if the value is null anyway.
+               isCompressedWithoutShift = !haveShift || isCompressedNullStore;
+               }
             }
-         if (translatedNode->getOpCode().isRightShift())
-            translatedNode = translatedNode->getFirstChild(); //optional
-
-         usingLowMemHeap = true;
-
-         if (isSequence)
-            usingCompressedPointers = true;
          }
       }
    else
@@ -841,24 +829,31 @@ TR::Register *OMR::X86::TreeEvaluator::integerStoreEvaluator(TR::Node *node, TR:
    TR::Node                *originalValueChild = valueChild;
 
    bool childIsConstant = false;
+   int64_t childConstValue = TR::getMinSigned<TR::Int64>();
 
-   if (valueChild->getOpCode().isLoadConst() &&
-       valueChild->getRegister() == NULL &&
-       !usingCompressedPointers)
+   if (valueChild->getOpCode().isLoadConst() && valueChild->getRegister() == NULL)
       {
       childIsConstant = true;
+      childConstValue = valueChild->getConstValue();
+      }
+   else if (isCompressedNullStore && origRef->getRegister() == NULL)
+      {
+      childIsConstant = true;
+      childConstValue = 0;
       }
 
-   if (childIsConstant && (size <= 4 || IS_32BIT_SIGNED(valueChild->getLongInt())))
+   if (childIsConstant && (size <= 4 || IS_32BIT_SIGNED(childConstValue)))
       {
+      cg->recursivelyDecReferenceCount(valueChild); // skip evaluation of entire subtree
+
       TR::LabelSymbol * dstStored = NULL;
       TR::RegisterDependencyConditions *deps = NULL;
-      int32_t konst = valueChild->getInt();
 
-      // Note that we can use getInt() here for all sizes, since only the
+      // Note that we can truncate to 32-bit here for all sizes, since only the
       // low order "size" bytes of the int will be used by the instruction,
       // and longs only get here if the constant fits in 32 bits.
       //
+      int32_t konst = (int32_t)childConstValue;
       tempMR = generateX86MemoryReference(node, cg);
 
       if (size == 1)
@@ -895,15 +890,21 @@ TR::Register *OMR::X86::TreeEvaluator::integerStoreEvaluator(TR::Node *node, TR:
          }
 
       TR::Register *translatedReg = valueReg;
-      bool valueRegNeededInFuture = true;
-      // try to avoid unnecessary sign-extension
+
+      // try to avoid unnecessary sign-extension (or reg-reg moves in the case
+      // of a compression sequence)
       if (valueChild->getRegister()       == 0 &&
           valueChild->getReferenceCount() == 1 &&
           (valueChild->getOpCodeValue() == TR::l2i ||
            valueChild->getOpCodeValue() == TR::l2s ||
            valueChild->getOpCodeValue() == TR::l2b))
          {
-         valueChild = valueChild->getFirstChild();
+         valueChild = isCompressedWithoutShift ? origRef : valueChild->getChild(0);
+
+         // Skipping evaluation of originalValueChild, but not valueChild.
+         cg->incReferenceCount(valueChild);
+         cg->recursivelyDecReferenceCount(originalValueChild);
+
          if (cg->comp()->target().is64Bit())
             translatedReg = cg->evaluate(valueChild);
          else
@@ -914,23 +915,7 @@ TR::Register *OMR::X86::TreeEvaluator::integerStoreEvaluator(TR::Node *node, TR:
          translatedReg = cg->evaluate(valueChild);
          }
 
-      if (usingCompressedPointers && !usingLowMemHeap)
-         {
-         // do the translation and handle stores of nulls
-         //
-         valueReg = cg->evaluate(node->getSecondChild());
-
-         // check for stored value being null
-         //
-         generateRegRegInstruction(TR::InstOpCode::TESTRegReg(), node, translatedReg, translatedReg, cg);
-         generateRegRegInstruction(TR::InstOpCode::CMOVERegReg(), node, valueReg, translatedReg, cg);
-         }
-      else
-         {
-         valueReg = translatedReg;
-         if (valueChild->getReferenceCount() == 0)
-            valueRegNeededInFuture = false;
-         }
+      valueReg = translatedReg;
 
       // If the evaluation of the child resulted in a NULL register value, the
       // store has already been done by the child
@@ -954,7 +939,7 @@ TR::Register *OMR::X86::TreeEvaluator::integerStoreEvaluator(TR::Node *node, TR:
          tempMR = generateX86MemoryReference(node, cg);
 
          // in comp->useCompressedPointers we should write 4 bytes
-         // since the iastore has been changed to an iistore, size will be 4
+         // since the astorei has been changed to an istorei, size will be 4
          //
          instr = generateMemRegInstruction(opCode, node, tempMR, valueReg, cg);
 
@@ -1017,9 +1002,9 @@ TR::Register *OMR::X86::TreeEvaluator::integerStoreEvaluator(TR::Node *node, TR:
          {
          TR_ASSERT(valueChild->isDirectMemoryUpdate(), "Null valueReg should only occur in direct memory upates");
          }
-      }
 
-   cg->decReferenceCount(valueChild);
+      cg->decReferenceCount(valueChild);
+      }
 
    if (tempMR)
       tempMR->decNodeReferenceCounts(cg);
@@ -1049,9 +1034,6 @@ TR::Register *OMR::X86::TreeEvaluator::integerStoreEvaluator(TR::Node *node, TR:
 
    if (instr && node->getOpCode().isIndirect())
       cg->setImplicitExceptionPoint(instr);
-
-   if (usingCompressedPointers)
-      cg->decReferenceCount(node->getSecondChild());
 
    if (comp->useAnchors() && node->getOpCode().isIndirect())
       node->setStoreAlreadyEvaluated(true);
@@ -1108,35 +1090,44 @@ TR::Register *OMR::X86::TreeEvaluator::istoreEvaluator(TR::Node *node, TR::CodeG
 
 // astoreEvaluator handled by istoreEvaluator
 
-// also handles ibstore
+// also handles bstorei
 TR::Register *OMR::X86::TreeEvaluator::bstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    return TR::TreeEvaluator::integerStoreEvaluator(node, cg);
    }
 
-// also handles isstore
+// also handles sstorei
 TR::Register *OMR::X86::TreeEvaluator::sstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    return TR::TreeEvaluator::integerStoreEvaluator(node, cg);
    }
 
-// iistore handled by istoreEvaluator
+// istorei handled by istoreEvaluator
 
-// ilstore handled by lstoreEvaluator
+// lstorei handled by lstoreEvaluator
 
-// iastoreEvaluator handled by istoreEvaluator
+// astoreiEvaluator handled by istoreEvaluator
 
-// ibstoreEvaluator handled by bstoreEvaluator
+// bstoreiEvaluator handled by bstoreEvaluator
 
-// isstoreEvaluator handled by sstoreEvaluator
+// sstoreiEvaluator handled by sstoreEvaluator
 
 TR::Register *
 OMR::X86::TreeEvaluator::arraycmpEvaluator(
       TR::Node *node,
       TR::CodeGenerator *cg)
    {
-   return node->isArrayCmpLen() ? TR::TreeEvaluator::SSE2ArraycmpLenEvaluator(node, cg) : TR::TreeEvaluator::SSE2ArraycmpEvaluator(node, cg);
+   return TR::TreeEvaluator::SSE2ArraycmpEvaluator(node, cg);
    }
+
+TR::Register *
+OMR::X86::TreeEvaluator::arraycmplenEvaluator(
+      TR::Node *node,
+      TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::SSE2ArraycmpLenEvaluator(node, cg);
+   }
+
 
 TR::Register *OMR::X86::TreeEvaluator::SSE2ArraycmpEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
@@ -1160,7 +1151,15 @@ TR::Register *OMR::X86::TreeEvaluator::SSE2ArraycmpEvaluator(TR::Node *node, TR:
 
    TR::Register *s1Reg = cg->gprClobberEvaluate(s1AddrNode, TR::InstOpCode::MOVRegReg());
    TR::Register *s2Reg = cg->gprClobberEvaluate(s2AddrNode, TR::InstOpCode::MOVRegReg());
-   TR::Register *strLenReg = cg->gprClobberEvaluate(lengthNode, TR::InstOpCode::MOVRegReg());
+   TR::Register *strLenReg = cg->longClobberEvaluate(lengthNode);
+
+   if (cg->comp()->target().is32Bit() && strLenReg->getRegisterPair())
+      {
+      // On 32-bit, the length is guaranteed to fit into the bottom 32 bits
+      cg->stopUsingRegister(strLenReg->getHighOrder());
+      strLenReg = strLenReg->getLowOrder();
+      }
+
    TR::Register *deltaReg = cg->allocateRegister(TR_GPR);
    TR::Register *equalTestReg = cg->allocateRegister(TR_GPR);
    TR::Register *s2ByteVer1Reg = cg->allocateRegister(TR_GPR);
@@ -1291,7 +1290,8 @@ TR::Register *OMR::X86::TreeEvaluator::SSE2ArraycmpLenEvaluator(TR::Node *node, 
 
    TR::Register *s1Reg = cg->gprClobberEvaluate(s1AddrNode, TR::InstOpCode::MOVRegReg());
    TR::Register *s2Reg = cg->gprClobberEvaluate(s2AddrNode, TR::InstOpCode::MOVRegReg());
-   TR::Register *strLenReg = cg->gprClobberEvaluate(lengthNode, TR::InstOpCode::MOVRegReg());
+   TR::Register *strLenReg = cg->longClobberEvaluate(lengthNode);
+   TR::Register *highReg = NULL;
    TR::Register *equalTestReg = cg->allocateRegister(TR_GPR);
    TR::Register *s2ByteReg = cg->allocateRegister(TR_GPR);
    TR::Register *byteCounterReg = cg->allocateRegister(TR_GPR);
@@ -1301,6 +1301,14 @@ TR::Register *OMR::X86::TreeEvaluator::SSE2ArraycmpLenEvaluator(TR::Node *node, 
    TR::Register *xmm2Reg = cg->allocateRegister(TR_FPR);
 
    TR::Machine *machine = cg->machine();
+
+   if (cg->comp()->target().is32Bit() && strLenReg->getRegisterPair())
+      {
+      // On 32-bit, the length is guaranteed to fit into the bottom 32 bits
+      strLenReg = strLenReg->getLowOrder();
+      // The high 32 bits will all be zero, so we can save this reg to zero-extend the final result
+      highReg = strLenReg->getHighOrder();
+      }
 
    generateRegImmInstruction(TR::InstOpCode::MOVRegImm4(), node, resultReg, 0, cg);
    generateLabelInstruction(TR::InstOpCode::label, node, startLabel, cg);
@@ -1368,6 +1376,17 @@ TR::Register *OMR::X86::TreeEvaluator::SSE2ArraycmpLenEvaluator(TR::Node *node, 
    deps->addPostCondition(s1Reg, TR::RealRegister::NoReg, cg);
 
    generateLabelInstruction(TR::InstOpCode::label, node, doneLabel, deps, cg);
+
+   if (cg->comp()->target().is32Bit())
+      {
+      if (highReg == NULL)
+         {
+         highReg = cg->allocateRegister(TR_GPR);
+         generateRegImmInstruction(TR::InstOpCode::MOVRegImm4(), node, highReg, 0, cg);
+         }
+      resultReg = cg->allocateRegisterPair(resultReg, highReg);
+      }
+
    node->setRegister(resultReg);
 
    cg->decReferenceCount(s1AddrNode);
@@ -1685,6 +1704,379 @@ static void arrayCopy64BitPrimitiveOnIA32(TR::Node* node, TR::Register* dstReg, 
    cg->stopUsingRegister(scratch);
    }
 
+
+/** \brief
+*    Generate instructions to copy memory
+*
+*  \param node
+*     The tree node
+*
+*  \param dstReg
+*     The destination address register
+*
+*  \param srcReg
+*     The source address register
+*
+*  \param sizeReg
+*     The register holding the total size to be copied, in bytes
+*
+*  \param tmpReg1
+*     The temporary register that must support the register size (regSize)
+*
+*  \param tmpReg2
+*     The temporary register that must support the register size (regSize)
+*
+*  \param regSize
+*     The size of the register to use, in bytes
+**
+*  \param cg
+*     The code generator
+*/
+static void generateMemoryCopyInstructions(TR::Node* node,
+                                           TR::Register* dstReg,
+                                           TR::Register* srcReg,
+                                           TR::Register* sizeReg,
+                                           TR::Register* tmpReg1,
+                                           TR::Register* tmpReg2,
+                                           uint8_t regSize,
+                                           TR::CodeGenerator* cg)
+   {
+   TR::InstOpCode::Mnemonic loadOpCode;
+   TR::InstOpCode::Mnemonic storeOpCode;
+
+   bool supported = false;
+
+   switch (regSize)
+      {
+      case 1:
+         if ((tmpReg1->getKind() == TR_GPR) && (tmpReg2->getKind() == TR_GPR))
+            {
+            loadOpCode  = TR::InstOpCode::L1RegMem;
+            storeOpCode = TR::InstOpCode::S1MemReg;
+            supported = true;
+            }
+         break;
+      case 2:
+         if ((tmpReg1->getKind() == TR_GPR) && (tmpReg2->getKind() == TR_GPR))
+            {
+            loadOpCode  = TR::InstOpCode::L2RegMem;
+            storeOpCode = TR::InstOpCode::S2MemReg;
+            supported = true;
+            }
+         break;
+      case 4:
+         if ((tmpReg1->getKind() == TR_GPR) && (tmpReg2->getKind() == TR_GPR))
+            {
+            loadOpCode  = TR::InstOpCode::L4RegMem;
+            storeOpCode = TR::InstOpCode::S4MemReg;
+            supported = true;
+            }
+         else if ((tmpReg1->getKind() == TR_FPR) && (tmpReg2->getKind() == TR_FPR))
+            {
+            loadOpCode  = TR::InstOpCode::MOVDRegMem;
+            storeOpCode = TR::InstOpCode::MOVDMemReg;
+            supported = true;
+            }
+         break;
+      case 8:
+         if ((tmpReg1->getKind() == TR_GPR) && (tmpReg2->getKind() == TR_GPR))
+            {
+            loadOpCode  = TR::InstOpCode::L8RegMem;
+            storeOpCode = TR::InstOpCode::S8MemReg;
+            supported = true;
+            }
+         else if ((tmpReg1->getKind() == TR_FPR) && (tmpReg2->getKind() == TR_FPR))
+            {
+            loadOpCode  = TR::InstOpCode::MOVQRegMem;
+            storeOpCode = TR::InstOpCode::MOVQMemReg;
+            supported = true;
+            }
+         break;
+      case 16:
+         if (((tmpReg1->getKind() == TR_FPR) && (tmpReg2->getKind() == TR_FPR)) ||
+             ((tmpReg1->getKind() == TR_VRF) && (tmpReg2->getKind() == TR_VRF)))
+            {
+            loadOpCode  = TR::InstOpCode::MOVDQURegMem;
+            storeOpCode = TR::InstOpCode::MOVDQUMemReg;
+            supported = true;
+            }
+         break;
+      case 32:
+         if ((tmpReg1->getKind() == TR_VRF) && (tmpReg2->getKind() == TR_VRF))
+            {
+            loadOpCode  = TR::InstOpCode::VMOVDQUYmmMem;
+            storeOpCode = TR::InstOpCode::VMOVDQUMemYmm;
+            supported = true;
+            }
+         break;
+      case 64:
+         if ((tmpReg1->getKind() == TR_VRF) && (tmpReg2->getKind() == TR_VRF))
+            {
+            loadOpCode  = TR::InstOpCode::VMOVDQUZmmMem;
+            storeOpCode = TR::InstOpCode::VMOVDQUMemZmm;
+            supported = true;
+            }
+         break;
+      default:
+         break;
+      }
+
+   TR_ASSERT_FATAL(supported, "%s: Unsupported tmpReg1 %d tmpReg2 %d regSize %u", __FUNCTION__, tmpReg1->getKind(), tmpReg2->getKind(), regSize);
+
+   int32_t index = 0 - regSize;
+   generateRegMemInstruction(loadOpCode, node, tmpReg1, generateX86MemoryReference(srcReg, 0, cg), cg);
+   generateRegMemInstruction(loadOpCode, node, tmpReg2, generateX86MemoryReference(srcReg, sizeReg, 0, index, cg), cg);
+   generateMemRegInstruction(storeOpCode, node, generateX86MemoryReference(dstReg, 0, cg), tmpReg1, cg);
+   generateMemRegInstruction(storeOpCode, node, generateX86MemoryReference(dstReg, sizeReg, 0, index, cg), tmpReg2, cg);
+   }
+
+void OMR::X86::TreeEvaluator::arrayCopy64BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16(TR::Node *node,
+                                                                                             TR::Register *dstReg,
+                                                                                             TR::Register *srcReg,
+                                                                                             TR::Register *sizeReg,
+                                                                                             TR::Register *tmpReg1,
+                                                                                             TR::Register *tmpReg2,
+                                                                                             TR::Register *tmpXmmYmmReg1,
+                                                                                             TR::Register *tmpXmmYmmReg2,
+                                                                                             TR::CodeGenerator *cg,
+                                                                                             int32_t repMovsThresholdBytes,
+                                                                                             TR::LabelSymbol *repMovsLabel,
+                                                                                             TR::LabelSymbol *mainEndLabel)
+   {
+   if (cg->comp()->getOption(TR_TraceCG))
+      {
+      traceMsg(cg->comp(), "%s: node n%dn srcReg %s dstReg %s sizeReg %s repMovsThresholdBytes %d\n", __FUNCTION__,
+         node->getGlobalIndex(), cg->comp()->getDebug()->getName(srcReg), cg->comp()->getDebug()->getName(dstReg),
+         cg->comp()->getDebug()->getName(sizeReg), repMovsThresholdBytes);
+      }
+
+   TR_ASSERT_FATAL((repMovsThresholdBytes == 32) || (repMovsThresholdBytes == 64) || (repMovsThresholdBytes == 128),
+      "%s: repMovsThresholdBytes %d is not supported\n", __FUNCTION__, repMovsThresholdBytes);
+
+   /*
+    * This method is adapted from `arrayCopy16BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16`.
+    *
+    * The setup to run `rep movsq` is not efficient on copying smaller sizes.
+    * This method inlines copy size <= repMovsThresholdBytes without using `rep movsq`.
+    *
+    * Below is an example of repMovsThresholdBytes as 64 bytes
+    *
+    *    if copySize > 16
+    *    jmp copy24ORMoreBytesLabel ------+
+    *                                     |
+    *    if copySize == 0                 |
+    *    jmp mainEndLabel                 |
+    *                                     |
+    *    copy 8 or 16 bytes               |
+    *    jmp mainEndLabel                 |
+    *                                     |
+    *    copy24ORMoreBytesLabel: <--------+
+    *       if copySize > 32
+    *       jmp copy40ORMoreBytesLabel ---+
+    *                                     |
+    *       copy 24 or 32 bytes           |
+    *       jmp mainEndLabel              |
+    *                                     |
+    *    copy40ORMoreBytesLabel: <--------+
+    *       if copySize > 64
+    *       jmp repMovsLabel -------------+
+    *                                     |
+    *       copy 40-64 bytes              |
+    *       jmp mainEndLabel              |
+    *                                     |
+    *    repMovsLabel: <------------------+
+    *       copy 72 or more bytes
+    */
+
+   TR::LabelSymbol* copy16BytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy24ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy40ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy72ORMoreBytesLabel = generateLabelSymbol(cg);
+
+   TR::LabelSymbol* copyLabel1 = (repMovsThresholdBytes == 32) ? repMovsLabel : copy40ORMoreBytesLabel;
+   TR::LabelSymbol* copyLabel2 = (repMovsThresholdBytes == 64) ? repMovsLabel : copy72ORMoreBytesLabel;
+
+   /* ---------------------------------
+    * size <= repMovsThresholdBytes
+    */
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 16, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy24ORMoreBytesLabel, cg);
+
+   generateRegRegInstruction(TR::InstOpCode::TESTRegReg(), node, sizeReg, sizeReg, cg);
+   generateLabelInstruction(TR::InstOpCode::JE4, node, mainEndLabel, cg);
+
+   // 8 or 16 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, 8, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy24ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 32, cg);
+
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copyLabel1, cg);
+
+   // 24 or 32 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 16, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   if (repMovsThresholdBytes == 32)
+      return;
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy40ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 64, cg);
+
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copyLabel2, cg);
+
+   // 40-64 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 32, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   if (repMovsThresholdBytes == 64)
+      return;
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy72ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 128, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, repMovsLabel, cg);
+
+   // 72-128 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 64, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+   }
+
+void OMR::X86::TreeEvaluator::arrayCopy32BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16(TR::Node *node,
+                                                                                             TR::Register *dstReg,
+                                                                                             TR::Register *srcReg,
+                                                                                             TR::Register *sizeReg,
+                                                                                             TR::Register *tmpReg1,
+                                                                                             TR::Register *tmpReg2,
+                                                                                             TR::Register *tmpXmmYmmReg1,
+                                                                                             TR::Register *tmpXmmYmmReg2,
+                                                                                             TR::CodeGenerator *cg,
+                                                                                             int32_t repMovsThresholdBytes,
+                                                                                             TR::LabelSymbol *repMovsLabel,
+                                                                                             TR::LabelSymbol *mainEndLabel)
+   {
+   if (cg->comp()->getOption(TR_TraceCG))
+      {
+      traceMsg(cg->comp(), "%s: node n%dn srcReg %s dstReg %s sizeReg %s repMovsThresholdBytes %d\n", __FUNCTION__,
+         node->getGlobalIndex(), cg->comp()->getDebug()->getName(srcReg), cg->comp()->getDebug()->getName(dstReg),
+         cg->comp()->getDebug()->getName(sizeReg), repMovsThresholdBytes);
+      }
+
+   TR_ASSERT_FATAL((repMovsThresholdBytes == 32) || (repMovsThresholdBytes == 64) || (repMovsThresholdBytes == 128),
+      "%s: repMovsThresholdBytes %d is not supported\n", __FUNCTION__, repMovsThresholdBytes);
+
+   /*
+    * This method is adapted from `arrayCopy16BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16`.
+    *
+    * The setup to run `rep movsd` is not efficient on copying smaller sizes.
+    * This method inlines copy size <= repMovsThresholdBytes without using `rep movsd`.
+    *
+    * Below is an example of repMovsThresholdBytes as 64 bytes
+    *
+    *    if copySize > 16
+    *    jmp copy20ORMoreBytesLabel --------+
+    *                                       |
+    *    if copySize > 8                    |
+    *    jmp copy12RMoreBytesLabel ------+  |
+    *                                    |  |
+    *    if copySize == 0                |  |
+    *    jmp mainEndLabel                |  |
+    *                                    |  |
+    *    copy 4 or 8 bytes               |  |
+    *    jmp mainEndLabel                |  |
+    *                                    |  |
+    *    copy12RMoreBytesLabel: <--------+  |
+    *       copy 12 or 16 bytes             |
+    *       jmp mainEndLabel                |
+    *                                       |
+    *    copy20ORMoreBytesLabel: <----------+
+    *       if copySize > 32
+    *       jmp copy36ORMoreBytesLabel -----+
+    *                                       |
+    *       copy 20-32 bytes                |
+    *       jmp mainEndLabel                |
+    *                                       |
+    *    copy36ORMoreBytesLabel: <----------+
+    *       if copySize > 64
+    *       jmp repMovsLabel ---------------+
+    *                                       |
+    *       copy 34-64 bytes                |
+    *       jmp mainEndLabel                |
+    *                                       |
+    *    repMovsLabel: <--------------------+
+    *       copy 68 or more bytes
+    */
+
+   TR::LabelSymbol* copy12RMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy20ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy36ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy68ORMoreBytesLabel = generateLabelSymbol(cg);
+
+   TR::LabelSymbol* copyLabel1 = (repMovsThresholdBytes == 32) ? repMovsLabel : copy36ORMoreBytesLabel;
+   TR::LabelSymbol* copyLabel2 = (repMovsThresholdBytes == 64) ? repMovsLabel : copy68ORMoreBytesLabel;
+
+   /* ---------------------------------
+    * size <= repMovsThresholdBytes
+    */
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 16, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy20ORMoreBytesLabel, cg);
+
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 8, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy12RMoreBytesLabel, cg);
+
+   generateRegRegInstruction(TR::InstOpCode::TESTRegReg(), node, sizeReg, sizeReg, cg);
+   generateLabelInstruction(TR::InstOpCode::JE4, node, mainEndLabel, cg);
+
+   // 4 or 8 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, 4, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy12RMoreBytesLabel, cg);
+
+   // 12 or 16 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, 8, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy20ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 32, cg);
+
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copyLabel1, cg);
+
+   // 20-32 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 16, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   if (repMovsThresholdBytes == 32)
+      return;
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy36ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 64, cg);
+
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copyLabel2, cg);
+
+   // 36-64 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 32, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   if (repMovsThresholdBytes == 64)
+      return;
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy68ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 128, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, repMovsLabel, cg);
+
+   // 68-128 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 64, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+   }
+
 /** \brief
 *    Generate instructions to do array copy for 16-bit primitives.
 *
@@ -1756,6 +2148,914 @@ static void arrayCopy16BitPrimitive(TR::Node* node, TR::Register* dstReg, TR::Re
    generateLabelInstruction(TR::InstOpCode::label, node, mainEndLabel, dependencies, cg);
    }
 
+static void arrayCopy16BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16(TR::Node* node,
+                                                                           TR::Register* dstReg,
+                                                                           TR::Register* srcReg,
+                                                                           TR::Register* sizeReg,
+                                                                           TR::Register* tmpReg1,
+                                                                           TR::Register* tmpReg2,
+                                                                           TR::Register* tmpXmmYmmReg1,
+                                                                           TR::Register* tmpXmmYmmReg2,
+                                                                           TR::CodeGenerator* cg,
+                                                                           int32_t repMovsThresholdBytes,
+                                                                           TR::LabelSymbol *repMovsLabel,
+                                                                           TR::LabelSymbol* mainEndLabel)
+   {
+   if (cg->comp()->getOption(TR_TraceCG))
+      {
+      traceMsg(cg->comp(), "%s: node n%dn srcReg %s dstReg %s sizeReg %s repMovsThresholdBytes %d\n", __FUNCTION__,
+         node->getGlobalIndex(), cg->comp()->getDebug()->getName(srcReg), cg->comp()->getDebug()->getName(dstReg), cg->comp()->getDebug()->getName(sizeReg), repMovsThresholdBytes);
+      }
+
+   TR_ASSERT_FATAL((repMovsThresholdBytes == 32) || (repMovsThresholdBytes == 64), "%s: repMovsThresholdBytes %d is not supported\n", __FUNCTION__, repMovsThresholdBytes);
+
+   /*
+    * The setup to run `rep movsd` or `rep movsw` is not efficient on copying smaller sizes.
+    * This method inlines copy size <= repMovsThresholdBytes without using `rep movs[d|w]]`.
+    *
+    *    if copySize > 16
+    *       jmp copy18ORMoreBytesLabel ------+
+    *    if copySize > 2                     |
+    *       jmp copy4ORMoreBytesLabel ---+   |
+    *    if copySize == 0                |   |
+    *       jmp mainEndLabel             |   |
+    *                                    |   |
+    *    copy 2 bytes                    |   |
+    *    jmp mainEndLabel                |   |
+    *                                    |   |
+    *    copy4ORMoreBytesLabel: <--------+   |
+    *       if copySize > 8                  |
+    *       jmp copy10ORMoreBytesLabel --+   |
+    *                                    |   |
+    *       copy 4-8 bytes               |   |
+    *       jmp mainEndLabel             |   |
+    *                                    |   |
+    *    copy10ORMoreBytesLabel: <-------+   |
+    *       copy 10-16 bytes                 |
+    *       jmp mainEndLabel                 |
+    *                                        |
+    *    copy18ORMoreBytesLabel: <-----------+
+    *       if copySize > 32
+    *       jmp copy34ORMoreBytesLabel ------+
+    *                                        |
+    *       copy 18-32 bytes                 |
+    *       jmp mainEndLabel                 |
+    *                                        |
+    *    copy34ORMoreBytesLabel: <-----------+
+    *       if copySize > 64
+    *       jmp repMovsLabel ----------------+
+    *                                        |
+    *       copy 34-64 bytes                 |
+    *       jmp mainEndLabel                 |
+    *                                        |
+    *    repMovsLabel: <---------------------+
+    *       copy 66 or more bytes
+    *
+    * --------------------------------------------------
+    *
+    * Here is an example if we need to copy 48 bytes:
+    *   - Load 32 bytes from [src + size - 32] = [src + 48 - 32] = [src + 16] into temp1
+    *   - Load 32 bytes from [src] into temp2
+    *   - Store temp1 into [dst + size - 32]
+    *   - Store temp2 into [dst]
+    *
+    *   0 1 2 ......15 16............ 31 32 33.......47
+    *                  |----------- temp1 ------------|
+    *   |----------- temp2 ------------|
+    */
+
+
+   TR::LabelSymbol* copy4ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy10ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy18ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy34ORMoreBytesLabel = generateLabelSymbol(cg);
+
+   TR::LabelSymbol* copyLabel = (repMovsThresholdBytes == 32) ? repMovsLabel : copy34ORMoreBytesLabel;
+
+   /* ---------------------------------
+    * size <= repMovsThresholdBytes
+    */
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 16, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy18ORMoreBytesLabel, cg);
+
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 2, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy4ORMoreBytesLabel, cg);
+
+   generateRegRegInstruction(TR::InstOpCode::TESTRegReg(), node, sizeReg, sizeReg, cg);
+   generateLabelInstruction(TR::InstOpCode::JE4, node, mainEndLabel, cg);
+
+   // 2 Bytes
+   generateRegMemInstruction(TR::InstOpCode::L2RegMem, node, tmpReg1, generateX86MemoryReference(srcReg, 0, cg), cg);
+   generateMemRegInstruction(TR::InstOpCode::S2MemReg, node, generateX86MemoryReference(dstReg, 0, cg), tmpReg1, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy4ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 8, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy10ORMoreBytesLabel, cg);
+
+   // 4, 6, 8 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, 4, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy10ORMoreBytesLabel, cg);
+
+   // 10-16 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, 8, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy18ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 32, cg);
+
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copyLabel, cg);
+
+   // 18-32 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 16, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   if (repMovsThresholdBytes == 32)
+      return;
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy34ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 64, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, repMovsLabel, cg);
+
+   // 34-64 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 32, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+   }
+
+static void arrayCopy8BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot8(TR::Node *node,
+                                                                         TR::Register *dstReg,
+                                                                         TR::Register *srcReg,
+                                                                         TR::Register *sizeReg,
+                                                                         TR::Register *tmpReg1,
+                                                                         TR::Register *tmpReg2,
+                                                                         TR::Register *tmpXmmYmmReg1,
+                                                                         TR::Register *tmpXmmYmmReg2,
+                                                                         TR::CodeGenerator *cg,
+                                                                         int32_t repMovsThresholdBytes,
+                                                                         TR::LabelSymbol *repMovsLabel,
+                                                                         TR::LabelSymbol *mainEndLabel)
+   {
+   if (cg->comp()->getOption(TR_TraceCG))
+      {
+      traceMsg(cg->comp(), "%s: node n%dn srcReg %s dstReg %s sizeReg %s repMovsThresholdBytes %d\n", __FUNCTION__,
+         node->getGlobalIndex(), cg->comp()->getDebug()->getName(srcReg), cg->comp()->getDebug()->getName(dstReg),
+         cg->comp()->getDebug()->getName(sizeReg), repMovsThresholdBytes);
+      }
+
+   TR_ASSERT_FATAL((repMovsThresholdBytes == 32) || (repMovsThresholdBytes == 64), "%s: repMovsThresholdBytes %d is not supported\n", __FUNCTION__, repMovsThresholdBytes);
+
+   /*
+    * This method is adapted from `arrayCopy16BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16`.
+    *
+    * The setup to run `rep movsb` is not efficient on copying smaller sizes.
+    * This method inlines copy size <= repMovsThresholdBytes without using `rep movsb`.
+    *
+    *    if copySize > 8
+    *       jmp copy9ORMoreBytesLabel ----+
+    *    if copySize > 2                  |
+    *       jmp copy3ORMoreBytesLabel -+  |
+    *    if copySize == 0              |  |
+    *       jmp mainEndLabel           |  |
+    *                                  |  |
+    *    copy 1-2 bytes                |  |
+    *    jmp mainEndLabel              |  |
+    *                                  |  |
+    *    copy3ORMoreBytesLabel: <------+  |
+    *       if copySize > 4               |
+    *       jmp copy5ORMoreBytesLabel -+  |
+    *                                  |  |
+    *       copy 3-4 bytes             |  |
+    *       jmp mainEndLabel           |  |
+    *                                  |  |
+    *    copy5ORMoreBytesLabel: <------+  |
+    *       copy 5-8 Bytes                |
+    *       jmp mainEndLabel              |
+    *                                     |
+    *    copy9ORMoreBytesLabel: <---------+
+    *       if copySize > 16
+    *       jmp copy17ORMoreBytesLabel ---+
+    *                                     |
+    *       copy 9-16 bytes               |
+    *       jmp mainEndLabel              |
+    *                                     |
+    *    copy17ORMoreBytesLabel: <--------+
+    *       if copySize > 32
+    *       jmp copy33ORMoreBytesLabel ---+
+    *                                     |
+    *       copy 17-32 bytes              |
+    *       jmp mainEndLabel              |
+    *                                     |
+    *    copy33ORMoreBytesLabel: <--------+
+    *       if copySize > 64
+    *       jmp repMovsLabel -------------+
+    *                                     |
+    *       copy 33-64 bytes              |
+    *       jmp mainEndLabel              |
+    *                                     |
+    *    repMovsLabel: <------------------+
+    *       copy 65 or more bytes
+    */
+
+   /* ---------------------------------
+    * size <= repMovsThresholdBytes
+    */
+   TR::LabelSymbol* copy3ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy5ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy9ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy17ORMoreBytesLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol* copy33ORMoreBytesLabel = generateLabelSymbol(cg);
+
+   TR::LabelSymbol* copyLabel = (repMovsThresholdBytes == 32) ? repMovsLabel : copy33ORMoreBytesLabel;
+
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 8, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy9ORMoreBytesLabel, cg);
+
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 2, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy3ORMoreBytesLabel, cg);
+
+   generateRegRegInstruction(TR::InstOpCode::TESTRegReg(), node, sizeReg, sizeReg, cg);
+   generateLabelInstruction(TR::InstOpCode::JE4, node, mainEndLabel, cg);
+
+   // 1-2 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, 1, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy3ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 4, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy5ORMoreBytesLabel, cg);
+
+   // 3-4 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, 2, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy5ORMoreBytesLabel, cg);
+
+   // 5-8 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, 4, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy9ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 16, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copy17ORMoreBytesLabel, cg);
+
+   // 9-16 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, 8, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy17ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 32, cg);
+
+   generateLabelInstruction(TR::InstOpCode::JA4, node, copyLabel, cg);
+
+   // 17-32 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 16, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+
+   if (repMovsThresholdBytes == 32)
+      return;
+
+   // ---------------------------------
+   generateLabelInstruction(TR::InstOpCode::label, node, copy33ORMoreBytesLabel, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, sizeReg, 64, cg);
+   generateLabelInstruction(TR::InstOpCode::JA4, node, repMovsLabel, cg);
+
+   // 33-64 Bytes
+   generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, tmpXmmYmmReg1, tmpXmmYmmReg2, 32, cg);
+   generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+   }
+
+/** \brief
+*      Select rep movs[b|w|d|q] instruction based on element size and CPU if applicable
+*
+*   \param elementSize
+*      The size of an element, in bytes
+*
+*   \param basedOnCPU
+*      Whether or not based on CPU. Considered only if applicable
+*
+*   \param cg
+*      The code generator
+*
+*   \return
+*      The selected instruction opcode
+*/
+static TR::InstOpCode::Mnemonic selectRepMovsInstruction(uint8_t elementSize, bool basedOnCPU, TR::CodeGenerator* cg)
+   {
+   TR::InstOpCode::Mnemonic repmovs;
+
+   static bool useREPMOVSWFor16BitPrimitiveArrayCopy = feGetEnv("TR_UseREPMOVSWFor16BitPrimitiveArrayCopy") != NULL;
+   static bool useREPMOVSDFor16BitPrimitiveArrayCopy = feGetEnv("TR_UseREPMOVSDFor16BitPrimitiveArrayCopy") != NULL;
+
+   switch (elementSize)
+      {
+      case 8:
+         {
+         repmovs = TR::InstOpCode::REPMOVSQ;
+         break;
+         }
+      case 4:
+         {
+         repmovs = TR::InstOpCode::REPMOVSD;
+         break;
+         }
+      case 2:
+         {
+         repmovs = TR::InstOpCode::REPMOVSW;
+
+         if (basedOnCPU)
+            {
+            if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_X86_INTEL_CASCADELAKE) &&
+                cg->comp()->target().cpu.isAtMost(OMR_PROCESSOR_X86_INTEL_LAST))
+               {
+               repmovs = TR::InstOpCode::REPMOVSW; // Cascadelake and up rep movsw performs better than rep movsd
+               }
+            else
+               {
+               repmovs = TR::InstOpCode::REPMOVSD;
+               }
+
+            if (useREPMOVSWFor16BitPrimitiveArrayCopy)
+               repmovs = TR::InstOpCode::REPMOVSW;
+
+            if (useREPMOVSDFor16BitPrimitiveArrayCopy)
+               repmovs = TR::InstOpCode::REPMOVSD;
+            }
+
+         break;
+         }
+      default:
+         {
+         repmovs = TR::InstOpCode::REPMOVSB;
+         break;
+         }
+      }
+
+   return repmovs;
+   }
+
+/** \brief
+*      Generate rep movs[b|w|d|q] instructions to do memory copy based on element size
+*
+*   \param elementSize
+*      The size of an element, in bytes
+*
+*   \param basedOnCPU
+*      Whether or not based on CPU. Used only if applicable element size
+*
+*   \param node
+*      The tree node
+*
+*   \param dstReg
+*      The destination address register
+*
+*   \param srcReg
+*      The source address register
+*
+*   \param sizeReg
+*      The register holding the total size of elements to be copied, in bytes
+*
+*   \param dependencies
+*      Register dependencies if there is any
+*
+*   \param mainEndLabel
+*      The main end label
+*
+*   \param cg
+*      The code generator
+*
+*/
+static void generateRepMovsInstructionBasedOnElementSize(uint8_t elementSize,
+                                                         bool basedOnCPU,
+                                                         TR::Node* node,
+                                                         TR::Register* dstReg,
+                                                         TR::Register* srcReg,
+                                                         TR::Register* sizeReg,
+                                                         TR::RegisterDependencyConditions* dependencies,
+                                                         TR::LabelSymbol* mainEndLabel,
+                                                         TR::CodeGenerator* cg)
+   {
+   TR::InstOpCode::Mnemonic repmovs = selectRepMovsInstruction(elementSize, basedOnCPU, cg);
+
+   if (cg->comp()->getOption(TR_TraceCG))
+      {
+      traceMsg(cg->comp(), "%s: node n%dn elementSize %u basedOnCPU %d repmovs %d processor %d %s\n", __FUNCTION__, node->getGlobalIndex(), elementSize, basedOnCPU,
+         repmovs, cg->comp()->target().cpu.getProcessorDescription().processor, cg->comp()->target().cpu.getProcessorName());
+      }
+
+   switch (elementSize)
+      {
+      case 8:
+         {
+         TR_ASSERT_FATAL(repmovs == TR::InstOpCode::REPMOVSQ, "Unsupported REP MOVS opcode %d for elementSize 8\n", repmovs);
+
+         generateRegImmInstruction(TR::InstOpCode::SHRRegImm1(), node, sizeReg, 3, cg);
+         generateInstruction(TR::InstOpCode::REPMOVSQ, node, dependencies, cg);
+
+         break;
+         }
+      case 4:
+         {
+         TR_ASSERT_FATAL(repmovs == TR::InstOpCode::REPMOVSD, "Unsupported REP MOVS opcode %d for elementSize 4\n", repmovs);
+
+         generateRegImmInstruction(TR::InstOpCode::SHRRegImm1(), node, sizeReg, 2, cg);
+         generateInstruction(TR::InstOpCode::REPMOVSD, node, dependencies, cg);
+
+         break;
+         }
+      case 2:
+         {
+         if (repmovs == TR::InstOpCode::REPMOVSD)
+            {
+            generateRegImmInstruction(TR::InstOpCode::SHRRegImm1(), node, sizeReg, 2, cg);
+            generateInstruction(TR::InstOpCode::REPMOVSD, node, cg);
+            generateLabelInstruction(TR::InstOpCode::JAE1, node, mainEndLabel, cg);
+            generateRegMemInstruction(TR::InstOpCode::L2RegMem, node, sizeReg, generateX86MemoryReference(srcReg, 0, cg), cg);
+            generateMemRegInstruction(TR::InstOpCode::S2MemReg, node, generateX86MemoryReference(dstReg, 0, cg), sizeReg, cg);
+            }
+         else if (repmovs == TR::InstOpCode::REPMOVSW)
+            {
+            generateRegInstruction(TR::InstOpCode::SHRReg1(), node, sizeReg, cg);
+            generateInstruction(TR::InstOpCode::REPMOVSW, node, dependencies, cg);
+            }
+         else
+            {
+            TR_ASSERT_FATAL(false, "Unsupported REP MOVS opcode %d for elementSize 2\n", repmovs);
+            }
+         break;
+         }
+      default:
+         {
+         TR_ASSERT_FATAL((repmovs == TR::InstOpCode::REPMOVSB) && (elementSize == 1), "Unsupported REP MOVS opcode %d for elementSize %u\n", repmovs, elementSize);
+
+         generateInstruction(TR::InstOpCode::REPMOVSB, node, dependencies, cg);
+         break;
+         }
+      }
+   }
+
+/** \brief
+*    Generate instructions to do primitive array copy without using rep movs for smaller copy size
+*
+*  \param node
+*     The tree node
+*
+*  \param dstReg
+*     The destination array address register
+*
+*  \param srcReg
+*     The source array address register
+*
+*  \param sizeReg
+*     The register holding the total size of elements to be copied, in bytes
+*
+*  \param cg
+*     The code generator
+*
+*  \param elementSize
+*     The size of an element, in bytes
+*
+*  \param repMovsThresholdBytes
+*     The size is used to determine when to use rep movs[b|w|d|q]
+*
+*/
+static void arrayCopyPrimitiveInlineSmallSizeWithoutREPMOVS(TR::Node* node,
+                                                            TR::Register* dstReg,
+                                                            TR::Register* srcReg,
+                                                            TR::Register* sizeReg,
+                                                            TR::CodeGenerator* cg,
+                                                            uint8_t elementSize,
+                                                            int32_t repMovsThresholdBytes)
+   {
+   TR::Register* tmpReg1 = cg->allocateRegister(TR_GPR);
+   TR::Register* tmpReg2 = cg->allocateRegister(TR_GPR);
+   TR::Register* tmpXmmYmmReg1 = cg->allocateRegister(TR_VRF);
+   TR::Register* tmpXmmYmmReg2 = cg->allocateRegister(TR_VRF);
+
+   TR::RegisterDependencyConditions* dependencies = generateRegisterDependencyConditions((uint8_t)7, (uint8_t)7, cg);
+
+   dependencies->addPreCondition(srcReg, TR::RealRegister::esi, cg);
+   dependencies->addPreCondition(dstReg, TR::RealRegister::edi, cg);
+   dependencies->addPreCondition(sizeReg, TR::RealRegister::ecx, cg);
+   dependencies->addPreCondition(tmpReg1, TR::RealRegister::NoReg, cg);
+   dependencies->addPreCondition(tmpReg2, TR::RealRegister::NoReg, cg);
+   dependencies->addPreCondition(tmpXmmYmmReg1, TR::RealRegister::NoReg, cg);
+   dependencies->addPreCondition(tmpXmmYmmReg2, TR::RealRegister::NoReg, cg);
+
+   dependencies->addPostCondition(srcReg, TR::RealRegister::esi, cg);
+   dependencies->addPostCondition(dstReg, TR::RealRegister::edi, cg);
+   dependencies->addPostCondition(sizeReg, TR::RealRegister::ecx, cg);
+   dependencies->addPostCondition(tmpReg1, TR::RealRegister::NoReg, cg);
+   dependencies->addPostCondition(tmpReg2, TR::RealRegister::NoReg, cg);
+   dependencies->addPostCondition(tmpXmmYmmReg1, TR::RealRegister::NoReg, cg);
+   dependencies->addPostCondition(tmpXmmYmmReg2, TR::RealRegister::NoReg, cg);
+
+   TR::LabelSymbol* mainBegLabel = generateLabelSymbol(cg);
+   mainBegLabel->setStartInternalControlFlow();
+
+   TR::LabelSymbol* mainEndLabel = generateLabelSymbol(cg);
+   mainEndLabel->setEndInternalControlFlow();
+
+   TR::LabelSymbol* repMovsLabel = generateLabelSymbol(cg);
+
+   generateLabelInstruction(TR::InstOpCode::label, node, mainBegLabel, cg);
+
+   switch (elementSize)
+      {
+      case 8:
+         OMR::X86::TreeEvaluator::arrayCopy64BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2,
+                                                                                                 tmpXmmYmmReg1, tmpXmmYmmReg2, cg, repMovsThresholdBytes, repMovsLabel, mainEndLabel);
+         break;
+      case 4:
+         OMR::X86::TreeEvaluator::arrayCopy32BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2,
+                                                                                                 tmpXmmYmmReg1, tmpXmmYmmReg2, cg, repMovsThresholdBytes, repMovsLabel, mainEndLabel);
+         break;
+      case 2:
+         arrayCopy16BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, tmpXmmYmmReg1, tmpXmmYmmReg2, cg, repMovsThresholdBytes, repMovsLabel, mainEndLabel);
+         break;
+      default: // 1-byte
+         arrayCopy8BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot8(node, dstReg, srcReg, sizeReg, tmpReg1, tmpReg2, tmpXmmYmmReg1, tmpXmmYmmReg2, cg, repMovsThresholdBytes, repMovsLabel, mainEndLabel);
+         break;
+   }
+
+   /* ---------------------------------
+    * repMovsLabel:
+    *   rep movs[b|w|d|q]
+    * mainEndLabel:
+    */
+   generateLabelInstruction(TR::InstOpCode::label, node, repMovsLabel, cg);
+
+   if (node->isForwardArrayCopy())
+      {
+      generateRepMovsInstructionBasedOnElementSize(elementSize, true /* basedOnCPU */, node, dstReg, srcReg, sizeReg, dependencies, mainEndLabel, cg);
+      }
+   else // decide direction during runtime
+      {
+      TR::LabelSymbol* backwardLabel = generateLabelSymbol(cg);
+
+      generateRegRegInstruction(TR::InstOpCode::SUBRegReg(), node, dstReg, srcReg, cg);  // dst = dst - src
+      generateRegRegInstruction(TR::InstOpCode::CMPRegReg(), node, dstReg, sizeReg, cg); // cmp dst, size
+      generateRegMemInstruction(TR::InstOpCode::LEARegMem(), node, dstReg, generateX86MemoryReference(dstReg, srcReg, 0, cg), cg); // dst = dst + src
+      generateLabelInstruction(TR::InstOpCode::JB4, node, backwardLabel, cg);   // jb, skip backward copy setup
+
+      generateRepMovsInstructionBasedOnElementSize(elementSize, true /* basedOnCPU */, node, dstReg, srcReg, sizeReg, NULL, mainEndLabel, cg);
+
+      {
+      TR_OutlinedInstructionsGenerator og(backwardLabel, node, cg);
+      generateRegMemInstruction(TR::InstOpCode::LEARegMem(), node, srcReg, generateX86MemoryReference(srcReg, sizeReg, 0, -(intptr_t)elementSize, cg), cg);
+      generateRegMemInstruction(TR::InstOpCode::LEARegMem(), node, dstReg, generateX86MemoryReference(dstReg, sizeReg, 0, -(intptr_t)elementSize, cg), cg);
+      generateInstruction(TR::InstOpCode::STD, node, cg);
+
+      generateRepMovsInstructionBasedOnElementSize(elementSize, false /* basedOnCPU */, node, dstReg, srcReg, sizeReg, NULL, mainEndLabel, cg);
+
+      generateInstruction(TR::InstOpCode::CLD, node, cg);
+      generateLabelInstruction(TR::InstOpCode::JMP4, node, mainEndLabel, cg);
+      og.endOutlinedInstructionSequence();
+      }
+      }
+
+   generateLabelInstruction(TR::InstOpCode::label, node, mainEndLabel, dependencies, cg);
+
+   cg->stopUsingRegister(tmpReg1);
+   cg->stopUsingRegister(tmpReg2);
+   cg->stopUsingRegister(tmpXmmYmmReg1);
+   cg->stopUsingRegister(tmpXmmYmmReg2);
+   }
+
+static bool enablePrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS(uint8_t elementSize, TR::CodeGenerator* cg, int32_t& threshold)
+   {
+   if (!cg->comp()->target().cpu.supportsAVX() || !cg->comp()->target().is64Bit())
+      return false;
+
+   static bool disable8BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS  = feGetEnv("TR_Disable8BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS") != NULL;
+   static bool disable16BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS = feGetEnv("TR_Disable16BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS") != NULL;
+   static bool disable32BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS = feGetEnv("TR_Disable32BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS") != NULL;
+   static bool disable64BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS = feGetEnv("TR_Disable64BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS") != NULL;
+
+   bool disableEnhancement = false;
+
+   threshold = 32;
+
+   switch (elementSize)
+      {
+      case 8:
+         {
+         disableEnhancement = disable64BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS
+                              || cg->comp()->getOption(TR_Disable64BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS);
+
+         int32_t newThreshold = cg->comp()->getOptions()->getArraycopyRepMovsLongArrayThreshold();
+         if ((threshold < newThreshold) && ((newThreshold == 64) || (newThreshold == 128)))
+            {
+            // If the CPU doesn't support AVX512, reduce the threshold to 64 bytes
+            threshold = ((newThreshold == 128) && !cg->comp()->target().cpu.supportsFeature(OMR_FEATURE_X86_AVX512F)) ? 64 : newThreshold;
+            }
+         }
+         break;
+      case 4:
+         {
+         disableEnhancement = disable32BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS
+                              || cg->comp()->getOption(TR_Disable32BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS);
+
+         int32_t newThreshold = cg->comp()->getOptions()->getArraycopyRepMovsIntArrayThreshold();
+         if ((threshold < newThreshold) && ((newThreshold == 64) || (newThreshold == 128)))
+            {
+            // If the CPU doesn't support AVX512, reduce the threshold to 64 bytes
+            threshold = ((newThreshold == 128) && !cg->comp()->target().cpu.supportsFeature(OMR_FEATURE_X86_AVX512F)) ? 64 : newThreshold;
+            }
+         }
+         break;
+      case 2:
+         {
+         disableEnhancement = disable16BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS
+                              || cg->comp()->getOption(TR_Disable16BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS);
+
+         int32_t newThreshold = cg->comp()->getOptions()->getArraycopyRepMovsCharArrayThreshold();
+
+         // Char array enhancement supports only 32 or 64 bytes
+         threshold = (newThreshold == 64) ? 64 : threshold;
+         }
+         break;
+      default: // 1 byte
+         {
+         disableEnhancement = disable8BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS
+                              || cg->comp()->getOption(TR_Disable8BitPrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS);
+
+         int32_t newThreshold = cg->comp()->getOptions()->getArraycopyRepMovsByteArrayThreshold();
+
+         // Byte array enhancement supports only 32 or 64 bytes
+         threshold = (newThreshold == 64) ? 64 : threshold;
+         }
+         break;
+      }
+
+   return disableEnhancement ? false : true;
+   }
+
+/** \brief
+ *    Generate a store instruction
+ *
+ *  \param node
+ *     The tree node
+ *
+ *  \param addressReg
+ *     The base register for the destination mem address
+ *
+ *  \param index
+ *     The index for the destination mem address
+ *
+ *  \param valueReg
+ *     The value that needs be stored
+ *
+ *  \param size
+ *     The size of valueReg
+ *
+ *  \param cg
+ *     The code generator
+ *
+ */
+static void generateArrayElementStore(TR::Node* node, TR::Register* addressReg, int32_t index, TR::Register* valueReg, uint8_t size, TR::CodeGenerator* cg)
+   {
+   TR::InstOpCode::Mnemonic storeOpcode;
+   if (valueReg->getKind() == TR_VRF)
+      {
+      switch (size)
+         {
+         case 16:
+            storeOpcode  = TR::InstOpCode::MOVDQUMemReg;
+            break;
+         case 32:
+            storeOpcode  = TR::InstOpCode::VMOVDQUMemYmm;
+            break;
+         case 64:
+            storeOpcode  = TR::InstOpCode::VMOVDQUMemZmm;
+            break;
+         default:
+            TR_ASSERT_FATAL(0, "%s: Unsupported size: %u for TR_VRF registers\n", __FUNCTION__, size);
+            break;
+         }
+      }
+   else if (valueReg->getKind() == TR_FPR)
+      {
+      switch (size)
+         {
+         case 4:
+            storeOpcode = TR::InstOpCode::MOVDMemReg;
+            break;
+         case 8:
+            storeOpcode = TR::InstOpCode::MOVQMemReg;
+            break;
+         default:
+            TR_ASSERT_FATAL(0, "%s: Unsupported size: %u for TR_FPR registers\n", __FUNCTION__, size);
+            break;
+         }
+      }
+   else if (valueReg->getKind() == TR_GPR)
+      {
+      switch (size)
+         {
+         case 1:
+            storeOpcode = TR::InstOpCode::S1MemReg;
+            break;
+         case 2:
+            storeOpcode = TR::InstOpCode::S2MemReg;
+            break;
+         case 4:
+            storeOpcode = TR::InstOpCode::S4MemReg;
+            break;
+         case 8:
+            storeOpcode = TR::InstOpCode::S8MemReg;
+            break;
+         default:
+            TR_ASSERT_FATAL(0, "%s: Unsupported size: %u for TR_GPR registers\n", __FUNCTION__, size);
+            break;
+
+         }
+      }
+   else
+      {
+      TR_ASSERT_FATAL(0, "%s: Unsupported register type %d\n", __FUNCTION__, valueReg->getKind());
+      }
+   generateMemRegInstruction(storeOpcode, node, generateX86MemoryReference(addressReg, index, cg), valueReg, cg);
+   }
+
+/** \brief
+ *    Generate a load instruction
+ *
+ *  \param node
+ *     The tree node
+ *
+ *  \param valueReg
+ *     The destination register
+ *
+ *  \param size
+ *     The size of the loaded value
+ *
+ *  \param addressReg
+ *     The base register for the source mem address
+ *
+ *  \param index
+ *     The index for the destination mem address
+ *
+ *  \param cg
+ *     The code generator
+ */
+static void generateArrayElementLoad(TR::Node* node, TR::Register* valueReg, uint8_t size, TR::Register* addressReg, int32_t index, TR::CodeGenerator* cg)
+   {
+   TR::InstOpCode::Mnemonic loadOpCode;
+   if (valueReg->getKind() == TR_VRF)
+      {
+      switch (size)
+         {
+         case 16:
+            loadOpCode  = TR::InstOpCode::MOVDQURegMem;
+            break;
+         case 32:
+            loadOpCode  = TR::InstOpCode::VMOVDQUYmmMem;
+            break;
+         case 64:
+            loadOpCode  = TR::InstOpCode::VMOVDQUZmmMem;
+            break;
+         default:
+            TR_ASSERT_FATAL(0, "%s: Unsupported size %u for TR_VRF registers\n", __FUNCTION__, size);
+            break;
+         }
+      }
+   else if (valueReg->getKind() == TR_FPR)
+      {
+      switch (size)
+         {
+         case 4:
+            loadOpCode  = TR::InstOpCode::MOVDRegMem;
+            break;
+         case 8:
+            loadOpCode  = TR::InstOpCode::MOVQRegMem;
+            break;
+         default:
+            TR_ASSERT_FATAL(0, "%s: Unsupported size %u for TR_FPR registers\n", __FUNCTION__, size);
+            break;
+         }
+      }
+   else if (valueReg->getKind() == TR_GPR)
+      {
+      switch (size)
+         {
+         case 1:
+            loadOpCode  = TR::InstOpCode::L1RegMem;
+            break;
+         case 2:
+            loadOpCode  = TR::InstOpCode::L2RegMem;
+            break;
+         case 4:
+            loadOpCode  = TR::InstOpCode::L4RegMem;
+            break;
+         case 8:
+            loadOpCode  = TR::InstOpCode::L8RegMem;
+            break;
+         default:
+            TR_ASSERT_FATAL(0, "%s: Unsupported size %u for TR_GPR registers\n", __FUNCTION__, size);
+            break;
+
+         }
+      }
+   else
+      {
+      TR_ASSERT_FATAL(0, "%s: Unsupported register type %d\n", __FUNCTION__, valueReg->getKind());
+      }
+   generateRegMemInstruction(loadOpCode,  node, valueReg, generateX86MemoryReference(addressReg, index, cg), cg);
+   }
+
+/** \brief
+*    Generate instructions to do array copy with copy size as a constant
+*
+*  \param node
+*     The tree node
+*
+*  \param dstReg
+*     The destination array address register
+*
+*  \param srcReg
+*     The source array address register
+*
+*  \param sizeReg
+*     The register holding the total size of elements to be copied, in bytes
+*
+*  \param elementSize
+*     The size of an element, in bytes
+*
+*  \param copySize
+*     The copy size, in bytes
+*
+*  \param cg
+*     The code generator
+*/
+static void arrayCopyPrimitiveInlineSmallSizeConstantCopySize(TR::Node* node,
+                                                              TR::Register* dstReg,
+                                                              TR::Register* srcReg,
+                                                              TR::Register* sizeReg,
+                                                              uint32_t copySize,
+                                                              TR::CodeGenerator* cg)
+   {
+   if (cg->comp()->getOption(TR_TraceCG))
+      {
+      traceMsg(cg->comp(), "%s: node n%dn srcReg %s dstReg %s sizeReg %s copySize %d\n", __FUNCTION__, node->getGlobalIndex(),
+         cg->comp()->getDebug()->getName(srcReg), cg->comp()->getDebug()->getName(dstReg), cg->comp()->getDebug()->getName(sizeReg), copySize);
+      }
+
+   if (copySize == 0)
+      return;
+
+   TR_ASSERT_FATAL(copySize <= 64, "%s: copySize %u is not supported\n", __FUNCTION__, copySize);
+
+   TR::Register* tmpReg1 = cg->allocateRegister(TR_GPR);
+   TR::Register* tmpReg2 = cg->allocateRegister(TR_GPR);
+   TR::Register* tmpVRFReg1 = cg->allocateRegister(TR_VRF);
+   TR::Register* tmpVRFReg2 = cg->allocateRegister(TR_VRF);
+
+   if (((copySize < 64) && ((copySize & (copySize - 1)) == 0)) // power of 2
+       || ((copySize == 64) && cg->comp()->target().cpu.supportsFeature(OMR_FEATURE_X86_AVX512F)))
+      {
+      TR::Register* valueReg = (copySize >= 16) ? tmpVRFReg1 : tmpReg1;
+      generateArrayElementLoad(node, valueReg, copySize, srcReg, 0 /* index */, cg);
+      generateArrayElementStore(node, dstReg, 0 /* index */, valueReg, copySize, cg);
+      }
+   else
+      {
+      uint8_t regSize = 0;
+      TR::Register* t1 = tmpReg1;
+      TR::Register* t2 = tmpReg2;
+
+      if (copySize < 8)
+         {
+         regSize = (copySize < 4) ? 2 : 4;
+         }
+      else if (copySize < 16) // 8-15
+         {
+         regSize = 8;
+         }
+      else // 16-64
+         {
+         regSize = (copySize < 32) ? 16 : 32;
+         t1 = tmpVRFReg1;
+         t2 = tmpVRFReg2;
+         }
+      generateMemoryCopyInstructions(node, dstReg, srcReg, sizeReg, t1, t2, regSize, cg);
+      }
+
+   cg->stopUsingRegister(tmpReg1);
+   cg->stopUsingRegister(tmpReg2);
+   cg->stopUsingRegister(tmpVRFReg1);
+   cg->stopUsingRegister(tmpVRFReg2);
+   }
+
 /** \brief
 *    Generate instructions to do array copy.
 *
@@ -1779,6 +3079,27 @@ static void arrayCopy16BitPrimitive(TR::Node* node, TR::Register* dstReg, TR::Re
 */
 static void arrayCopyDefault(TR::Node* node, uint8_t elementSize, TR::Register* dstReg, TR::Register* srcReg, TR::Register* sizeReg, TR::CodeGenerator* cg)
    {
+   int32_t repMovsThresholdBytes = 0;
+   if (enablePrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS(elementSize, cg, repMovsThresholdBytes))
+      {
+      static bool disableArrayCopyInlineSmallSizeConstantCopySize = feGetEnv("TR_DisableArrayCopyInlineSmallSizeConstantCopySize") != NULL;
+      TR::Node* sizeNode = node->getChild(2); // the size of memory to copy, in bytes
+
+      if (sizeNode->getOpCode().isLoadConst() && !disableArrayCopyInlineSmallSizeConstantCopySize)
+         {
+         uint32_t copySize = static_cast<uint32_t>(TR::TreeEvaluator::integerConstNodeValue(sizeNode, cg));
+
+         if (copySize <= 64)
+            {
+            arrayCopyPrimitiveInlineSmallSizeConstantCopySize(node, dstReg, srcReg, sizeReg, copySize, cg);
+            return;
+            }
+         }
+
+      arrayCopyPrimitiveInlineSmallSizeWithoutREPMOVS(node, dstReg, srcReg, sizeReg, cg, elementSize, repMovsThresholdBytes);
+      return;
+      }
+
    TR::RegisterDependencyConditions* dependencies = generateRegisterDependencyConditions((uint8_t)3, (uint8_t)3, cg);
    dependencies->addPreCondition(srcReg, TR::RealRegister::esi, cg);
    dependencies->addPreCondition(dstReg, TR::RealRegister::edi, cg);
@@ -1839,149 +3160,6 @@ static void arrayCopyDefault(TR::Node* node, uint8_t elementSize, TR::Register* 
    }
 
 /** \brief
- *    Generate a store instruction
- *
- *  \param node
- *     The tree node
- *
- *  \param addressReg
- *     The base register for the destination mem address
- *
- *  \param index
- *     The index for the destination mem address
- *
- *  \param valueReg
- *     The value that needs be stored
- *
- *  \param size
- *     The size of valueReg
- *
- *  \param cg
- *     The code generator
- *
- */
-static void generateArrayElementStore(TR::Node* node, TR::Register* addressReg, int32_t index, TR::Register* valueReg, uint8_t size,  TR::CodeGenerator* cg)
-   {
-   TR::InstOpCode::Mnemonic storeOpcode;
-   if (valueReg->getKind() == TR_FPR)
-      {
-      switch (size)
-         {
-         case 4:
-            storeOpcode = TR::InstOpCode::MOVDMemReg;
-            break;
-         case 8:
-            storeOpcode = TR::InstOpCode::MOVQMemReg;
-            break;
-         case 16:
-            storeOpcode = TR::InstOpCode::MOVDQUMemReg;
-            break;
-         default:
-            TR_ASSERT(0, "Unsupported size in generateArrayElementStore, size: %d", size);
-            break;
-         }
-      }
-   else if (valueReg->getKind() == TR_GPR)
-      {
-      switch (size)
-         {
-         case 1:
-            storeOpcode = TR::InstOpCode::S1MemReg;
-            break;
-         case 2:
-            storeOpcode = TR::InstOpCode::S2MemReg;
-            break;
-         case 4:
-            storeOpcode = TR::InstOpCode::S4MemReg;
-            break;
-         case 8:
-            storeOpcode = TR::InstOpCode::S8MemReg;
-            break;
-         default:
-            TR_ASSERT(0, "Unsupported size in generateArrayElementStore, size: %d", size);
-            break;
-
-         }
-      }
-   else
-      {
-      TR_ASSERT(0, "Unsupported register type in generateArrayElementStore");
-      }
-   generateMemRegInstruction(storeOpcode, node, generateX86MemoryReference(addressReg, index, cg), valueReg, cg);
-   }
-
-/** \brief
- *    Generate a load instruction
- *
- *  \param node
- *     The tree node
- *
- *  \param valueReg
- *     The destination register
- *
- *  \param size
- *     The size of the loaded value
- *
- *  \param addressReg
- *     The base register for the source mem address
- *
- *  \param index
- *     The index for the destination mem address
- *
- *  \param cg
- *     The code generator
- */
-static void generateArrayElementLoad(TR::Node* node, TR::Register* valueReg, uint8_t size, TR::Register* addressReg, int32_t index, TR::CodeGenerator* cg)
-   {
-   TR::InstOpCode::Mnemonic loadOpCode;
-   if (valueReg->getKind() == TR_FPR)
-      {
-      switch (size)
-         {
-         case 4:
-            loadOpCode  = TR::InstOpCode::MOVDRegMem;
-            break;
-         case 8:
-            loadOpCode  = TR::InstOpCode::MOVQRegMem;
-            break;
-         case 16:
-            loadOpCode  = TR::InstOpCode::MOVDQURegMem;
-            break;
-         default:
-            TR_ASSERT(0, "Unsupported size in generateArrayElementLoad, size: %d", size);
-            break;
-         }
-      }
-   else if (valueReg->getKind() == TR_GPR)
-      {
-      switch (size)
-         {
-         case 1:
-            loadOpCode  = TR::InstOpCode::L1RegMem;
-            break;
-         case 2:
-            loadOpCode  = TR::InstOpCode::L2RegMem;
-            break;
-         case 4:
-            loadOpCode  = TR::InstOpCode::L4RegMem;
-            break;
-         case 8:
-            loadOpCode  = TR::InstOpCode::L8RegMem;
-            break;
-         default:
-            TR_ASSERT(0, "Unsupported size in generateArrayElementLoad, size: %d", size);
-            break;
-
-         }
-      }
-   else
-      {
-      TR_ASSERT(0, "Unsupported register type in generateArrayElementLoad");
-      }
-   generateRegMemInstruction(loadOpCode,  node, valueReg, generateX86MemoryReference(addressReg, index, cg), cg);
-   }
-
-/** \brief
  *    Generate instructions to do arraycopy for a short constant array. We try to copy as many elements as we can every time.
  *
  *  \param node
@@ -2015,7 +3193,7 @@ static void arraycopyForShortConstArrayWithDirection(TR::Node* node, TR::Registe
          {
          if (xmmReg == NULL && regSize[i] == 16)
             {
-            xmmReg = cg->allocateRegister(TR_FPR);
+            xmmReg = cg->allocateRegister(TR_VRF);
             }
          else if (gprReg == NULL && regSize[i] < 16)
             {
@@ -2072,7 +3250,7 @@ static void arraycopyForShortConstArrayWithoutDirection(TR::Node* node, TR::Regi
    // First load as many bytes as possible into XMM
    for (uint32_t i=0; i<moves[0]; i++)
       {
-      TR::Register* xmmReg = cg->allocateRegister(TR_FPR);
+      TR::Register* xmmReg = cg->allocateRegister(TR_VRF);
       generateArrayElementLoad(node, xmmReg, 16, srcReg, i*16, cg);
       xmmUsed[i] = xmmReg;
       }
@@ -2099,7 +3277,7 @@ static void arraycopyForShortConstArrayWithoutDirection(TR::Node* node, TR::Regi
       }
    else if (totalSize > 16 && residue > 0) // shift 1 xmm
       {
-      reg1 = cg->allocateRegister(TR_FPR);
+      reg1 = cg->allocateRegister(TR_VRF);
       generateArrayElementLoad(node, reg1, 16, srcReg, totalSize - 16, cg);
       residueCase = 2;
       }
@@ -2113,7 +3291,7 @@ static void arraycopyForShortConstArrayWithoutDirection(TR::Node* node, TR::Regi
       }
    else if (residue != 0) // 1 gpr + 1 xmm
       {
-      reg1 = cg->allocateRegister(TR_FPR);
+      reg1 = cg->allocateRegister(TR_VRF);
       reg2 = srcReg;
       firstLoadSizeForCase4  = residue>8? 8:4;
       secondLoadSizeForCase4 = (residue - firstLoadSizeForCase4);
@@ -2227,6 +3405,7 @@ TR::Register *OMR::X86::TreeEvaluator::arraycopyEvaluator(TR::Node *node, TR::Co
       }
    else
       {
+      int32_t repMovsThresholdBytes = 0;
       bool isSize64Bit = TR::TreeEvaluator::getNodeIs64Bit(sizeNode, cg);
       TR::Register* sizeReg = cg->gprClobberEvaluate(sizeNode, TR::InstOpCode::MOVRegReg(isSize64Bit));
       if (cg->comp()->target().is64Bit() && !isSize64Bit)
@@ -2237,7 +3416,7 @@ TR::Register *OMR::X86::TreeEvaluator::arraycopyEvaluator(TR::Node *node, TR::Co
          {
          arrayCopy64BitPrimitiveOnIA32(node, dstReg, srcReg, sizeReg, cg);
          }
-      else if (elementSize == 2 && !useREPMOVSW)
+      else if (elementSize == 2 && !useREPMOVSW && !enablePrimitiveArrayCopyInlineSmallSizeWithoutREPMOVS(2, cg, repMovsThresholdBytes))
          {
          arrayCopy16BitPrimitive(node, dstReg, srcReg, sizeReg, cg);
          }
@@ -2350,7 +3529,25 @@ TR::Register *OMR::X86::TreeEvaluator::arraytranslateEvaluator(TR::Node *node, T
 
 static void packUsingShift(TR::Node* node, TR::Register* tempReg, TR::Register* sourceReg, int32_t size, TR::CodeGenerator* cg)
    {
-   generateRegRegInstruction(TR::InstOpCode::MOV8RegReg, node, tempReg, sourceReg, cg);
+   TR::InstOpCode movInsn = TR::InstOpCode::bad;
+
+   switch (size)
+      {
+      case 1:
+         movInsn = TR::InstOpCode::MOVZXReg2Reg1;
+         break;
+      case 2:
+         movInsn = TR::InstOpCode::MOVZXReg4Reg2;
+         break;
+      case 4:
+         movInsn = TR::InstOpCode::MOVZXReg8Reg4;
+         break;
+      default:
+         TR_ASSERT_FATAL(false, "Unexpected element size in arrayset evaluator");
+         break;
+      }
+
+   generateRegRegInstruction(movInsn.getMnemonic(), node, tempReg, sourceReg, cg);
    generateRegImmInstruction(TR::InstOpCode::SHL8RegImm1, node, sourceReg, size*8, cg);
    generateRegRegInstruction(TR::InstOpCode::OR8RegReg, node, sourceReg, tempReg, cg);
    }
@@ -2412,7 +3609,7 @@ static void arraySetToZeroForShortConstantArrays(TR::Node* node, TR::Register* a
    if (size < 16)
       {
       tempReg = cg->allocateRegister();
-      generateRegRegInstruction(TR::InstOpCode::XOR8RegReg, node, tempReg, tempReg, cg);
+      generateRegRegInstruction(TR::InstOpCode::XOR4RegReg, node, tempReg, tempReg, cg);
       int32_t index = 0;
       int8_t packs[4] = {8, 4, 2, 1};
 
@@ -2429,7 +3626,7 @@ static void arraySetToZeroForShortConstantArrays(TR::Node* node, TR::Register* a
       }
    else
       {
-      tempReg = cg->allocateRegister(TR_FPR);
+      tempReg = cg->allocateRegister(TR_VRF);
       generateRegRegInstruction(TR::InstOpCode::XORPDRegReg, node, tempReg, tempReg, cg);
       int32_t moves = static_cast<int32_t>(size/16);
       for (int32_t i=0; i<moves; i++)
@@ -2528,7 +3725,7 @@ static void arraySetForShortConstantArrays(TR::Node* node, uint8_t elementSize, 
          }
       else
          {
-         TR::Register* XMM = cg->allocateRegister(TR_FPR);
+         TR::Register* XMM = cg->allocateRegister(TR_VRF);
          packXMMWithMultipleValues(node, XMM, valueReg, elementSize, cg);
 
          for (int32_t i=0; i<moves[0]; i++)
@@ -3532,7 +4729,7 @@ TR::Register *OMR::X86::TreeEvaluator::conversionAnalyser(TR::Node          *nod
          {
          // we could have a sequence like
          // iu2l
-         //   iiload  <- where this node was materialized by lowering an iaload in compressedPointers mode
+         //   iloadi  <- where this node was materialized by lowering an aloadi in compressedPointers mode
          //
          if (node->getOpCodeValue() == TR::iu2l &&
                comp->useCompressedPointers() &&
@@ -4007,102 +5204,6 @@ OMR::X86::TreeEvaluator::ibyteswapEvaluator(TR::Node *node, TR::CodeGenerator *c
    return target;
    }
 
-enum ArithmeticOps : uint32_t
-   {
-   ArithmeticInvalid,
-   BinaryArithmeticAdd,
-   BinaryArithmeticSub,
-   BinaryArithmeticMul,
-   BinaryArithmeticDiv,
-   BinaryArithmeticAnd,
-   BinaryArithmeticOr,
-   BinaryArithmeticXor,
-   BinaryArithmeticMin,
-   BinaryArithmeticMax,
-   NumBinaryArithmeticOps,
-   UnaryArithmeticAbs,
-   UnaryArithmeticSqrt,
-   LastOp,
-   NumUnaryArithmeticOps = LastOp - NumBinaryArithmeticOps + 1
-   };
-
-static const TR::InstOpCode::Mnemonic BinaryArithmeticOpCodesForReg[TR::NumOMRTypes][NumBinaryArithmeticOps] =
-   {
-   //  Invalid,       Add,         Sub,         Mul,         Div,          And,         Or,       Xor         min         max
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // NoType
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Int8
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Int16
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Int32
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Int64
-   { TR::InstOpCode::bad, TR::InstOpCode::ADDSSRegReg, TR::InstOpCode::SUBSSRegReg, TR::InstOpCode::MULSSRegReg,  TR::InstOpCode::DIVSSRegReg, TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Float
-   { TR::InstOpCode::bad, TR::InstOpCode::ADDSDRegReg, TR::InstOpCode::SUBSDRegReg, TR::InstOpCode::MULSDRegReg,  TR::InstOpCode::DIVSDRegReg, TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Double
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Address
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Aggregate
-
-   };
-
-static const TR::InstOpCode::Mnemonic VectorBinaryArithmeticOpCodesForReg[TR::NumVectorElementTypes][NumBinaryArithmeticOps] =
-   {
-   //  Invalid,       Add,         Sub,         Mul,         Div,          And,         Or,       Xor         min         max
-   { TR::InstOpCode::bad, TR::InstOpCode::PADDBRegReg, TR::InstOpCode::PSUBBRegReg, TR::InstOpCode::bad,          TR::InstOpCode::bad,         TR::InstOpCode::bad,        TR::InstOpCode::bad,       TR::InstOpCode::bad,        TR::InstOpCode::PMINSBRegReg, TR::InstOpCode::PMAXSBRegReg }, // Int8
-   { TR::InstOpCode::bad, TR::InstOpCode::PADDWRegReg, TR::InstOpCode::PSUBWRegReg, TR::InstOpCode::PMULLWRegReg, TR::InstOpCode::bad,         TR::InstOpCode::bad,        TR::InstOpCode::bad,       TR::InstOpCode::bad,        TR::InstOpCode::PMINSWRegReg, TR::InstOpCode::PMAXSWRegReg }, // Int16
-   { TR::InstOpCode::bad, TR::InstOpCode::PADDDRegReg, TR::InstOpCode::PSUBDRegReg, TR::InstOpCode::PMULLDRegReg, TR::InstOpCode::bad,         TR::InstOpCode::PANDRegReg, TR::InstOpCode::PORRegReg, TR::InstOpCode::PXORRegReg, TR::InstOpCode::PMINSDRegReg, TR::InstOpCode::PMAXSDRegReg }, // Int32
-   { TR::InstOpCode::bad, TR::InstOpCode::PADDQRegReg, TR::InstOpCode::PSUBQRegReg, TR::InstOpCode::bad,          TR::InstOpCode::bad,         TR::InstOpCode::PANDRegReg, TR::InstOpCode::PORRegReg, TR::InstOpCode::PXORRegReg, TR::InstOpCode::PMINSQRegReg, TR::InstOpCode::PMAXSQRegReg }, // Int64
-   { TR::InstOpCode::bad, TR::InstOpCode::ADDPSRegReg, TR::InstOpCode::SUBPSRegReg, TR::InstOpCode::MULPSRegReg,  TR::InstOpCode::DIVPSRegReg, TR::InstOpCode::bad,        TR::InstOpCode::bad,       TR::InstOpCode::bad,        TR::InstOpCode::MINPSRegReg,  TR::InstOpCode::MAXPSRegReg  }, // Float
-   { TR::InstOpCode::bad, TR::InstOpCode::ADDPDRegReg, TR::InstOpCode::SUBPDRegReg, TR::InstOpCode::MULPDRegReg,  TR::InstOpCode::DIVPDRegReg, TR::InstOpCode::bad,        TR::InstOpCode::bad,       TR::InstOpCode::bad,        TR::InstOpCode::MINPDRegReg,  TR::InstOpCode::MAXPDRegReg  }, // Double
-   };
-
-
-
-static const TR::InstOpCode::Mnemonic BinaryArithmeticOpCodesForMem[TR::NumOMRTypes][NumBinaryArithmeticOps] =
-   {
-   //  Invalid,       Add,         Sub,         Mul,         Div,          And,         Or,       Xor         min         max
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // NoType
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Int8
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Int16
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Int32
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Int64
-   { TR::InstOpCode::bad, TR::InstOpCode::ADDSSRegMem, TR::InstOpCode::SUBSSRegMem, TR::InstOpCode::MULSSRegMem,  TR::InstOpCode::DIVSSRegMem, TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Float
-   { TR::InstOpCode::bad, TR::InstOpCode::ADDSDRegMem, TR::InstOpCode::SUBSDRegMem, TR::InstOpCode::MULSDRegMem,  TR::InstOpCode::DIVSDRegMem, TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Double
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Address
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,   TR::InstOpCode::bad,   TR::InstOpCode::bad,    TR::InstOpCode::bad,   TR::InstOpCode::bad,  TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::bad  }, // Aggregate
-   };
-
-
-static const TR::InstOpCode::Mnemonic VectorBinaryArithmeticOpCodesForMem[TR::NumVectorElementTypes][NumBinaryArithmeticOps] =
-   {
-   //  Invalid,       Add,         Sub,         Mul,         Div,          And,         Or,       Xor         min         max
-   { TR::InstOpCode::bad, TR::InstOpCode::PADDBRegMem, TR::InstOpCode::PSUBBRegMem, TR::InstOpCode::bad,          TR::InstOpCode::bad,         TR::InstOpCode::bad,        TR::InstOpCode::bad,       TR::InstOpCode::bad,         TR::InstOpCode::PMINSBRegMem, TR::InstOpCode::PMAXSBRegMem }, // Int8
-   { TR::InstOpCode::bad, TR::InstOpCode::PADDWRegMem, TR::InstOpCode::PSUBWRegMem, TR::InstOpCode::PMULLWRegMem, TR::InstOpCode::bad,         TR::InstOpCode::bad,        TR::InstOpCode::bad,       TR::InstOpCode::bad,         TR::InstOpCode::PMINSWRegMem, TR::InstOpCode::PMAXSWRegMem }, // Int16
-   { TR::InstOpCode::bad, TR::InstOpCode::PADDDRegMem, TR::InstOpCode::PSUBDRegMem, TR::InstOpCode::PMULLDRegMem, TR::InstOpCode::bad,         TR::InstOpCode::PANDRegMem, TR::InstOpCode::PORRegMem, TR::InstOpCode::PXORRegMem,  TR::InstOpCode::PMINSDRegMem, TR::InstOpCode::PMAXSDRegMem }, // Int32
-   { TR::InstOpCode::bad, TR::InstOpCode::PADDQRegMem, TR::InstOpCode::PSUBQRegMem, TR::InstOpCode::bad,          TR::InstOpCode::bad,         TR::InstOpCode::PANDRegMem, TR::InstOpCode::PORRegMem, TR::InstOpCode::PXORRegMem,  TR::InstOpCode::PMINSQRegMem, TR::InstOpCode::PMAXSQRegMem }, // Int64
-   { TR::InstOpCode::bad, TR::InstOpCode::ADDPSRegMem, TR::InstOpCode::SUBPSRegMem, TR::InstOpCode::MULPSRegMem,  TR::InstOpCode::DIVPSRegMem, TR::InstOpCode::bad,        TR::InstOpCode::bad,       TR::InstOpCode::bad,         TR::InstOpCode::bad,  TR::InstOpCode::bad  }, // Float
-   { TR::InstOpCode::bad, TR::InstOpCode::ADDPDRegMem, TR::InstOpCode::SUBPDRegMem, TR::InstOpCode::MULPDRegMem,  TR::InstOpCode::DIVPDRegMem, TR::InstOpCode::bad,        TR::InstOpCode::bad,       TR::InstOpCode::bad,         TR::InstOpCode::bad,  TR::InstOpCode::bad  }, // Double
-   };
-
-static const TR::InstOpCode::Mnemonic VectorUnaryArithmeticOpCodesForReg[TR::NumVectorElementTypes][NumUnaryArithmeticOps] =
-   {
-   //  Invalid,         abs,         sqrt
-   { TR::InstOpCode::bad, TR::InstOpCode::PABSBRegReg, TR::InstOpCode::bad }, // Int8
-   { TR::InstOpCode::bad, TR::InstOpCode::PABSWRegReg, TR::InstOpCode::bad }, // Int16
-   { TR::InstOpCode::bad, TR::InstOpCode::PABSDRegReg, TR::InstOpCode::bad }, // Int32
-   { TR::InstOpCode::bad, TR::InstOpCode::PABSQRegReg, TR::InstOpCode::bad }, // Int64
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,         TR::InstOpCode::SQRTPSRegReg }, // Float
-   { TR::InstOpCode::bad, TR::InstOpCode::bad,         TR::InstOpCode::SQRTPDRegReg }, // Double
-   };
-
-
-static const TR::InstOpCode::Mnemonic VectorUnaryArithmeticOpCodesForMem[TR::NumVectorElementTypes][NumUnaryArithmeticOps] =
-   {
-   //  Invalid,         abs,         sqrt
-  { TR::InstOpCode::bad, TR::InstOpCode::PABSBRegMem, TR::InstOpCode::bad }, // Int8
-  { TR::InstOpCode::bad, TR::InstOpCode::PABSWRegMem, TR::InstOpCode::bad }, // Int16
-  { TR::InstOpCode::bad, TR::InstOpCode::PABSDRegMem, TR::InstOpCode::bad }, // Int32
-  { TR::InstOpCode::bad, TR::InstOpCode::PABSQRegMem, TR::InstOpCode::bad }, // Int64
-  { TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::VSQRTPSRegMem }, // Float
-  { TR::InstOpCode::bad, TR::InstOpCode::bad, TR::InstOpCode::VSQRTPDRegMem }, // Double
-   };
-
 static const TR::ILOpCodes MemoryLoadOpCodes[TR::NumOMRTypes] =
    {
    TR::BadILOp, // NoType
@@ -4127,6 +5228,22 @@ TR::InstOpCode OMR::X86::TreeEvaluator::getNativeSIMDOpcode(TR::ILOpCodes opcode
       bool isMaskOp = OMR::ILOpCode(opcode).isVectorMasked();
       switch (OMR::ILOpCode::getVectorOperation(opcode))
          {
+         case TR::vmrol:
+         case TR::vrol:
+            binaryOp = BinaryRotateLeft;
+            break;
+         case TR::vmshl:
+         case TR::vshl:
+            binaryOp = BinaryLogicalShiftLeft;
+            break;
+         case TR::vmshr:
+         case TR::vshr:
+            binaryOp = BinaryLogicalShiftRight;
+            break;
+         case TR::vmushr:
+         case TR::vushr:
+            binaryOp = BinaryArithmeticShiftRight;
+            break;
          case TR::vmadd:
          case TR::vadd:
             binaryOp = BinaryArithmeticAdd;
@@ -4145,18 +5262,12 @@ TR::InstOpCode OMR::X86::TreeEvaluator::getNativeSIMDOpcode(TR::ILOpCodes opcode
             break;
          case TR::vand:
             binaryOp = BinaryArithmeticAnd;
-            // Masking opcodes require lanewise support for each element type, however, int8/int16
-            // bitwise instructions with masking are not supported without AVX-512. In non-masking
-            // operations, the element type does not matter.
-            if (!isMaskOp) elementType = TR::Int32;
             break;
          case TR::vor:
             binaryOp = BinaryArithmeticOr;
-            if (!isMaskOp) elementType = TR::Int32;
             break;
          case TR::vxor:
             binaryOp = BinaryArithmeticXor;
-            if (!isMaskOp) elementType = TR::Int32;
             break;
          case TR::vmmin:
          case TR::vmin:
@@ -4189,13 +5300,13 @@ TR::InstOpCode OMR::X86::TreeEvaluator::getNativeSIMDOpcode(TR::ILOpCodes opcode
 
    if (binaryOp != ArithmeticInvalid)
       {
-      memOpcode = VectorBinaryArithmeticOpCodesForMem[elementType - 1][binaryOp];
-      regOpcode = VectorBinaryArithmeticOpCodesForReg[elementType - 1][binaryOp];
+      memOpcode = VectorBinaryArithmeticOpCodesForMem[binaryOp][elementType - 1];
+      regOpcode = VectorBinaryArithmeticOpCodesForReg[binaryOp][elementType - 1];
       }
    else
       {
-      memOpcode = VectorUnaryArithmeticOpCodesForMem[elementType - 1][unaryOp - NumBinaryArithmeticOps];
-      regOpcode = VectorUnaryArithmeticOpCodesForReg[elementType - 1][unaryOp - NumBinaryArithmeticOps];
+      memOpcode = VectorUnaryArithmeticOpCodesForMem[unaryOp - NumBinaryArithmeticOps][elementType - 1];
+      regOpcode = VectorUnaryArithmeticOpCodesForReg[unaryOp - NumBinaryArithmeticOps][elementType - 1];
       }
 
    return memForm ? memOpcode : regOpcode;
@@ -4269,6 +5380,276 @@ TR::Register* OMR::X86::TreeEvaluator::vectorFPNaNHelper(TR::Node *node, TR::Reg
    return tmpReg;
    }
 
+//
+//
+// Integer Opcodes (AVX-2)
+//   PCMPEQ - PCMPGT (vector regsiter mask VEX, mask register EVEX)
+// Integer Opcodes (AVX-512)
+//   PCMP (Predicate EQ,LT,LE,F,NEQ,NLT,NLE,TRUE)
+// Float Opcodes
+//   PCMPPD / PCMPPS (predicates)
+//
+// Split compare evaluators into two categories (Floating-Point, Integers)
+//
+// For Integers
+//   Split handling by PRE-AVX512 vs AVX512
+// For PRE-AVX512
+//   EQ  -> EQ(a,b)
+//   NE  -> NOT (EQ(a,b))
+//   GT  -> GT(a,b)
+//   GTE -> NOT(GT(b,a))
+//   LT  -> GT(b,a)
+//   LTE -> NOT (GT(a,b))
+//
+TR::Register* OMR::X86::TreeEvaluator::vectorCompareEvaluator(TR::Node* node, TR::CodeGenerator* cg)
+   {
+   TR::DataType type = node->getDataType();
+   TR::DataType et = type.getVectorElementType();
+   TR::VectorLength vl = type.getVectorLength();
+   TR::ILOpCode opcode = node->getOpCode();
+   TR_ASSERT_FATAL_WITH_NODE(node, opcode.isVectorOpCode(), "Expecting a vector opcode in vectorCompareEvaluator");
+
+   TR::Node *lhsNode = node->getFirstChild();
+   TR::Node *rhsNode = node->getSecondChild();
+   TR::Node *maskNode = opcode.isVectorMasked() ? node->getThirdChild() : NULL;
+   TR::Register *lhsReg = cg->evaluate(lhsNode);
+   TR::Register *rhsReg = cg->evaluate(rhsNode);
+   TR::Register *maskReg = maskNode ? cg->evaluate(maskNode) : NULL;
+   int32_t predicate = 0;
+
+   switch (OMR::ILOpCode::getVectorOperation(opcode))
+      {
+      case TR::vcmpeq:
+      case TR::vmcmpeq:
+         predicate = 0;
+         break;
+      case TR::vcmplt:
+      case TR::vmcmplt:
+         predicate = 1;
+         break;
+      case TR::vcmple:
+      case TR::vmcmple:
+         predicate = 2;
+         break;
+      case TR::vcmpne:
+      case TR::vmcmpne:
+         predicate = 4;
+         break;
+      case TR::vcmpge:
+      case TR::vmcmpge:
+         predicate = et.isFloatingPoint() ? 13 : 5;
+         break;
+      case TR::vcmpgt:
+      case TR::vmcmpgt:
+         predicate = et.isFloatingPoint() ? 14 : 6;
+         break;
+      default:
+         TR_ASSERT_FATAL(0, "Unsupported comparison predicate");
+         break;
+      }
+
+   if (cg->comp()->target().cpu.supportsFeature(OMR_FEATURE_X86_AVX512F))
+      {
+      TR::Register *resultReg = cg->allocateRegister(TR_VMR);
+      TR::InstOpCode cmpOpcode = TR::InstOpCode::bad;
+
+      switch (et)
+         {
+         case TR::Int8:
+            cmpOpcode = TR::InstOpCode::VPCMPBMaskMaskRegRegImm;
+            break;
+         case TR::Int16:
+            cmpOpcode = TR::InstOpCode::VPCMPWMaskMaskRegRegImm;
+            break;
+         case TR::Int32:
+            cmpOpcode = TR::InstOpCode::VPCMPDMaskMaskRegRegImm;
+            break;
+         case TR::Int64:
+            cmpOpcode = TR::InstOpCode::VPCMPQMaskMaskRegRegImm;
+            break;
+         case TR::Float:
+            cmpOpcode = TR::InstOpCode::VCMPPSRegRegImm1;
+            break;
+         case TR::Double:
+            cmpOpcode = TR::InstOpCode::VCMPPDRegRegImm1;
+            break;
+         default:
+            TR_ASSERT_FATAL(0, "Expected element type");
+            break;
+         }
+
+      TR::RegisterDependencyConditions* deps = generateRegisterDependencyConditions((uint8_t)0, (uint8_t)2, cg);
+      deps->addPostCondition(resultReg, TR::RealRegister::NoReg, cg);
+
+      if (!maskNode)
+         {
+         maskReg = cg->allocateRegister(TR_VMR);
+         deps->addPostCondition(maskReg, TR::RealRegister::k0, cg);
+         }
+      else
+         {
+         deps->addPostCondition(maskReg, TR::RealRegister::NoReg, cg);
+         }
+
+      OMR::X86::Encoding cmpEncoding = cmpOpcode.getSIMDEncoding(&cg->comp()->target().cpu, vl);
+      TR_ASSERT_FATAL(cmpEncoding != OMR::X86::Bad, "Unsupported comparison opcode in vcmp");
+
+      generateRegMaskRegRegImmInstruction(cmpOpcode.getMnemonic(), node, resultReg, maskReg, lhsReg, rhsReg, predicate, cg, cmpEncoding);
+
+      TR::LabelSymbol *label = generateLabelSymbol(cg);
+      generateLabelInstruction(TR::InstOpCode::label, node, label, deps, cg);
+
+      node->setRegister(resultReg);
+      cg->decReferenceCount(lhsNode);
+      cg->decReferenceCount(rhsNode);
+
+      if (maskNode)
+         cg->decReferenceCount(maskNode);
+      else
+         cg->stopUsingRegister(maskReg);
+
+      return resultReg;
+      }
+   else
+      {
+// For PRE-AVX512
+//   EQ  -> EQ(a,b)
+//   NE  -> NOT (EQ(a,b))
+//   GT  -> GT(a,b)
+//   GTE -> NOT(GT(b,a))
+//   LT  -> GT(b,a)
+//   LTE -> NOT (GT(a,b))
+      TR::InstOpCode movOpcode = TR::InstOpCode::MOVDQURegReg;
+      OMR::X86::Encoding movEncoding = movOpcode.getSIMDEncoding(&cg->comp()->target().cpu, vl);
+      TR_ASSERT_FATAL(movEncoding != OMR::X86::Bad, "Unsupported movdqu opcode in vcmp");
+
+      TR::Register *resultReg = cg->allocateRegister(TR_VRF);
+      TR::InstOpCode cmpOpcode = TR::InstOpCode::bad;
+      bool swapOperands = false;
+      bool invAfter = false;
+      bool cmpEq = false;
+
+      if (!et.isFloatingPoint())
+         {
+         switch (OMR::ILOpCode::getVectorOperation(opcode))
+            {
+            case TR::vcmpne:
+            case TR::vmcmpne:
+               invAfter = true;
+            case TR::vcmpeq:
+            case TR::vmcmpeq:
+               cmpEq = true;
+               break;
+            case TR::vcmpge:
+            case TR::vmcmpge:
+               swapOperands = true;
+               invAfter = true;
+            case TR::vcmpgt:
+            case TR::vmcmpgt:
+               break;
+            case TR::vcmplt:
+            case TR::vmcmplt:
+               swapOperands = true;
+               break;
+            case TR::vcmple:
+            case TR::vmcmple:
+               invAfter = true;
+               break;
+            default:
+               TR_ASSERT_FATAL(0, "Unsupported comparison predicate");
+               break;
+            }
+         }
+
+      if (swapOperands)
+         {
+         // swap lhs and rhs
+         TR::Register *tmpReg = lhsReg;
+         lhsReg = rhsReg;
+         rhsReg = tmpReg;
+         }
+
+      switch (type.getVectorElementType())
+         {
+         case TR::Int8:
+            cmpOpcode = cmpEq ? TR::InstOpCode::PCMPEQBRegReg : TR::InstOpCode::PCMPGTBRegReg;
+            break;
+         case TR::Int16:
+            cmpOpcode = cmpEq ? TR::InstOpCode::PCMPEQWRegReg : TR::InstOpCode::PCMPGTWRegReg;
+            break;
+         case TR::Int32:
+            cmpOpcode = cmpEq ? TR::InstOpCode::PCMPEQDRegReg : TR::InstOpCode::PCMPGTDRegReg;
+            break;
+         case TR::Int64:
+            cmpOpcode = cmpEq ? TR::InstOpCode::PCMPEQQRegReg : TR::InstOpCode::PCMPGTQRegReg;
+            break;
+         case TR::Float:
+            cmpOpcode = TR::InstOpCode::CMPPSRegRegImm1;
+            break;
+         case TR::Double:
+            cmpOpcode = TR::InstOpCode::CMPPDRegRegImm1;
+            break;
+         default:
+            TR_ASSERT_FATAL(0, "Expected integral type");
+            break;
+         }
+
+      OMR::X86::Encoding cmpEncoding = cmpOpcode.getSIMDEncoding(&cg->comp()->target().cpu, vl);
+
+      if (cmpEncoding == OMR::X86::Legacy || type.getVectorElementType().isFloatingPoint())
+         {
+         generateRegRegInstruction(movOpcode.getMnemonic(), node, resultReg, lhsReg, cg, movEncoding);
+
+         if (type.getVectorElementType().isFloatingPoint())
+            {
+            generateRegRegImmInstruction(cmpOpcode.getMnemonic(), node, resultReg, rhsReg, predicate, cg, cmpEncoding);
+            }
+         else
+            {
+            generateRegRegInstruction(cmpOpcode.getMnemonic(), node, resultReg, rhsReg, cg, cmpEncoding);
+            }
+         }
+      else
+         {
+         generateRegRegRegInstruction(cmpOpcode.getMnemonic(), node, resultReg, lhsReg, rhsReg, cg, cmpEncoding);
+         }
+
+      if (invAfter)
+         {
+         TR::Register *invMaskReg = cg->allocateRegister(TR_VRF);
+         // pcmpeq invMaskReg, invMaskReg
+         // pxor resultReg, invMaskReg
+         TR_ASSERT_FATAL(cmpEncoding != OMR::X86::Bad, "Unsupported comparison opcode in vcmp");
+         generateRegRegInstruction(cmpOpcode.getMnemonic(), node, invMaskReg, invMaskReg, cg, cmpEncoding);
+
+         TR::InstOpCode xorOpcode = TR::InstOpCode::PXORRegReg;
+         OMR::X86::Encoding xorEncoding = xorOpcode.getSIMDEncoding(&cg->comp()->target().cpu, vl);
+         TR_ASSERT_FATAL(xorEncoding != OMR::X86::Bad, "Unsupported xor opcode in vcmp");
+         generateRegRegInstruction(xorOpcode.getMnemonic(), node, resultReg, invMaskReg, cg, xorEncoding);
+         cg->stopUsingRegister(invMaskReg);
+         }
+
+      node->setRegister(resultReg);
+
+      if (maskReg)
+         {
+         TR::Register *tmpReg = cg->allocateRegister(TR_VRF);
+
+         generateRegRegInstruction(movOpcode.getMnemonic(), node, tmpReg, resultReg, cg, movEncoding);
+         generateRegRegInstruction(movOpcode.getMnemonic(), node, resultReg, lhsReg, cg, movEncoding);
+
+         vectorMergeMaskHelper(node, resultReg, tmpReg, maskReg, cg);
+         cg->stopUsingRegister(tmpReg);
+         cg->decReferenceCount(maskNode);
+         }
+
+      cg->decReferenceCount(lhsNode);
+      cg->decReferenceCount(rhsNode);
+
+      return resultReg;
+      }
+   }
+
 // For ILOpCode that can be translated to single SSE/AVX instructions
 TR::Register* OMR::X86::TreeEvaluator::vectorBinaryArithmeticEvaluator(TR::Node* node, TR::CodeGenerator* cg)
    {
@@ -4286,6 +5667,24 @@ TR::Register* OMR::X86::TreeEvaluator::vectorBinaryArithmeticEvaluator(TR::Node*
    TR::Register *tmpNaNReg = NULL;
 
    bool useRegMemForm = cg->comp()->target().cpu.supportsAVX() && !mask;
+   bool maskTypeMismatch = false;
+
+   if (et == TR::Int8 || et == TR::Int16)
+      {
+      switch (node->getOpCode().getVectorOperation())
+         {
+         case TR::vand:
+         case TR::vor:
+         case TR::vxor:
+            // There are no native opcodes meant specifically for these element types
+            // Therefore, if masking is required, we cannot use a single instruction
+            // to perform these masked bitwise operations because of the element type mismatch.
+            maskTypeMismatch = true;
+            break;
+         default:
+            break;
+         }
+      }
 
    if (useRegMemForm)
       {
@@ -4350,7 +5749,7 @@ TR::Register* OMR::X86::TreeEvaluator::vectorBinaryArithmeticEvaluator(TR::Node*
          TR::Register *rSrcReg = tmpNaNReg ? vectorFPNaNHelper(node, tmpNaNReg, lhsReg, rhsReg, NULL, cg) : rhsReg;
          if (maskReg)
             {
-            binaryVectorMaskHelper(nativeOpcode, simdEncoding, node, resultReg, lhsReg, rSrcReg, maskReg, cg);
+            binaryVectorMaskHelper(nativeOpcode, simdEncoding, node, resultReg, lhsReg, rSrcReg, maskReg, cg, maskTypeMismatch);
             }
          else
             {
@@ -4361,7 +5760,7 @@ TR::Register* OMR::X86::TreeEvaluator::vectorBinaryArithmeticEvaluator(TR::Node*
    else if (maskReg)
       {
       TR::Register *rSrcReg = tmpNaNReg ? vectorFPNaNHelper(node, tmpNaNReg, lhsReg, rhsReg, NULL, cg) : rhsReg;
-      binaryVectorMaskHelper(nativeOpcode, simdEncoding, node, resultReg, lhsReg, rSrcReg, maskReg, cg);
+      binaryVectorMaskHelper(nativeOpcode, simdEncoding, node, resultReg, lhsReg, rSrcReg, maskReg, cg, maskTypeMismatch);
       }
   else
       {
@@ -4419,7 +5818,6 @@ TR::Register* OMR::X86::TreeEvaluator::floatingPointBinaryArithmeticEvaluator(TR
    TR::Node* operandNode0 = node->getChild(0);
    TR::Node* operandNode1 = node->getChild(1);
 
-   TR_ASSERT_FATAL(cg->comp()->compileRelocatableCode() || cg->comp()->isOutOfProcessCompilation() || cg->comp()->compilePortableCode() || cg->comp()->target().cpu.supportsAVX() == TR::CodeGenerator::getX86ProcessorInfo().supportsAVX(), "supportsAVX() failed\n");
    bool useRegMemForm = cg->comp()->target().cpu.supportsAVX();
 
    if (useRegMemForm)
@@ -4427,7 +5825,7 @@ TR::Register* OMR::X86::TreeEvaluator::floatingPointBinaryArithmeticEvaluator(TR
       if (operandNode1->getRegister()                               ||
           operandNode1->getReferenceCount() != 1                    ||
           operandNode1->getOpCodeValue() != MemoryLoadOpCodes[type] ||
-          BinaryArithmeticOpCodesForMem[type][arithmetic] == TR::InstOpCode::bad)
+          BinaryArithmeticOpCodesForMem[arithmetic][type] == TR::InstOpCode::bad)
          {
          useRegMemForm = false;
          }
@@ -4438,8 +5836,8 @@ TR::Register* OMR::X86::TreeEvaluator::floatingPointBinaryArithmeticEvaluator(TR
    TR::Register* resultReg = cg->allocateRegister(operandReg0->getKind());
    resultReg->setIsSinglePrecision(operandReg0->isSinglePrecision());
 
-   TR::InstOpCode::Mnemonic opCode = useRegMemForm ? BinaryArithmeticOpCodesForMem[type][arithmetic] :
-                                                     BinaryArithmeticOpCodesForReg[type][arithmetic];
+   TR::InstOpCode::Mnemonic opCode = useRegMemForm ? BinaryArithmeticOpCodesForMem[arithmetic][type] :
+                                                     BinaryArithmeticOpCodesForReg[arithmetic][type];
 
    TR_ASSERT_FATAL(opCode != TR::InstOpCode::bad, "floatingPointBinaryArithmeticEvaluator: unsupported data type or arithmetic.");
 
@@ -4483,7 +5881,7 @@ OMR::X86::TreeEvaluator::bitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *
 
    // Zero result reg
    TR::Register *resultReg = cg->allocateRegister(TR_GPR);
-   generateRegRegInstruction(TR::InstOpCode::XORRegReg(nodeIs64Bit), node, resultReg, resultReg, cg);
+   generateRegRegInstruction(TR::InstOpCode::XOR4RegReg, node, resultReg, resultReg, cg);
 
    if (length->getOpCode().isLoadConst())
       {
@@ -4493,7 +5891,7 @@ OMR::X86::TreeEvaluator::bitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *
          {
          // Zero tmpReg if SET won't do it
          if (x >= 8)
-            generateRegRegInstruction(TR::InstOpCode::XORRegReg(nodeIs64Bit), node, tmpReg, tmpReg, cg);
+            generateRegRegInstruction(TR::InstOpCode::XOR4RegReg, node, tmpReg, tmpReg, cg);
 
          TR::MemoryReference *sourceMR = generateX86MemoryReference(addrReg, x, cg);
          generateRegMemInstruction(TR::InstOpCode::L1RegMem, node, tmpReg, sourceMR, cg);
@@ -4537,7 +5935,7 @@ OMR::X86::TreeEvaluator::bitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *
       generateRegImmInstruction(TR::InstOpCode::SUB4RegImm4, node, indexReg, 1, cg);
 
       // Load the byte, test the bit and set
-      generateRegRegInstruction(TR::InstOpCode::XORRegReg(nodeIs64Bit), node, tmpReg, tmpReg, cg);
+      generateRegRegInstruction(TR::InstOpCode::XOR4RegReg, node, tmpReg, tmpReg, cg);
       TR::MemoryReference *sourceMR = generateX86MemoryReference(addrReg, indexReg, 0, 0, cg);
       generateRegMemInstruction(TR::InstOpCode::L1RegMem, node, tmpReg, sourceMR, cg);
       generateRegRegInstruction(TR::InstOpCode::BTRegReg(nodeIs64Bit), node, valueReg, tmpReg, cg);
@@ -4564,6 +5962,151 @@ OMR::X86::TreeEvaluator::bitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *
    return resultReg;
    }
 
+TR::Register*
+OMR::X86::TreeEvaluator::compressExpandBitsEvaluator(TR::Node *node, TR::CodeGenerator *cg, TR::InstOpCode::Mnemonic regRegRegOpCode, TR::InstOpCode::Mnemonic regRegMemOpCode)
+   {
+   TR::Node *srcNode = node->getFirstChild();
+   TR::Node *maskNode = node->getSecondChild();
+   TR::Register *srcReg = cg->longClobberEvaluate(srcNode);
+
+   if (maskNode->getReferenceCount() == 1 &&
+       maskNode->getRegister() == NULL &&
+       maskNode->getOpCode().isLoadVar())
+      {
+      TR::MemoryReference *maskMR = generateX86MemoryReference(maskNode, cg);
+      generateRegRegMemInstruction(regRegMemOpCode, node, srcReg, srcReg, maskMR, cg);
+
+      maskMR->decNodeReferenceCounts(cg);
+      }
+   else
+      {
+      TR::Register *maskReg = cg->evaluate(maskNode);
+      generateRegRegRegInstruction(regRegRegOpCode, node, srcReg, srcReg, maskReg, cg);
+
+      cg->decReferenceCount(maskNode);
+      }
+
+   node->setRegister(srcReg);
+   cg->decReferenceCount(srcNode);
+
+   return srcReg;
+   }
+
+static TR::Register*
+smallCompressBitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   // bcompressbits and scompressbits require special logic to handle zero-extension
+   TR::DataType dt = node->getDataType();
+   TR_ASSERT_FATAL(dt == TR::Int16 || dt == TR::Int8, "smallCompressBitsEvaluator only supports 16, or 8 bits");
+
+   bool isShort = dt == TR::Int16;
+
+   TR::Node *srcNode = node->getFirstChild();
+   TR::Node *maskNode = node->getSecondChild();
+   TR::Register *srcReg = NULL;
+   TR::Register *maskReg = NULL;
+   TR::MemoryReference *maskMR = NULL;
+   TR::Register *resReg = NULL;
+
+   // Only one of src or mask needs to be zero-extended
+   // First check if either can be zero-extended at compile time
+   if (maskNode->getOpCode().isLoadConst())
+      {
+      uint32_t mask = isShort ? maskNode->getUnsignedShortInt() : maskNode->getUnsignedByte();
+      maskReg = TR::TreeEvaluator::loadConstant(maskNode, mask, TR_RematerializableInt, cg);
+      resReg = maskReg;
+      }
+   else if (srcNode->getOpCode().isLoadConst())
+      {
+      uint32_t src = isShort ? srcNode->getUnsignedShortInt() : srcNode->getUnsignedByte();
+      srcReg = TR::TreeEvaluator::loadConstant(srcNode, src, TR_RematerializableInt, cg);
+      resReg = srcReg;
+      }
+   // Otherwise check if src is in memory and can be therefore be loaded with a zero-extending opcode
+   else if (srcNode->getReferenceCount() == 1 && srcNode->getRegister() == NULL && srcNode->getOpCode().isLoadVar())
+      {
+      TR::InstOpCode::Mnemonic extendOpCode = isShort ? TR::InstOpCode::MOVZXReg4Mem2 : TR::InstOpCode::MOVZXReg4Mem1;
+      TR::MemoryReference *srcMR = generateX86MemoryReference(srcNode, cg);
+      srcReg = cg->allocateRegister(TR_GPR);
+      generateRegMemInstruction(extendOpCode, node, srcReg, srcMR, cg);
+      resReg = srcReg;
+      }
+   // If no zero-extension shortcut applied, default to zero-extending the src
+   if (resReg == NULL)
+      {
+      TR::InstOpCode::Mnemonic extendOpCode = isShort ? TR::InstOpCode::MOVZXReg4Reg2 : TR::InstOpCode::MOVZXReg4Reg1;
+      srcReg = cg->gprClobberEvaluate(srcNode, extendOpCode);
+      resReg = srcReg;
+      }
+   // Evaluate the missing operand
+   if (maskReg == NULL)
+      {
+      if (maskNode->getReferenceCount() == 1 && maskNode->getRegister() == NULL && maskNode->getOpCode().isLoadVar())
+         maskMR = generateX86MemoryReference(maskNode, cg);
+      else
+         maskReg = cg->evaluate(maskNode);
+      }
+   else
+      {
+      srcReg = cg->evaluate(srcNode);
+      }
+
+   if (maskMR)
+      {
+      generateRegRegMemInstruction(TR::InstOpCode::PEXT4RegRegMem, node, resReg, srcReg, maskMR, cg);
+      }
+   else
+      {
+      generateRegRegRegInstruction(TR::InstOpCode::PEXT4RegRegReg, node, resReg, srcReg, maskReg, cg);
+      }
+
+   node->setRegister(resReg);
+
+   if (maskMR)
+      maskMR->decNodeReferenceCounts(cg);
+   else
+      cg->decReferenceCount(maskNode);
+
+   cg->decReferenceCount(srcNode);
+
+   return resReg;
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::bcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return smallCompressBitsEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::scompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return smallCompressBitsEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::icompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::compressExpandBitsEvaluator(node, cg, TR::InstOpCode::PEXT4RegRegReg, TR::InstOpCode::PEXT4RegRegMem);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::bexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::iexpandbitsEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::sexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::iexpandbitsEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::iexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::compressExpandBitsEvaluator(node, cg, TR::InstOpCode::PDEP4RegRegReg, TR::InstOpCode::PDEP4RegRegMem);
+   }
 
 // mask evaluators
 TR::Register*
@@ -4635,7 +6178,52 @@ OMR::X86::TreeEvaluator::mLastTrueEvaluator(TR::Node *node, TR::CodeGenerator *c
 TR::Register*
 OMR::X86::TreeEvaluator::mToLongBitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   TR::DataType type = node->getDataType();
+   TR::Node *maskNode = node->getFirstChild();
+   TR::Register *maskReg = cg->evaluate(maskNode);
+
+   TR_ASSERT_FATAL_WITH_NODE(node, cg->comp()->target().is64Bit(), "mToLongBitsEvaluator() only supported on 64-bit");
+
+   TR::Register *resultReg = cg->allocateRegister(TR_GPR);
+
+   if (maskReg->getKind() == TR_VMR)
+      {
+      TR::InstOpCode movOpcode = cg->comp()->target().cpu.supportsFeature(OMR_FEATURE_X86_AVX512BW) ? TR::InstOpCode::KMOVQRegMask : TR::InstOpCode::KMOVWRegMask;
+      generateRegRegInstruction(movOpcode.getMnemonic(), node, resultReg, maskReg, cg);
+      }
+   else
+      {
+      TR_ASSERT_FATAL_WITH_NODE(maskNode, maskReg->getKind() == TR_VRF, "Expected mask register kind of TR_VMR or TR_VRF");
+      TR::InstOpCode movMskOp = TR::InstOpCode::bad;
+
+      switch (type.getVectorElementType())
+         {
+         case TR::Int64:
+         case TR::Double:
+            movMskOp = TR::InstOpCode::MOVMSKPDRegReg;
+            break;
+         case TR::Int32:
+         case TR::Float:
+            movMskOp = TR::InstOpCode::MOVMSKPSRegReg;
+            break;
+         case TR::Int16:
+            TR_ASSERT_FATAL(false, "Int16 element type not supported mToLongBitsEvaluator");
+         case TR::Int8:
+            movMskOp = TR::InstOpCode::PMOVMSKB4RegReg;
+            break;
+         default:
+            TR_ASSERT_FATAL(false, "Unexpected element type for mToLongBitsEvaluator");
+         }
+      OMR::X86::Encoding movMskEncoding = movMskOp.getSIMDEncoding(&cg->comp()->target().cpu, type.getVectorLength());
+      TR_ASSERT_FATAL(movMskEncoding != OMR::X86::Bad, "Unsupported movmsk opcode in mToLongBitsEvaluator");
+
+      generateRegRegInstruction(movMskOp.getMnemonic(), node, resultReg, maskReg, cg, movMskEncoding);
+      }
+
+   node->setRegister(resultReg);
+   cg->decReferenceCount(maskNode);
+
+   return resultReg;
    }
 
 TR::Register*
@@ -4717,6 +6305,42 @@ OMR::X86::TreeEvaluator::m2vEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    }
 
 TR::Register*
+OMR::X86::TreeEvaluator::vcmpeqEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vcmpneEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vcmpltEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vcmpgtEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vcmpleEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vcmpgeEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
+   }
+
+TR::Register*
 OMR::X86::TreeEvaluator::vfmaEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    TR::DataType dt = node->getDataType();
@@ -4755,8 +6379,8 @@ OMR::X86::TreeEvaluator::vfmaEvaluator(TR::Node *node, TR::CodeGenerator *cg)
       }
    else
       {
-      TR::InstOpCode mulOpcode = VectorBinaryArithmeticOpCodesForReg[et - 1][BinaryArithmeticMul];
-      TR::InstOpCode addOpcode = VectorBinaryArithmeticOpCodesForReg[et - 1][BinaryArithmeticAdd];
+      TR::InstOpCode mulOpcode = VectorBinaryArithmeticOpCodesForReg[BinaryArithmeticMul][et - 1];
+      TR::InstOpCode addOpcode = VectorBinaryArithmeticOpCodesForReg[BinaryArithmeticAdd][et - 1];
 
       TR_ASSERT_FATAL(mulOpcode.getMnemonic() != TR::InstOpCode::bad, "No multiplication opcode found");
       TR_ASSERT_FATAL(addOpcode.getMnemonic() != TR::InstOpCode::bad, "No addition opcode found");
@@ -5102,7 +6726,8 @@ OMR::X86::TreeEvaluator::binaryVectorMaskHelper(TR::InstOpCode opcode,
                                                 TR::Register *lhsReg,
                                                 TR::Register *rhsReg,
                                                 TR::Register *maskReg,
-                                                TR::CodeGenerator *cg)
+                                                TR::CodeGenerator *cg,
+                                                bool maskTypeMismatch)
    {
    TR_ASSERT_FATAL(encoding != OMR::X86::Bad, "No suitable encoding method for opcode");
    bool vectorMask = maskReg->getKind() == TR_VRF;
@@ -5122,10 +6747,16 @@ OMR::X86::TreeEvaluator::binaryVectorMaskHelper(TR::InstOpCode opcode,
       cg->stopUsingRegister(tmpReg);
       return resultReg;
       }
-   else if (vectorMask)
+   else if (vectorMask && maskTypeMismatch)
       {
       generateRegRegRegInstruction(opcode.getMnemonic(), node, tmpReg, lhsReg, rhsReg, cg, encoding);
       vectorMergeMaskHelper(node, resultReg, tmpReg, maskReg, cg);
+      cg->stopUsingRegister(tmpReg);
+      return resultReg;
+      }
+   else if (vectorMask)
+      {
+      generateRegMaskRegRegInstruction(opcode.getMnemonic(), node, tmpReg, maskReg, lhsReg, rhsReg, cg, encoding);
       cg->stopUsingRegister(tmpReg);
       return resultReg;
       }
@@ -5360,7 +6991,7 @@ OMR::X86::TreeEvaluator::arrayToVectorMaskHelper(TR::Node *node, TR::CodeGenerat
       {
       TR::Register *result = cg->allocateRegister(TR_VRF);
       TR::InstOpCode xorOpcode = TR::InstOpCode::PXORRegReg;
-      TR::InstOpCode subOp = VectorBinaryArithmeticOpCodesForReg[et - 1][BinaryArithmeticSub];
+      TR::InstOpCode subOp = VectorBinaryArithmeticOpCodesForReg[BinaryArithmeticSub][et - 1];
       OMR::X86::Encoding xorEncoding = xorOpcode.getSIMDEncoding(&cg->comp()->target().cpu, vl);
       OMR::X86::Encoding subEncoding = subOp.getSIMDEncoding(&cg->comp()->target().cpu, vl);
       TR_ASSERT_FATAL(xorEncoding != OMR::X86::Bad, "No suitable encoding form for pxor opcode");
@@ -5584,37 +7215,37 @@ OMR::X86::TreeEvaluator::vmandEvaluator(TR::Node *node, TR::CodeGenerator *cg)
 TR::Register*
 OMR::X86::TreeEvaluator::vmcmpeqEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
    }
 
 TR::Register*
 OMR::X86::TreeEvaluator::vmcmpneEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
    }
 
 TR::Register*
 OMR::X86::TreeEvaluator::vmcmpgtEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
    }
 
 TR::Register*
 OMR::X86::TreeEvaluator::vmcmpgeEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
    }
 
 TR::Register*
 OMR::X86::TreeEvaluator::vmcmpltEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
    }
 
 TR::Register*
 OMR::X86::TreeEvaluator::vmcmpleEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   return TR::TreeEvaluator::vectorCompareEvaluator(node, cg);
    }
 
 TR::Register*
@@ -5763,6 +7394,209 @@ OMR::X86::TreeEvaluator::vmxorEvaluator(TR::Node *node, TR::CodeGenerator *cg)
 
 TR::Register*
 OMR::X86::TreeEvaluator::vmfirstNonZeroEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vexpandEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vshlEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorBinaryArithmeticEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmshlEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorBinaryArithmeticEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vshrEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorBinaryArithmeticEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmshrEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorBinaryArithmeticEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vushrEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorBinaryArithmeticEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmushrEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorBinaryArithmeticEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vrolEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorBinaryArithmeticEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmrolEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::vectorBinaryArithmeticEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::mcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vbitselectEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR::DataType et = node->getDataType().getVectorElementType();
+   TR::VectorLength vl = node->getDataType().getVectorLength();
+
+   TR::Node *firstChild = node->getFirstChild();
+   TR::Node *secondChild = node->getSecondChild();
+   TR::Node *thirdChild = node->getThirdChild();
+
+   TR::Register *firstReg = cg->evaluate(firstChild);
+   TR::Register *secondReg = cg->evaluate(secondChild);
+   TR::Register *thirdReg = cg->evaluate(thirdChild);
+   TR::Register *resultReg = cg->allocateRegister(TR_VRF);
+
+   TR_ASSERT_FATAL(et.isIntegral(), "vbitselect is for integer operations");
+
+   TR::InstOpCode xorOpcode = TR::InstOpCode::PXORRegReg;
+   TR::InstOpCode andOpcode = TR::InstOpCode::PANDRegReg;
+
+   OMR::X86::Encoding xorEncoding = xorOpcode.getSIMDEncoding(&cg->comp()->target().cpu, vl);
+   OMR::X86::Encoding andEncoding = xorOpcode.getSIMDEncoding(&cg->comp()->target().cpu, vl);
+
+   TR_ASSERT_FATAL(xorEncoding != OMR::X86::Bad, "No encoding method for pxor opcode");
+   TR_ASSERT_FATAL(andEncoding != OMR::X86::Bad, "No encoding method for pand opcode");
+
+   // inputA[i] ^ ((inputA[i] ^ inputB[i]) & inputC[i])
+
+   if (xorEncoding != Legacy)
+      {
+      generateRegRegRegInstruction(xorOpcode.getMnemonic(), node, resultReg, firstReg, secondReg, cg, xorEncoding);
+      }
+   else
+      {
+      TR::InstOpCode movOpcode = TR::InstOpCode::MOVDQURegReg;
+      OMR::X86::Encoding movEncoding = xorOpcode.getSIMDEncoding(&cg->comp()->target().cpu, vl);
+
+      TR_ASSERT_FATAL(movEncoding != OMR::X86::Bad, "No encoding method for movdqu opcode");
+      generateRegRegInstruction(movOpcode.getMnemonic(), node, resultReg, firstReg, cg, movEncoding);
+      generateRegRegInstruction(xorOpcode.getMnemonic(), node, resultReg, secondReg, cg, xorEncoding);
+      }
+
+   generateRegRegInstruction(andOpcode.getMnemonic(), node, resultReg, thirdReg, cg, xorEncoding);
+   generateRegRegInstruction(xorOpcode.getMnemonic(), node, resultReg, firstReg, cg, xorEncoding);
+
+   node->setRegister(resultReg);
+   cg->decReferenceCount(firstChild);
+   cg->decReferenceCount(secondChild);
+   cg->decReferenceCount(thirdChild);
+
+   return resultReg;
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register*
+OMR::X86::TreeEvaluator::vmexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
    }

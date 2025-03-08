@@ -17,7 +17,7 @@ OpenJDK Assembly Exception [2].
 [1] https://www.gnu.org/software/classpath/license.html
 [2] https://openjdk.org/legal/assembly-exception.html
 
-SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 -->
 
 # Contributing to Eclipse OMR
@@ -37,7 +37,7 @@ This project uses GitHub Issues to track ongoing development, discuss project
 plans, and keep track of bugs.  Be sure to search for existing issues before
 you create another one.
 
-Visit [our Issues page on GitHub to search and submit](https://github.com/eclipse/omr/issues)
+Visit [our Issues page on GitHub to search and submit](https://github.com/eclipse-omr/omr/issues)
 
 ### Labelling
 
@@ -47,62 +47,62 @@ may have multiple labels, as many as needed to provide adequate categorization.
 
 A subset of the labels are documented below.
 
-* [**`good first issue`**](https://github.com/eclipse/omr/labels/good%20first%20issue) generally
+* [**`good first issue`**](https://github.com/eclipse-omr/omr/labels/good%20first%20issue) generally
   refers to a task that would be suitable for someone new to the project with
   little experience with either the technology or even open-source projects and
   processes. They are intended for anyone who wants to gently get their feet
   wet on building, testing, or familiarizing themselves with part of the code
   base.
 
-* [**`bug`**](https://github.com/eclipse/omr/labels/bug) issues are functional
+* [**`bug`**](https://github.com/eclipse-omr/omr/labels/bug) issues are functional
   problems, errors or unexpected behaviour.
 
-* [**`build/configure`**](https://github.com/eclipse/omr/labels/build%20%2F%20configure)
+* [**`build/configure`**](https://github.com/eclipse-omr/omr/labels/build%20%2F%20configure)
   labels are used to describe issues with the build and configure system (e.g.,
   makefiles, autotools configure).
 
-* [**`ci`**](https://github.com/eclipse/omr/labels/ci) labels are used for
+* [**`ci`**](https://github.com/eclipse-omr/omr/labels/ci) labels are used for
   issues and enhancements with the continuous integration system for pull
   request testing (e.g., Jenkins, Azure, etc.)
 
-* [**`cmake`**](https://github.com/eclipse/omr/labels/cmake) labels are similar
+* [**`cmake`**](https://github.com/eclipse-omr/omr/labels/cmake) labels are similar
   to build/configure but they apply specifically to the CMake configuration.
 
-* [**`compiler arch review`**](https://github.com/eclipse/omr/labels/compiler%20arch%20review)
+* [**`compiler arch review`**](https://github.com/eclipse-omr/omr/labels/compiler%20arch%20review)
   labels are used to indicate a review of this issue or pull request at the
-  [OMR Compiler Architecture meeting](https://github.com/eclipse/omr/issues/2316)
+  [OMR Compiler Architecture meeting](https://github.com/eclipse-omr/omr/issues/2316)
   is requested prior to committing.
 
-* [**`documentation`**](https://github.com/eclipse/omr/labels/documentation)
+* [**`documentation`**](https://github.com/eclipse-omr/omr/labels/documentation)
   labels are used for issues or enhancements to the documentation (either in
   the source code itself or stand-alone documentation files).
 
-* [**`epic`**](https://github.com/eclipse/omr/labels/epic) issues are used to
+* [**`epic`**](https://github.com/eclipse-omr/omr/labels/epic) issues are used to
   group together related issues and to track larger goals in the project across
   issues.
 
-* [**`GSoC Project`**](https://github.com/eclipse/omr/labels/GSoC%20project)
+* [**`GSoC Project`**](https://github.com/eclipse-omr/omr/labels/GSoC%20project)
   labels are for potential ideas for Google Summer Of Code projects.
 
-* [**`help wanted`**](https://github.com/eclipse/omr/labels/help%20wanted)
+* [**`help wanted`**](https://github.com/eclipse-omr/omr/labels/help%20wanted)
   issues have value to the project but no immediate human resources to
   undertake it. Those that are looking to complete a task that someone isn't
   already working on can consider these.
 
-* [**`license`**](https://github.com/eclipse/omr/labels/license) labels are
+* [**`license`**](https://github.com/eclipse-omr/omr/labels/license) labels are
   used to annotate issues concerning the source code license.
 
-* [**`meeting`**](https://github.com/eclipse/omr/labels/meeting) labels are
+* [**`meeting`**](https://github.com/eclipse-omr/omr/labels/meeting) labels are
   used to annotate issues pertaining to project meeting agendas or minutes.
 
-* [**`toolchain bug`**](https://github.com/eclipse/omr/labels/toolchain%20bug)
+* [**`toolchain bug`**](https://github.com/eclipse-omr/omr/labels/toolchain%20bug)
   labels are used to document issues or pull requests that describe or implement
   a workaround to a bug in the development toolchain (such as the compiler) used
   to build OMR.  Toolchain workarounds should be temporary in nature, and the
   intention of this label is to make such workarounds easy to discover in the
   future lest they be lost in the code.
 
-* [**`tooling`**](https://github.com/eclipse/omr/labels/tooling) labels are for
+* [**`tooling`**](https://github.com/eclipse-omr/omr/labels/tooling) labels are for
   issues concerning support tooling needed to support any of the code or
   processes within the project.
 
@@ -111,57 +111,62 @@ Eclipse OMR technology component they affect.  For instance,
 
 | Label | Component | Principal Directories |
 | :---- | :---- | :---- |
-[**`comp:compiler`**](https://github.com/eclipse/omr/labels/comp%3Acompiler) | Compiler | `compiler`
-[**`comp:core`**](https://github.com/eclipse/omr/labels/comp%3Acore) | Core OMR functionality | `include_code`, `omr`
-[**`comp:diagnostic`**](https://github.com/eclipse/omr/labels/comp%3Adiagnostic) | Diagnostic services | `ddr`
-[**`comp:doc`**](https://github.com/eclipse/omr/labels/comp%3Adoc) | OMR documentation | `doc`
-[**`comp:gc`**](https://github.com/eclipse/omr/labels/comp%3Agc) | Garbage collector | `gc`
-[**`comp:glue`**](https://github.com/eclipse/omr/labels/comp%3Aglue) | Glue code | `glue`
-[**`comp:jitbuilder`**](https://github.com/eclipse/omr/labels/comp%3Ajitbuilder) | JitBuilder | `jitbuilder`
-[**`comp:port`**](https://github.com/eclipse/omr/labels/comp%3Aport) | Port library | `port`
-[**`comp:test`**](https://github.com/eclipse/omr/labels/comp%3Atest) | Unit tests and testing framework | `fvtest`
-[**`comp:thread`**](https://github.com/eclipse/omr/labels/comp%3Athread) | Thread library | `thread`
-[**`comp:tril`**](https://github.com/eclipse/omr/labels/comp%3Atril) | Tril infrastructure and tests | `fvtest/tril`
-[**`comp:utilities`**](https://github.com/eclipse/omr/labels/comp%3Autil) | OMR utilities | `util`
+[**`comp:compiler`**](https://github.com/eclipse-omr/omr/labels/comp%3Acompiler) | Compiler | `compiler`
+[**`comp:core`**](https://github.com/eclipse-omr/omr/labels/comp%3Acore) | Core OMR functionality | `include_code`, `omr`
+[**`comp:diagnostic`**](https://github.com/eclipse-omr/omr/labels/comp%3Adiagnostic) | Diagnostic services | `ddr`
+[**`comp:doc`**](https://github.com/eclipse-omr/omr/labels/comp%3Adoc) | OMR documentation | `doc`
+[**`comp:gc`**](https://github.com/eclipse-omr/omr/labels/comp%3Agc) | Garbage collector | `gc`
+[**`comp:glue`**](https://github.com/eclipse-omr/omr/labels/comp%3Aglue) | Glue code | `glue`
+[**`comp:jitbuilder`**](https://github.com/eclipse-omr/omr/labels/comp%3Ajitbuilder) | JitBuilder | `jitbuilder`
+[**`comp:port`**](https://github.com/eclipse-omr/omr/labels/comp%3Aport) | Port library | `port`
+[**`comp:test`**](https://github.com/eclipse-omr/omr/labels/comp%3Atest) | Unit tests and testing framework | `fvtest`
+[**`comp:thread`**](https://github.com/eclipse-omr/omr/labels/comp%3Athread) | Thread library | `thread`
+[**`comp:tril`**](https://github.com/eclipse-omr/omr/labels/comp%3Atril) | Tril infrastructure and tests | `fvtest/tril`
+[**`comp:utilities`**](https://github.com/eclipse-omr/omr/labels/comp%3Autil) | OMR utilities | `util`
 
 Further classification by processor architecture, operating system, and bitness
 can be achieved with the following labels:
 
-* [**`arch:aarch32`**](https://github.com/eclipse/omr/labels/arch%3Aaarch32)
-* [**`arch:aarch64`**](https://github.com/eclipse/omr/labels/arch%3Aaarch64)
-* [**`arch:power`**](https://github.com/eclipse/omr/labels/arch%3Apower)
-* [**`arch:riscv`**](https://github.com/eclipse/omr/labels/arch%3Ariscv)
-* [**`arch:x86`**](https://github.com/eclipse/omr/labels/arch%3Ax86)
-* [**`arch:z`**](https://github.com/eclipse/omr/labels/arch%3Az)
+* [**`arch:aarch32`**](https://github.com/eclipse-omr/omr/labels/arch%3Aaarch32)
+* [**`arch:aarch64`**](https://github.com/eclipse-omr/omr/labels/arch%3Aaarch64)
+* [**`arch:power`**](https://github.com/eclipse-omr/omr/labels/arch%3Apower)
+* [**`arch:riscv`**](https://github.com/eclipse-omr/omr/labels/arch%3Ariscv)
+* [**`arch:x86`**](https://github.com/eclipse-omr/omr/labels/arch%3Ax86)
+* [**`arch:z`**](https://github.com/eclipse-omr/omr/labels/arch%3Az)
 <br/>
 
-* [**`os:aix`**](https://github.com/eclipse/omr/labels/os%3Aaix)
-* [**`os:linux`**](https://github.com/eclipse/omr/labels/os%3Alinux)
-* [**`os:macos`**](https://github.com/eclipse/omr/labels/os%3Amacos)
-* [**`os:windows`**](https://github.com/eclipse/omr/labels/os%3Awindows)
-* [**`os:zos`**](https://github.com/eclipse/omr/labels/os%3Azos)
+* [**`os:aix`**](https://github.com/eclipse-omr/omr/labels/os%3Aaix)
+* [**`os:linux`**](https://github.com/eclipse-omr/omr/labels/os%3Alinux)
+* [**`os:macos`**](https://github.com/eclipse-omr/omr/labels/os%3Amacos)
+* [**`os:windows`**](https://github.com/eclipse-omr/omr/labels/os%3Awindows)
+* [**`os:zos`**](https://github.com/eclipse-omr/omr/labels/os%3Azos)
 <br/>
 
-* [**`bits:32`**](https://github.com/eclipse/omr/labels/bits%3A32)
-* [**`bits:64`**](https://github.com/eclipse/omr/labels/bits%3A64)
+* [**`bits:32`**](https://github.com/eclipse-omr/omr/labels/bits%3A32)
+* [**`bits:64`**](https://github.com/eclipse-omr/omr/labels/bits%3A64)
 
 ## Submitting a contribution
 
 You can propose contributions by sending pull requests through GitHub.
 Following these guidelines will help us to merge your pull requests smoothly:
 
-1. If you're not sure your contribution would be accepted, and want to validate
+1. Eclipse OMR is an Eclipse Foundation project. All contributors must sign the
+   [Eclipse Contributor Agreement](https://www.eclipse.org/legal/ECA.php) (or ECA)
+   following the instructions on that page before a contribution is accepted.
+
+   See [Eclipse OMR Legal Considerations](#eclipse-omr-legal-considerations) for
+   additional ECA considerations when creating project commits as well as copyright
+   and license requirements for files.
+
+2. If you're not sure your contribution would be accepted, and want to validate
    your approach or idea before writing code, feel free to open an issue. However,
    not every feature or fix needs an issue. If the problem and fix are cleanly
    connected, and you have the fix in hand, feel free to just submit a pull request.
 
-2. Your pull request is an opportunity to explain both what changes you'd like
+3. Your pull request is an opportunity to explain both what changes you'd like
    pulled in, but also _why_ you'd like them added. Providing clarity on why
    you want changes makes it easier to accept, and provides valuable context to
    review.
-
-3. Please read carefully and adhere to the legal considerations and
-   copyright/license requirements outlined below.
 
 4. Follow the coding style and format of the code you are modifying (see the
    [coding standards](doc/CodingStandard.md)). The code base is yet to be unified
@@ -171,19 +176,25 @@ Following these guidelines will help us to merge your pull requests smoothly:
 5. Only use C++ language features supported by our compilers. A list of supported
    features can be found [here](doc/SupportedC++Features.md).
 
-6. Follow the commit guidelines found below.
+6. Follow the [commit guidelines](#commit-guidelines) described below.
 
-7. We encourage you to open a pull request early, and mark it as "Work In Progress"
+7. Contributions from generative artificial intelligence (GenAI) coding assistants
+   are permitted subject to the
+   [GenAI Usage Guidelines](#Generative-Artificial-Intelligence-Usage-Guidelines)
+   described below.
+
+8. We encourage you to open a pull request early, and mark it as "Work In Progress"
    (prefix the PR title with WIP). This allows feedback to start early, and helps
    create a better end product. Committers will wait until after you've removed
    the WIP prefix to merge your changes.
 
-8. If you are contributing a change to the compiler technology that involves modifications
-   to the Testarossa IL (including, but not limited to, adding a new IL opcode, changing
-   the properties of an opcode, or adding a new datatype) or, in the opinion of a committer,
+9. If you are contributing a change to the compiler technology that involves modifications
+   to the Testarossa intermediate language (IL) (including, but not limited to,
+   adding a new IL opcode, changing the properties of an opcode, or adding a new datatype)
+   or, in the opinion of a committer,
    a fundamental element of compiler infrastructure, a committer will request that this
    pull request be presented at an upcoming
-   [OMR Compiler Architecture meeting](https://github.com/eclipse/omr/issues/2316)
+   [OMR Compiler Architecture meeting](https://github.com/eclipse-omr/omr/issues/2316)
    to invite community discussion prior to merging.  Issues of the same nature may
    also be asked to be discussed before the same architecture meeting prior to
    producing a pull request.
@@ -331,26 +342,128 @@ If the hook declines your commit, the message will remain in
 Be sure to update your version of the script occasionally as it may evolve as
 our commit guidelines evolve.
 
-## Legal considerations
+## Generative Artificial Intelligence Usage Guidelines
 
-Please read the [Eclipse Foundation policy on accepting contributions via Git](http://wiki.eclipse.org/Development_Resources/Contributing_via_Git).
+The Eclipse OMR project acknowledges that some contributions may be authored in
+whole or in part from generative artificial intelligence coding
+assistants. Such contributions are permitted per the
+[Eclipse Foundation Generative AI Usage Guidelines](https://www.eclipse.org/projects/guidelines/genai/)
+which describes contributor and committer responsibilities, copyright and
+licensing considerations, and attribution requirements for GenAI assisted
+contributions.
 
-Your contribution cannot be accepted unless you have a signed [ECA - Eclipse Foundation Contributor Agreement](http://www.eclipse.org/legal/ECA.php) in place. If you have an active signed Eclipse CLA
-([the CLA was updated by the Eclipse Foundation to become the ECA in August 2016](https://mmilinkov.wordpress.com/2016/08/15/contributor-agreement-update/)),
-then that signed CLA is sufficient. You will have to sign the ECA once your CLA expires.
+All contributors are encouraged to read and understand the advice and
+guidelines therein before submitting a contribution to Eclipse OMR even
+partially generated by an AI coding assistant.
 
-Here is the checklist for contributions to be _acceptable_:
+The Eclipse OMR project is subject to those policies and provides additional
+guidelines described below for contributors and committers governing
+GenAI-assisted contributions.
 
-1. [Create an account at Eclipse](https://dev.eclipse.org/site_login/createaccount.php).
-2. Add your GitHub user name in your account settings.
-3. [Log into the project's portal](https://projects.eclipse.org/) and sign the ["Eclipse ECA"](https://projects.eclipse.org/user/sign/cla).
-4. Ensure that you author the commit using the _same_ email address as your Eclipse account.
-5. Include the appropriate copyright notice and license at the top of each file.
+### Attribution
 
-Your signing of the ECA will be verified by a webservice called 'ip-validation'
-that checks the email address(es) that authored your commits has signed the
-ECA. **Note**: This service is case-sensitive, so ensure the email that signed
-the ECA and that authored your commits is the same, down to the case.
+Contributions that include GenAI-assisted content must disclose that authorship
+in each file where GenAI content is present. Contributors must include a
+statement like the following just below the copyright header at the beginning
+of the file that acknowledges their AI assistant (assuming such a statement
+does not already exist).
+
+```
+// Some sections generated by <YOUR AI ASSISTANT>
+```
+
+In addition, individual commits that include GenAI authored content must
+attribute that at the end of the commit message (before any human authorship
+signatures).
+
+```
+Co-authored by <YOUR AI ASSISTANT>
+```
+
+### Tagging
+
+Some contributors' employers may require their AI-generated code and
+documentation contributions to be annotated with inline tags providing
+additional metadata about the generated content for legal and license
+attribution reasons. Eclipse OMR will accept contributions that include such
+metadata with some guidance below for contributors and committers.
+
+#### Tag Usage
+
+Inline tagging of code or documentation generated by coding assistants is not
+mandatory.
+
+If tags are used, they must clearly demarcate the boundaries of GenAI-assisted
+content (e.g., via paired "begin" and "end" code comments). These boundaries
+may span consecutive lines, functions, paragraphs, or entire files. The term
+"assisted" is an important qualifier to describe the enclosed content because
+it may contain a blend of AI-generated content and human contributions. The
+"assisted" distinction is necessary because it may not be possible to clearly
+identify just the AI-generated content in the contribution, and it allows for
+human changes to the demarcated contribution over time while preserving the
+meaning of the tags.
+
+#### Tag Format
+
+At this time, Eclipse OMR does not specify the format of the tags, except that
+they must not contain any corporate-specific information or other identifiers
+that have no meaning beyond the original contributor (e.g., internal issue
+numbers or URLs). Information about the model used to generate the code or
+documentation is permitted, however.
+
+Tags must be concise and as minimally-invasive as possible. Tags that are
+excessively verbose or impact the readability of the code or documentation may
+be rejected by committers at their discretion.
+
+For consistency, tags produced for the same coding assistant must use the same
+format regardless of the contributor or pull request.
+
+#### Tag Maintenance
+
+If the contents of a tagged region are modified by a human then any enclosing
+tags should remain in place.
+
+If code or documentation within a tagged region is copied in whole or in part
+elsewhere in the project, the original surrounding tags should accompany the
+copy to its destination. If such code or documentation is copied to a file
+that does not already have the Eclipse Foundation GenAI attribution after the
+copyright header, such attribution must be added.
+
+Eclipse OMR implements a good-faith policy for contributors and committers to
+maintain GenAI tags in the code and documentation for as long as possible.
+Existing tags and their boundaries will be maintained on a best-effort basis,
+and they should not be removed simply for the sake of removing them.
+
+However, there are legitimate situations where GenAI tagging may be considered
+for removal, including if the tags:
+
+* interfere with the readability or understandability of the code or
+  documentation,
+* become difficult or unwieldy to maintain (e.g., through code refactoring or
+  code sharing),
+* become obsolete (e.g., information within a tagged section is removed
+  entirely),
+* become redundant (e.g., an inner set of tags is completely consumed by an
+  outer set)
+
+This list is not exhaustive, and the disposition of GenAI tags in a pull
+request will ultimately be at the discretion of Eclipse OMR committers who will
+balance the spirit of these tagging guidelines with the best interests of the
+Eclipse OMR project.
+
+## Eclipse OMR Legal Considerations
+
+### Pull Requests
+
+When a pull request is created (or when new commits are pushed to an existing pull
+request), a webservice will automatically run that will verify that each commit
+author's email address matches an email address that signed the ECA.
+**This service is case-sensitive, so the case of the email addresses must match exactly.**
+The success or failure of this webservice will be reported in the GitHub pull request.
+Pull requests with a failing ECA check will not be merged.
+
+Eclipse OMR pull requests do not need to be signed, but most contributors do so
+as a best practice.
 
 ### Copyright Notice and Licensing Requirements
 
@@ -389,6 +502,6 @@ The template for the copyright notice and dual-license is as follows:
  *  [1] https://www.gnu.org/software/classpath/license.html
  *  [2] https://openjdk.org/legal/assembly-exception.html
  *
- *  SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ *  SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 ```

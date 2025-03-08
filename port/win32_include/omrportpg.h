@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef omrportpg_h
@@ -128,7 +128,6 @@ typedef struct OMRPortPlatformGlobals {
 	HANDLE mem_heap;
 	uintptr_t vmem_pageSize[OMRPORT_VMEM_PAGESIZE_COUNT]; /** <0 terminated array of supported page sizes */
 	uintptr_t vmem_pageFlags[OMRPORT_VMEM_PAGESIZE_COUNT]; /** <0 terminated array of flags describing type of the supported page sizes */
-	BOOLEAN isRunningInContainer;	
 	char *si_osType;
 	char *si_osTypeOnHeap;
 	char *si_osVersion;
@@ -166,7 +165,6 @@ typedef struct OMRPortPlatformGlobals {
 #define PPG_mem_heap (portLibrary->portGlobals->platformGlobals.mem_heap)
 #define PPG_vmem_pageSize (portLibrary->portGlobals->platformGlobals.vmem_pageSize)
 #define PPG_vmem_pageFlags (portLibrary->portGlobals->platformGlobals.vmem_pageFlags)
-#define PPG_isRunningInContainer (portLibrary->portGlobals->platformGlobals.isRunningInContainer)
 #define PPG_si_osType (portLibrary->portGlobals->platformGlobals.si_osType)
 #define PPG_si_osTypeOnHeap (portLibrary->portGlobals->platformGlobals.si_osTypeOnHeap)
 #define PPG_si_osVersion (portLibrary->portGlobals->platformGlobals.si_osVersion)

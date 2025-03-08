@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_X86_CODEGENERATOR_INCL
@@ -150,6 +150,7 @@ struct TR_X86ProcessorInfo
    bool has36BitPageSizeExtension()        {return testFeatureFlags(TR_36BitPageSizeExtension);}
    bool hasProcessorSerialNumber()         {return testFeatureFlags(TR_ProcessorSerialNumber);}
    bool supportsCLFLUSHInstruction()       {return testFeatureFlags(TR_CLFLUSHInstruction);}
+   bool supportsCLWBInstruction()          {return testFeatureFlags8(TR_CLWB);}
    bool supportsDebugTraceStore()          {return testFeatureFlags(TR_DebugTraceStore);}
    bool hasACPIRegisters()                 {return testFeatureFlags(TR_ACPIRegisters);}
    bool supportsMMXInstructions()          {return testFeatureFlags(TR_MMXInstructions);}
@@ -165,7 +166,11 @@ struct TR_X86ProcessorInfo
    bool supportsAVX512F()                  {return testFeatureFlags8(TR_AVX512F) && enabledXSAVE();}
    bool supportsAVX512BW()                 {return testFeatureFlags8(TR_AVX512BW) && enabledXSAVE();}
    bool supportsAVX512DQ()                 {return testFeatureFlags8(TR_AVX512DQ) && enabledXSAVE();}
+   bool supportsAVX512CD()                 {return testFeatureFlags8(TR_AVX512CD) && enabledXSAVE();}
    bool supportsAVX512VL()                 {return testFeatureFlags8(TR_AVX512VL) && enabledXSAVE();}
+   bool supportsAVX512VBMI2()              {return testFeatureFlags10(TR_AVX512_VBMI2) && enabledXSAVE();}
+   bool supportsAVX512BITALG()             {return testFeatureFlags10(TR_AVX512_BITALG) && enabledXSAVE();}
+   bool supportsAVX512VPOPCNTDQ()          {return testFeatureFlags10(TR_AVX512_VPOPCNTDQ) && enabledXSAVE();}
    bool supportsBMI1()                     {return testFeatureFlags8(TR_BMI1) && enabledXSAVE();}
    bool supportsBMI2()                     {return testFeatureFlags8(TR_BMI2) && enabledXSAVE();}
    bool supportsFMA()                      {return testFeatureFlags2(TR_FMA) && enabledXSAVE();}
@@ -190,25 +195,30 @@ struct TR_X86ProcessorInfo
    uint32_t getCPUExtendedModel(uint32_t signature)  {return (signature & CPUID_SIGNATURE_EXTENDEDMODEL_MASK) >> 16;}
    uint32_t getCPUExtendedFamily(uint32_t signature) {return (signature & CPUID_SIGNATURE_EXTENDEDFAMILY_MASK) >> 20;}
 
-   bool isIntelPentium()      { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelPentium; }
-   bool isIntelP6()           { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelP6; }
-   bool isIntelPentium4()     { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelPentium4; }
-   bool isIntelCore2()        { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelCore2; }
-   bool isIntelTulsa()        { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelTulsa; }
-   bool isIntelNehalem()      { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelNehalem; }
-   bool isIntelWestmere()     { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelWestmere; }
-   bool isIntelSandyBridge()  { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelSandyBridge; }
-   bool isIntelIvyBridge()    { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelIvyBridge; }
-   bool isIntelHaswell()      { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelHaswell; }
-   bool isIntelBroadwell()    { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelBroadwell; }
-   bool isIntelSkylake()      { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelSkylake; }
+   bool isIntelPentium()        { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelPentium; }
+   bool isIntelP6()             { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelP6; }
+   bool isIntelPentium4()       { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelPentium4; }
+   bool isIntelCore2()          { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelCore2; }
+   bool isIntelTulsa()          { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelTulsa; }
+   bool isIntelNehalem()        { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelNehalem; }
+   bool isIntelWestmere()       { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelWestmere; }
+   bool isIntelSandyBridge()    { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelSandyBridge; }
+   bool isIntelIvyBridge()      { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelIvyBridge; }
+   bool isIntelHaswell()        { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelHaswell; }
+   bool isIntelBroadwell()      { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelBroadwell; }
+   bool isIntelSkylake()        { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelSkylake; }
+   bool isIntelCascadeLake()    { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelCascadeLake; }
+   bool isIntelCooperLake()     { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelCooperLake; }
+   bool isIntelIceLake()        { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelIceLake; }
+   bool isIntelSapphireRapids() { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelSapphireRapids; }
+   bool isIntelEmeraldRapids()  { return (_processorDescription & 0x000000ff) == TR_ProcessorIntelEmeraldRapids; }
 
-   bool isIntelOldMachine()   { return (isIntelPentium() || isIntelP6() || isIntelPentium4() || isIntelCore2() || isIntelTulsa() || isIntelNehalem()); }
+   bool isIntelOldMachine()     { return (isIntelPentium() || isIntelP6() || isIntelPentium4() || isIntelCore2() || isIntelTulsa() || isIntelNehalem()); }
 
-   bool isAMDK6()             { return (_processorDescription & 0x000000fe) == TR_ProcessorAMDK5; } // accept either K5 or K6
-   bool isAMDAthlonDuron()    { return (_processorDescription & 0x000000ff) == TR_ProcessorAMDAthlonDuron; }
-   bool isAMDOpteron()        { return (_processorDescription & 0x000000ff) == TR_ProcessorAMDOpteron; }
-   bool isAMD15h()            { return (_processorDescription & 0x000000ff) == TR_ProcessorAMDFamily15h; }
+   bool isAMDK6()               { return (_processorDescription & 0x000000fe) == TR_ProcessorAMDK5; } // accept either K5 or K6
+   bool isAMDAthlonDuron()      { return (_processorDescription & 0x000000ff) == TR_ProcessorAMDAthlonDuron; }
+   bool isAMDOpteron()          { return (_processorDescription & 0x000000ff) == TR_ProcessorAMDOpteron; }
+   bool isAMD15h()              { return (_processorDescription & 0x000000ff) == TR_ProcessorAMDFamily15h; }
 
    bool isGenuineIntel() {return _vendorFlags.testAny(TR_GenuineIntel);}
    bool isAuthenticAMD() {return _vendorFlags.testAny(TR_AuthenticAMD);}
@@ -223,6 +233,7 @@ private:
    flags32_t  _featureFlags;   // cache feature flags for re-use
    flags32_t  _featureFlags2;  // cache feature flags 2 for re-use
    flags32_t  _featureFlags8;  // cache feature flags 8 for re-use
+   flags32_t  _featureFlags10; // cache feature flags 10 for re-use
 
    uint32_t _processorDescription;
 
@@ -302,6 +313,11 @@ private:
       {
       return testFlag(_featureFlags8, feature, getFeatureFlags8Mask());
       }
+
+   bool testFeatureFlags10(uint32_t feature)
+      {
+      return testFlag(_featureFlags10, feature, getFeatureFlags10Mask());
+      }
    };
 
 enum TR_PaddingProperties
@@ -369,6 +385,17 @@ class OMR_EXTENSIBLE CodeGenerator : public OMR::CodeGenerator
    void doRegisterAssignment(TR_RegisterKinds kindsToAssign);
    void doBinaryEncoding();
 
+
+   /*
+    * \brief
+    *        Adds items describing cold code cache to RSSReport
+    *
+    * \param coldCode
+    *        Starting address of the cold code cache
+    *
+    */
+   void addItemsToRSSReport(uint8_t *coldCode);
+
    void doBackwardsRegisterAssignment(TR_RegisterKinds kindsToAssign, TR::Instruction *startInstruction, TR::Instruction *appendInstruction = NULL);
 
    bool hasComplexAddressingMode() { return true; }
@@ -424,8 +451,6 @@ class OMR_EXTENSIBLE CodeGenerator : public OMR::CodeGenerator
    bool isReturnInstruction(TR::Instruction *instr);
    bool isBranchInstruction(TR::Instruction *instr);
 
-   TR::SymbolReference *getNanoTimeTemp();
-
    /**
     * @brief Computes the 32-bit displacement between the given direct branch instruction
     *        and either the target helper or a trampoline to reach the target helper
@@ -474,6 +499,7 @@ class OMR_EXTENSIBLE CodeGenerator : public OMR::CodeGenerator
    int32_t setEstimatedLocationsForDataSnippetLabels(int32_t estimatedSnippetStart);
    void emitDataSnippets();
    bool hasDataSnippets() { return _dataSnippetList.empty() ? false : true; }
+   uint32_t getDataSnippetsSize();
 
    TR::list<TR::Register*> &getSpilledIntRegisters() {return _spilledIntRegisters;}
 
@@ -544,7 +570,6 @@ class OMR_EXTENSIBLE CodeGenerator : public OMR::CodeGenerator
    int32_t getMaximumNumbersOfAssignableGPRs();
    int32_t getMaximumNumbersOfAssignableFPRs();
    int32_t getMaximumNumbersOfAssignableVRs();
-   bool willBeEvaluatedAsCallByCodeGen(TR::Node *node, TR::Compilation *comp);
 
    uint8_t getSizeOfCombinedBuffer();
 
@@ -627,6 +652,14 @@ class OMR_EXTENSIBLE CodeGenerator : public OMR::CodeGenerator
    bool considerTypeForGRA(TR::Node *node);
    bool considerTypeForGRA(TR::DataType dt);
    bool considerTypeForGRA(TR::SymbolReference *symRef);
+
+   /*
+    * \brief move out-of-line instructions from cold code to warm
+    *
+    */
+   void moveOutOfLineInstructionsToWarmCode();
+
+   uint32_t getOutOfLineCodeSize();
 
    /*
     * \brief create a data snippet.
@@ -743,8 +776,6 @@ protected:
 
    TR::RealRegister             *_frameRegister;
 
-   TR::SymbolReference             *_nanoTimeTemp;
-
    TR::Instruction                 *_lastCatchAppendInstruction;
    TR_BetterSpillPlacement        *_betterSpillPlacements;
 
@@ -785,7 +816,7 @@ protected:
       EnableTLHPrefetching                     = 0x00000800, ///< enable software prefetches on TLH allocates
       // Available                             = 0x00001000,
       // Available                             = 0x00002000,
-      TargetSupportsSoftwarePrefetches         = 0x00004000, ///< target processor and OS both support software prefetch instructions
+      // Available                             = 0x00004000,
       MethodEnterExitTracingEnabled            = 0x00008000, ///< trace method enter/exits
       // Available                             = 0x00010000,
       PushPreservedRegisters                   = 0x00020000  ///< we've chosen to save/restore preserved regs using push/pop instructions instead of movs
@@ -832,12 +863,6 @@ protected:
       return _flags.testAny(EnableRegisterAssociations);
       }
    void setEnableRegisterAssociations() {_flags.set(EnableRegisterAssociations);}
-
-   bool targetSupportsSoftwarePrefetches()
-      {
-      return _flags.testAny(TargetSupportsSoftwarePrefetches);
-      }
-   void setTargetSupportsSoftwarePrefetches() {_flags.set(TargetSupportsSoftwarePrefetches);}
 
    bool enableTLHPrefetching()
       {

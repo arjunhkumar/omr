@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(SCAVENGERSTATS_HPP_)
@@ -193,9 +193,21 @@ public:
 	MMINLINE void 
 	addToSyncStallTime(uint64_t startTime, uint64_t endTime, uint64_t criticalSectionDuration = 0)
 	{
+		uint64_t criticalTime = criticalSectionDuration;
+		uint64_t deltaTime = endTime - startTime;
+
+		/*
+		 * criticalSectionDuration and deltaTime can be measured on clocks running on different cores asynchronously.
+		 * It means for close intervals (despite clocks are monotonic) criticalTime can be measured
+		 * slightly larger than deltaTime. So, criticalSectionDuration should be adjusted in this case.
+		 */
+		if (criticalTime > deltaTime) {
+			criticalTime = deltaTime;
+		}
+
 		_syncStallCount += 1;
-		_syncStallTime += (endTime - startTime);
-		_adjustedSyncStallTime += ((endTime - startTime) - criticalSectionDuration);
+		_syncStallTime += deltaTime;
+		_adjustedSyncStallTime += (deltaTime - criticalTime);
 	}
 	
 	MMINLINE void

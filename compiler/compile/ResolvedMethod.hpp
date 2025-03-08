@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef TR_RESOLVEDMETHODBASE_INCL
@@ -148,6 +148,18 @@ public:
    virtual void *callSiteTableEntryAddress(int32_t callSiteIndex);
    virtual bool isUnresolvedMethodTypeTableEntry(int32_t cpIndex);
    virtual void *methodTypeTableEntryAddress(int32_t cpIndex);
+
+   /** \brief
+    *    Check the presence of the @Stable annotation for a field
+    *
+    *  \param cpIndex
+    *    The constant pool index corresponding to the desired field
+    *
+    *  \return bool
+    *    Return true if the field at the indicated cpIndex has the @Stable annotation
+    */
+   virtual bool isStable(int32_t cpIndex, TR::Compilation *comp);
+
    /** \brief
     *    Get the number of arguments in the ROM method signature of an invokedynamic call
     *
@@ -158,6 +170,7 @@ public:
     *    The number of arguments of the ROM Method
     */
    virtual uint32_t romMethodArgCountAtCallSiteIndex(int32_t callSiteIndex);
+
    /** \brief
     *    Get the number of arguments in the ROM method signature of an inovokehandle call
     *
@@ -175,14 +188,6 @@ public:
    virtual bool getUnresolvedStaticMethodInCP(int32_t);
    virtual bool getUnresolvedSpecialMethodInCP(int32_t);
    virtual bool getUnresolvedVirtualMethodInCP(int32_t);
-
-   bool isDAAWrapperMethod();
-   bool isDAAMarshallingWrapperMethod();
-   bool isDAAPackedDecimalWrapperMethod();
-
-   bool isDAAIntrinsicMethod();
-   bool isDAAMarshallingIntrinsicMethod();
-   bool isDAAPackedDecimalIntrinsicMethod();
 
    virtual void setMethodHandleLocation(uintptr_t *location);
    virtual uintptr_t *getMethodHandleLocation();
@@ -218,7 +223,7 @@ public:
    virtual uint32_t classCPIndexOfMethod(uint32_t);
    virtual void * & addressOfClassOfMethod();
 
-   virtual uint32_t vTableSlot(uint32_t);
+   virtual uint32_t vTableSlot();
 
    virtual TR_OpaqueClassBlock *getResolvedInterfaceMethod(int32_t cpIndex, uintptr_t * pITableIndex);
 
@@ -236,7 +241,7 @@ public:
    virtual bool virtualMethodIsOverridden();
    virtual void setVirtualMethodIsOverridden();
    virtual void *addressContainingIsOverriddenBit();
-   virtual int32_t virtualCallSelector(uint32_t cpIndex);
+   virtual int32_t virtualCallSelector();
 
    virtual int32_t exceptionData(int32_t exceptionNumber, int32_t * startIndex, int32_t * endIndex, int32_t * catchType);
    virtual uint32_t numberOfExceptionHandlers();

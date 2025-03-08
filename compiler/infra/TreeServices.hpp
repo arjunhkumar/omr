@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef TRS_INCL
@@ -43,7 +43,7 @@ public:
       : _offset(-1), _multiplier(1), _rootNode(NULL), _comp(c)
       {}
 
-   bool process(TR::Node* aiaddNode, bool onlyConsiderConstAiaddSecondChild = false);
+   bool process(TR::Node* elementAddrNode, bool onlyConsiderConstAiaddSecondChild = false);
 
    TR::Compilation *          comp()                        { return _comp; }
    TR_Memory *               trMemory()                    { return comp()->trMemory(); }
@@ -83,7 +83,7 @@ public:
       return _rootNode;
       }
 
-   bool static isILLoad(TR::Node * node);
+   bool static isLloadi(TR::Node * node);
 
 protected:
    int64_t _offset;

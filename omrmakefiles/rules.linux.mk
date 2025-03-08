@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 ###
@@ -181,6 +181,16 @@ ifeq (1,$(OMR_DEBUG))
     GLOBAL_CFLAGS+=-g
     GLOBAL_LDFLAGS+=-g
   endif
+endif
+
+ifneq (,$(findstring -gdwarf-, $(GLOBAL_CFLAGS) $(GLOBAL_CXXFLAGS)))
+  # Don't override if '-gdwarf-N' is already specified.
+else ifeq (gcc,$(OMR_TOOLCHAIN))
+  # Tell gcc to use DWARF version 4, not 5 (which is the default for compiler
+  # versions 11+). All GNU compiler versions, that might reasonably be used,
+  # understand this option, so this doesn't need to check the compiler version.
+  GLOBAL_CFLAGS   += -gdwarf-4
+  GLOBAL_CXXFLAGS += -gdwarf-4
 endif
 
 #-- Add Platform flags

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef VERBOSELOG_HPP
@@ -71,9 +71,11 @@ enum TR_VlogTag
    TR_Vlog_PROFILING,
    TR_Vlog_JITServer,
    TR_Vlog_AOTCOMPRESSION,
+   TR_Vlog_BI,       //(benefit inliner)
    TR_Vlog_FSD,
    TR_Vlog_VECTOR_API,
    TR_Vlog_CHECKPOINT_RESTORE,
+   TR_Vlog_METHOD_STATS,
    TR_Vlog_numTags
    };
 
@@ -120,7 +122,11 @@ class TR_VerboseLog
 
    //only called once early on, after we can print to the vlog
    static void initialize(void *config);
+
    private:
+
+   static void privateStaticAsserts();
+
    static void vwrite(const char *format, va_list args); //defined in each front end
    static void writeTimeStamp();
    static const char *_vlogTable[];

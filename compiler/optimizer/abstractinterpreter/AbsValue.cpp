@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,14 +16,14 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/abstractinterpreter/AbsValue.hpp"
 
 TR::AbsValue* TR::AbsVPValue::clone(TR::Region& region) const
    {
-   TR::AbsVPValue* copy = new (region) TR::AbsVPValue(_vp, _constraint, _dataType, _paramPos);   
+   TR::AbsVPValue* copy = new (region) TR::AbsVPValue(_vp, _constraint, _dataType, _paramPos);
    return copy;
    }
 
@@ -31,11 +31,11 @@ TR::AbsValue* TR::AbsVPValue::merge(const TR::AbsValue *other)
    {
    if (other == NULL)
       return this;
-   
-   if (_paramPos != other->getParameterPosition()) 
+
+   if (_paramPos != other->getParameterPosition())
       _paramPos = -1;
 
-   if (other->getDataType() != _dataType) 
+   if (other->getDataType() != _dataType)
       {
       _dataType = TR::NoType;
       setToTop();
@@ -45,7 +45,7 @@ TR::AbsValue* TR::AbsVPValue::merge(const TR::AbsValue *other)
    if (isTop())
       return this;
 
-   if (other->isTop()) 
+   if (other->isTop())
       {
       setToTop();
       return this;
@@ -57,16 +57,16 @@ TR::AbsValue* TR::AbsVPValue::merge(const TR::AbsValue *other)
    return this;
    }
 
-void TR::AbsVPValue::print(TR::Compilation* comp) const  
+void TR::AbsVPValue::print(TR::Compilation* comp) const
    {
    traceMsg(comp, "AbsValue: Type: %s ", TR::DataType::getName(_dataType));
-   
+
    if (_constraint)
       {
       traceMsg(comp, "Constraint: ");
       _constraint->print(_vp);
       }
-   else 
+   else
       {
       traceMsg(comp, "TOP (unknown) ");
       }

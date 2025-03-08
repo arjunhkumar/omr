@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 
@@ -261,7 +261,7 @@ private:
 protected:
 	/* Basic free list support */
 	uintptr_t _heapFreeListCount;
-	uintptr_t _heapFreeListCountExtended;
+	uintptr_t _maximumHeapFreeListCount; /**< Maximum value for _heapFreeListCount that can be reinitialized to during VM restore. */
 	uintptr_t* _currentThreadFreeList;
 	J9ModronFreeList* _heapFreeLists;
 
@@ -370,12 +370,31 @@ public:
 	virtual uintptr_t getActualFreeEntryCount();
 
 	/**
+	 * Return the maximum TLH size taking into account scavengerScanCacheMaximumSize
+	 * when scavenger is being used.
+	 *
+	 * @return uintptr_t The maximum TLH size.
+	 */
+	MMINLINE uintptr_t getTlhMaximumSize()
+	{
+#if defined(OMR_GC_MODRON_SCAVENGER)
+		/* this memoryPool can be used by scavenger, maximum tlh size
+		 * should be max(_extensions->tlhMaximumSize, _extensions->scavengerScanCacheMaximumSize)
+		 */
+		uintptr_t tlhMaximumSize = OMR_MAX(_extensions->tlhMaximumSize, _extensions->scavengerScanCacheMaximumSize);
+#else /* OMR_GC_MODRON_SCAVENGER */
+		uintptr_t tlhMaximumSize = _extensions->tlhMaximumSize;
+#endif /* OMR_GC_MODRON_SCAVENGER */
+		return tlhMaximumSize;
+	}
+
+	/**
 	 * Create a MemoryPoolAddressOrderedList object.
 	 */
 	MM_MemoryPoolSplitAddressOrderedListBase(MM_EnvironmentBase* env, uintptr_t minimumFreeEntrySize, uintptr_t splitAmount)
 		: MM_MemoryPoolAddressOrderedListBase(env, minimumFreeEntrySize)
 		, _heapFreeListCount(splitAmount)
-		, _heapFreeListCountExtended(splitAmount)
+		, _maximumHeapFreeListCount(32) /* Optimize free lists up to 256 Threads. */
 		, _currentThreadFreeList(0)
 		, _heapFreeLists(NULL)
 		, _largeObjectAllocateStatsForFreeList(NULL)
@@ -386,7 +405,7 @@ public:
 	MM_MemoryPoolSplitAddressOrderedListBase(MM_EnvironmentBase* env, uintptr_t minimumFreeEntrySize, uintptr_t splitAmount, const char* name)
 		: MM_MemoryPoolAddressOrderedListBase(env, minimumFreeEntrySize, name)
 		, _heapFreeListCount(splitAmount)
-		, _heapFreeListCountExtended(splitAmount)
+		, _maximumHeapFreeListCount(32) /* Optimize free lists up to 256 Threads. */
 		, _currentThreadFreeList(0)
 		, _heapFreeLists(NULL)
 		, _largeObjectAllocateStatsForFreeList(NULL)

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -1060,14 +1060,14 @@ omrshsem_openSemaphore(struct OMRPortLibrary *portLibrary, intptr_t fd, char *ba
 				goto failDontUnlink;
 			}
 		} else {
-#if defined(__GNUC__) || defined(AIXPPC) || defined(J9ZTPF)
+#if defined(__GNUC__) || defined(AIXPPC) || defined(OMRZTPF)
 #if defined(OSX)
 			/*Use _key for OSX*/
 			if (buf.sem_perm._key != controlinfo->ftok_key)
 #elif defined(AIXPPC)
 			/*Use .key for AIXPPC*/
 			if (buf.sem_perm.key != controlinfo->ftok_key)
-#elif defined(J9ZTPF)
+#elif defined(OMRZTPF)
 			/*Use .key for z/TPF */
 			if (buf.key != controlinfo->ftok_key)
 #elif defined(__GNUC__)

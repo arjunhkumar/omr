@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(GCCODE_HPP_)
@@ -46,7 +46,7 @@ public:
 	
 	/**
 	 * Determine if the GC is implicit or explicit (i.e. triggered externally).
-	 * @return true if the gc code indicates an explicit GC
+	 * @return true if the GC code indicates an explicit GC
 	 */
 	bool isExplicitGC() const;
 	
@@ -58,10 +58,16 @@ public:
 	
 	/**
 	 * Determine if the GC should be aggressive.
-	 * @return true if the gc code indicates an aggressive GC
+	 * @return true if the GC code indicates an aggressive GC
 	 */
 	bool isAggressiveGC() const;
 	
+	/**
+	 * Determine if the GC is implicit aggressive.
+	 * @return true if the GC code indicates an implicit aggressive GC
+	 */
+	bool isImplicitAggressiveGC() const;
+
 	/**
 	 * Determine if it is a percolate GC call.
 	 * @return true if it is a percolate call
@@ -79,6 +85,12 @@ public:
 	 * @return true if OOM can be thrown at the end of this GC
 	 */
 	bool isOutOfMemoryGC() const;
+
+	/**
+	 * Determine if the GC should clear bits for objects marked as deleted.
+	 * @return true if we should clear the heap (currently only at snapshot)
+	 */
+	bool shouldClearHeap() const;
 };
 
 #endif /* GCCODE_HPP_ */

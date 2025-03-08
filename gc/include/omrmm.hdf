@@ -18,7 +18,7 @@ OpenJDK Assembly Exception [2].
 [1] https://www.gnu.org/software/classpath/license.html
 [2] https://openjdk.org/legal/assembly-exception.html
 
-SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 -->
 <interface>
 	<publicHeader>../../include_core/mmomrhook.h</publicHeader>
@@ -283,6 +283,19 @@ typedef uintptr_t (*condYieldFromGCFunctionPtr) (OMR_VMThread *omrVMThread, uint
 		<struct>MM_ReinitializedEvent</struct>
 		<data type="struct OMR_VMThread*" name="currentThread" description="current thread" />
 		<data type="uint64_t" name="timestamp" description="time of event" />
+	</event>
+
+	<event>
+		<name>J9HOOK_MM_OMR_FLUSH_CACHES_FOR_GC</name>
+		<description>
+			This is called slightly after exclusive VM access is acquired, and slightly before various GC start hooks.
+			This is called before flush itself, which deletes all the stats of the various application thread caches.
+			So, it's very similar to the GC start event, except all the stats are still available for reporting and processing.
+		</description>
+		<struct>MM_FlushCachesForGCEvent</struct>
+		<data type="struct OMR_VMThread*" name="currentThread" description="current thread" />
+		<data type="uint64_t" name="timestamp" description="time of event" />
+		<data type="uintptr_t" name="eventid" description="unique identifier for event" />
 	</event>
 
 </interface>

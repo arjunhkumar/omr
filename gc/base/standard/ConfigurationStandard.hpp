@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -64,6 +64,16 @@ public:
 	virtual MM_Heap* createHeapWithManager(MM_EnvironmentBase* env, uintptr_t heapBytesRequested, MM_HeapRegionManager* regionManager);
 	virtual MM_HeapRegionManager* createHeapRegionManager(MM_EnvironmentBase* env);
 	virtual J9Pool* createEnvironmentPool(MM_EnvironmentBase* env);
+
+#if defined(J9VM_OPT_CRIU_SUPPORT)
+	/**
+	 * Update the configuration to reflect the restore environment and parameters.
+	 *
+	 * @param[in] env the current environment.
+	 * @return boolean indicating whether the configuration was successfully updated.
+	 */
+	virtual bool reinitializeForRestore(MM_EnvironmentBase* env);
+#endif /* defined(J9VM_OPT_CRIU_SUPPORT) */
 
 	MM_ConfigurationStandard(MM_EnvironmentBase* env, MM_GCPolicy gcPolicy, uintptr_t regionSize)
 		: MM_Configuration(env, gcPolicy, mm_regionAlignment, regionSize, STANDARD_ARRAYLET_LEAF_SIZE_BYTES, getWriteBarrierType(env), gc_modron_allocation_type_tlh)

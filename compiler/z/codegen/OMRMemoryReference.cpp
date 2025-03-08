@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 //On zOS XLC linker can't handle files with same name at link time
@@ -364,7 +364,7 @@ bool OMR::Z::MemoryReference::setForceFoldingIfAdvantageous(TR::CodeGenerator * 
    else // if (eventualNonConversion->getReferenceCount() == 1)
       {
       // aiadd
-      //    iaload
+      //    aloadi
       //       x
       //    iconst
       //
@@ -372,13 +372,13 @@ bool OMR::Z::MemoryReference::setForceFoldingIfAdvantageous(TR::CodeGenerator * 
       //
       // aiadd
       //    conv
-      //       iaload
+      //       aloadi
       //          x
       //    iconst
       if (cg->traceBCDCodeGen())
          {
          traceMsg(comp,
-                  " inside setForceFoldingIfAdvantageous, eventualNonConversion %s (%p) has no register and refCount==1 and is an iaload+const so eval(%s - %p) and setForceFolding=true\n",
+                  " inside setForceFoldingIfAdvantageous, eventualNonConversion %s (%p) has no register and refCount==1 and is an aloadi+const so eval(%s - %p) and setForceFolding=true\n",
                   eventualNonConversion->getOpCode().getName(),eventualNonConversion,
                   eventualNonConversion->getFirstChild()->getOpCode().getName(),eventualNonConversion->getFirstChild());
          }
@@ -550,7 +550,7 @@ OMR::Z::MemoryReference::MemoryReference(TR::Node * rootLoadOrStore, TR::CodeGen
 
          if (symRef->isUnresolved())
             {
-            self()->createUnresolvedDataSnippetForiaload(rootLoadOrStore, cg, symRef, tempReg, isStore);
+            self()->createUnresolvedDataSnippetForAloadi(rootLoadOrStore, cg, symRef, tempReg, isStore);
             }
          else
             {
@@ -1286,9 +1286,8 @@ void ArtificiallyInflateReferenceCountWhenNecessary(TR::MemoryReference * mr, co
       }
    }
 
-
 void
-OMR::Z::MemoryReference::populateAddTree(TR::Node * subTree, TR::CodeGenerator * cg)
+OMR::Z::MemoryReference::populateAddTree(TR::Node * subTree, TR::CodeGenerator * cg, TR::InstOpCode::Mnemonic * loadOp, bool allowLXA)
    {
    TR::StackMemoryRegion stackMemoryRegion(*cg->trMemory());
 
@@ -1300,6 +1299,9 @@ OMR::Z::MemoryReference::populateAddTree(TR::Node * subTree, TR::CodeGenerator *
 
    TR::Node * addressChild = subTree->getFirstChild();
    TR::Node * integerChild = subTree->getSecondChild();
+
+   if (loadOp != NULL)
+      *loadOp = TR::InstOpCode::LA;
 
    if (integerChild->getOpCode().isLoadConst() &&
        (!comp->useCompressedPointers() ||
@@ -1328,14 +1330,14 @@ OMR::Z::MemoryReference::populateAddTree(TR::Node * subTree, TR::CodeGenerator *
             (integerChild->getOpCodeValue() == TR::isub || integerChild->getOpCodeValue() == TR::lsub))
       {
       //
-      // catch the pattern of aiadd on iaload <base> / isub of <expression> and -<constant> and
+      // catch the pattern of aiadd on aloadi <base> / isub of <expression> and -<constant> and
       // convert it into LA Rx,<constant>(R<expression>,R<base>)
       //
       bool usingAladd = (cg->comp()->target().is64Bit()) ? true : false;
 
       TR::Node * firstSubChild = integerChild->getFirstChild();
       TR::Node * secondSubChild = integerChild->getSecondChild();
-      if (secondSubChild->getOpCode().isLoadConst())
+      if (integerChild->getSecondChild()->getOpCode().isLoadConst())
          {
          intptr_t value;
          if (usingAladd)
@@ -1356,37 +1358,119 @@ OMR::Z::MemoryReference::populateAddTree(TR::Node * subTree, TR::CodeGenerator *
 
          intptr_t totalOff = _offset - value;
 
-         if (cg->isDispInRange(totalOff) && integerChild->getRegister() == NULL)
+         if (integerChild->getRegister() == NULL)
             {
-            memRefPopulated = true;
+            TR::Node *indexChild = firstSubChild;
 
-            _indexRegister = cg->evaluate(firstSubChild);
-
-            // not necessary to sign extend explicitly anymore due to aladd
-            // when aladd is tested, remove the explicit sign extension code below
-
-            self()->setBaseRegister(cg->evaluate(addressChild), cg);
-            _offset -= value;
-
-            if (firstSubChild->getReferenceCount() > 1)
+            if (allowLXA && loadOp != NULL && firstSubChild->getReferenceCount() == 1 &&
+                firstSubChild->getRegister() == NULL &&
+                (firstSubChild->getOpCode().isMul() || firstSubChild->getOpCode().isLeftShift()) &&
+                firstSubChild->getSecondChild()->getOpCode().isLoadConst())
                {
-               cg->decReferenceCount(firstSubChild);
+               // axadd
+               //    address
+               //    sub
+               //       mul/shl
+               //          index
+               //          stride
+               //       offset
+               TR::InstOpCode::Mnemonic lxaOp;
+               intptr_t lxaOff = totalOff;
+               TR::Node * secondMulChild = firstSubChild->getSecondChild();
+
+               int64_t stride = secondMulChild->getConstValue();
+               if (firstSubChild->getOpCode().isLeftShift())
+                  stride = 1 << stride;
+
+               bool canUseLXA = true;
+               switch (stride)
+                  {
+                  case 1:  lxaOp = TR::InstOpCode::LXAB; break;
+                  case 2:  lxaOp = TR::InstOpCode::LXAH; break;
+                  case 4:  lxaOp = TR::InstOpCode::LXAF; break;
+                  case 8:  lxaOp = TR::InstOpCode::LXAG; break;
+                  case 16: lxaOp = TR::InstOpCode::LXAQ; break;
+                  default: canUseLXA = false;
+                  }
+
+               if (canUseLXA)
+                  {
+                  if ((totalOff % stride) == 0)
+                     {
+                     lxaOff /= stride;
+                     if (cg->isDispInRange(lxaOff))
+                        {
+                        *loadOp = lxaOp;
+                        totalOff = lxaOff;
+                        indexChild = firstSubChild->getFirstChild();
+                        if (indexChild->getRegister() == NULL &&
+                              indexChild->getOpCodeValue() == TR::i2l &&
+                              indexChild->getReferenceCount() == 1)
+                           {
+                           cg->decReferenceCount(indexChild);
+                           indexChild = indexChild->getFirstChild();
+                           }
+                        cg->decReferenceCount(firstSubChild);
+                        cg->decReferenceCount(secondMulChild);
+                        TR::DebugCounter::incStaticDebugCounter(comp,
+                           TR::DebugCounter::debugCounterName(comp, "codegen/z/OMRMemoryReference/LXA/success/%s", comp->signature()));
+                        }
+                     else
+                        {
+                        TR::DebugCounter::incStaticDebugCounter(comp,
+                           TR::DebugCounter::debugCounterName(comp, "codegen/z/OMRMemoryReference/LXA/failure/offset-out-of-range/%s", comp->signature()));
+                        }
+                     }
+                  else
+                     {
+                     TR::DebugCounter::incStaticDebugCounter(comp,
+                        TR::DebugCounter::debugCounterName(comp, "codegen/z/OMRMemoryReference/LXA/failure/offset-not-multiple-of-stride/%s", comp->signature()));
+                     }
+                  }
+               else
+                  {
+                  TR::DebugCounter::incStaticDebugCounter(comp,
+                     TR::DebugCounter::debugCounterName(comp, "codegen/z/OMRMemoryReference/LXA/failure/unsupported-stride/%s", comp->signature()));
+                  }
                }
             else
                {
-               // Keep the register alive, as other node may need it later
-               firstSubChild->decReferenceCount();
-               TR::Register * reg = firstSubChild->getRegister();
-               if (reg && reg->isLive())
-                  {
-                  TR_LiveRegisterInfo * liveRegister = reg->getLiveRegisterInfo();
-                  liveRegister->decNodeCount();
-                  }
+               TR::DebugCounter::incStaticDebugCounter(comp,
+                  TR::DebugCounter::debugCounterName(comp, "codegen/z/OMRMemoryReference/LXA/failure/wrong-tree-shape/%s", comp->signature()));
                }
-            cg->decReferenceCount(secondSubChild);
+
+            if (cg->isDispInRange(totalOff))
+               {
+               memRefPopulated = true;
+               _indexRegister = cg->evaluate(indexChild);
+
+               // not necessary to sign extend explicitly anymore due to aladd
+               // when aladd is tested, remove the explicit sign extension code below
+
+               self()->setBaseRegister(cg->evaluate(addressChild), cg);
+               _offset = totalOff;
+
+               if (indexChild->getReferenceCount() > 1)
+                  {
+                  cg->decReferenceCount(indexChild);
+                  }
+               else
+                  {
+                  // Keep the register alive, as other node may need it later
+                  indexChild->decReferenceCount();
+                  TR::Register * reg = indexChild->getRegister();
+                  if (reg && reg->isLive())
+                     {
+                     TR_LiveRegisterInfo * liveRegister = reg->getLiveRegisterInfo();
+                     liveRegister->decNodeCount();
+                     }
+                  }
+               cg->decReferenceCount(secondSubChild);
+               }
             }
          }
       }
+
 
    if (!memRefPopulated && (integerChild->getEvaluationPriority(cg) > addressChild->getEvaluationPriority(cg)))
       {
@@ -1595,7 +1679,7 @@ OMR::Z::MemoryReference::populateLoadAddrTree(TR::Node * subTree, TR::CodeGenera
    // Need to associate symref of loadaddr to the memory reference
    // so that the resolution of any offsets (in particular autos on stack)
    // can be resolved.
-   //  i.e.  iaload <o.f>+12
+   //  i.e.  aloadi <o.f>+12
    //           loadaddr <auto>
    // will generate
    //       L  +12+?(GPR5)  <-- <auto> symref will resolve the ? offset.
@@ -1798,8 +1882,11 @@ OMR::Z::MemoryReference::populateMemoryReference(TR::Node * subTree, TR::CodeGen
 
    noteAllNodesWithRefCountNotOne(nodesBefore, subTree, comp);
 
-   if (((comp->useCompressedPointers() && subTree->getOpCodeValue() == TR::l2a))
-           && (subTree->getReferenceCount() == 1) && (subTree->getRegister() == NULL))
+   if (comp->useCompressedPointers() &&
+       (subTree->getOpCodeValue() == TR::l2a) &&
+       (subTree->getReferenceCount() == 1) &&
+       (subTree->getRegister() == NULL) &&
+       !self()->getUnresolvedSnippet()) // If there is unresolved data snippet, l2a cannot be skipped
       {
       noopNode = subTree;
       subTree = subTree->getFirstChild();

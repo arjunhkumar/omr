@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/DeadTreesElimination.hpp"
@@ -73,7 +73,7 @@ static OMR::TreeInfo *findOrCreateTreeInfo(TR::TreeTop *treeTop, List<OMR::TreeI
          return t;
       }
 
-   t = new (comp->trStackMemory()) OMR::TreeInfo(treeTop, 0);
+   t = new (targetTrees->getRegion()) OMR::TreeInfo(treeTop, 0);
    targetTrees->add(t);
    return t;
    }
@@ -265,6 +265,9 @@ static bool isSafeToReplaceNode(TR::Node *currentNode, TR::TreeTop *curTreeTop, 
       return false;
 
    bool mayBeVolatileReference = currentNode->mightHaveVolatileSymbolReference();
+   // Do not swing down volatile nodes
+   if (mayBeVolatileReference)
+      return false;
 
    // Now scan forwards through the trees looking for the next use and checking
    // to see if any symbols in the subtree are getting modified; if so it is not
@@ -303,8 +306,8 @@ static bool isSafeToReplaceNode(TR::Node *currentNode, TR::TreeTop *curTreeTop, 
        *    => xload/xloadi a.volatileField
        *    ...
        */
-      if (mayBeVolatileReference && !canMoveIfVolatile)
-         return false;
+      //if (mayBeVolatileReference && !canMoveIfVolatile)
+      //   return false;
 
       if (nodeInSubTree)
          {
@@ -430,8 +433,7 @@ TR::Optimization *TR::DeadTreesElimination::create(TR::OptimizationManager *mana
 
 
 TR::DeadTreesElimination::DeadTreesElimination(TR::OptimizationManager *manager)
-   : TR::Optimization(manager),
-     _targetTrees(manager->trMemory())
+   : TR::Optimization(manager)
    {
    _cannotBeEliminated = false;
    _delayedRegStores = false;
@@ -470,8 +472,6 @@ void TR::DeadTreesElimination::prePerformOnBlocks()
    {
    _cannotBeEliminated = false;
    _delayedRegStores = false;
-
-   _targetTrees.deleteAll();
 
    /*
     * Walk through all the blocks to remove trivial dead trees in the following forms:
@@ -672,7 +672,6 @@ bool TR::DeadTreesElimination::fixUpTree(TR::Node *node, TR::TreeTop *treeTop, T
    // for arraycmp node, don't create its tree top anchor
    // fold it into if statment and save jump instruction
    if (node->getOpCodeValue() == TR::arraycmp &&
-      !node->isArrayCmpLen() &&
       comp()->target().cpu.isX86())
       {
       anchorArrayCmp = false;
@@ -757,6 +756,9 @@ static bool treeCanPossiblyBeRemoved(TR::Node *node)
 int32_t TR::DeadTreesElimination::process(TR::TreeTop *startTree, TR::TreeTop *endTree)
    {
    TR::StackMemoryRegion stackRegion(*comp()->trMemory());
+
+   List<OMR::TreeInfo> targetTrees(stackRegion);
+
    LongestPathMap longestPaths(std::less<TR::Node*>(), stackRegion);
 
    typedef TR::typed_allocator<CRAnchor, TR::Region&> CRAnchorAlloc;
@@ -892,7 +894,7 @@ int32_t TR::DeadTreesElimination::process(TR::TreeTop *startTree, TR::TreeTop *e
                   visitCount,
                   comp(),
                   this,
-                  &_targetTrees,
+                  &targetTrees,
                   _cannotBeEliminated,
                   longestPaths);
                }

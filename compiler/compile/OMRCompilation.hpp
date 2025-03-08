@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_COMPILATION_INCL
@@ -74,6 +74,7 @@ namespace OMR { typedef OMR::Compilation CompilationConnector; }
 
 class TR_AOTGuardSite;
 class TR_BitVector;
+struct TR_CallTarget;
 class TR_CHTable;
 class TR_FrontEnd;
 class TR_HWPRecord;
@@ -574,6 +575,17 @@ public:
 
    TR::list<TR::Snippet*> *getSnippetsToBePatchedOnClassRedefinition();
 
+  /*
+   * \brief
+   *    Inserts new first block into the IL
+   *
+   * \note
+   *    Inserts an empty block before the current first block
+   *    Moves glRegDeps from the current first block to the new one
+   *
+   */
+   TR::Block *insertNewFirstBlock();
+
    TR::RegisterCandidates *getGlobalRegisterCandidates() { return _globalRegisterCandidates; }
    void setGlobalRegisterCandidates(TR::RegisterCandidates *t) { _globalRegisterCandidates = t; }
 
@@ -727,8 +739,8 @@ public:
    //
    int32_t getPrevSymRefTabSize() { return _prevSymRefTabSize; }
    void setPrevSymRefTabSize( int32_t prevSize ) { _prevSymRefTabSize = prevSize; }
-   void dumpMethodTrees(char *title, TR::ResolvedMethodSymbol * = 0);
-   void dumpMethodTrees(char *title1, const char *title2, TR::ResolvedMethodSymbol * = 0);
+   void dumpMethodTrees(const char *title, TR::ResolvedMethodSymbol * = 0);
+   void dumpMethodTrees(const char *title1, const char *title2, TR::ResolvedMethodSymbol * = 0);
    void dumpFlowGraph( TR::CFG * = 0);
 
    bool getAddressEnumerationOption(TR_CompilationOptions o) {return _options->getAddressEnumerationOption(o);}
@@ -851,7 +863,7 @@ public:
    const char *getHotnessName();
 
    template<typename Exception>
-   void failCompilation(const char *format, ...)
+   void OMR_NORETURN failCompilation(const char *format, ...)
       {
       char buffer[512];
 
@@ -1125,6 +1137,24 @@ public:
     */
    TR::Environment& target() { return _target; }
 
+   /**
+    * \brief
+    *    The inline call target, if any, for which IL is currently being generated.
+    *
+    * \return
+    *    the call target
+    */
+   TR_CallTarget *currentILGenCallTarget() { return _currentILGenCallTarget; }
+
+   /**
+    * \brief
+    *    Set the inline call target for which IL is currently being generated.
+    *
+    * This should be set in the inliner just prior to generating IL to inline,
+    * and it should be reset to null afterward.
+    */
+   void setCurrentILGenCallTarget(TR_CallTarget *x) { _currentILGenCallTarget = x; }
+
 private:
    void resetVisitCounts(vcount_t, TR::ResolvedMethodSymbol *);
    int16_t restoreInlineDepthUntil(int32_t stopIndex, TR_ByteCodeInfo &currentInfo);
@@ -1332,6 +1362,8 @@ private:
    typedef std::map<TR_OpaqueClassBlock *, const TR::TypeLayout *, LayoutComparator, LayoutAllocator> TypeLayoutMap;
    TypeLayoutMap _typeLayoutMap;
 
+   TR_CallTarget *_currentILGenCallTarget;
+
    /*
     * This must be last
     * NOTE: TLS for Compilation needs to be set before any object that may use it is initialized.
@@ -1343,7 +1375,7 @@ private:
 
 // extern DWORD compilation
 //
-tlsDeclare(TR::Compilation *, compilation);
+TR_TLS_DECLARE(TR::Compilation *, compilation);
 
 }
 namespace TR {
@@ -1352,7 +1384,7 @@ namespace TR {
    /// \note Inlined for performance
    inline TR::Compilation *comp()
       {
-      return tlsGet(OMR::compilation, TR::Compilation *);
+      return TR_TLS_GET(OMR::compilation, TR::Compilation *);
       }
 }
 

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "compile/OSRData.hpp"
@@ -487,7 +487,7 @@ void TR_OSRCompilationData::checkOSRLimits()
          traceMsg(comp, "OSR COMPILE ABORT: frame size %d, scratch size %d, stack size %d were not accommodated by the VM\n",
                   maxFrameSize, getMaxScratchBufferSize(), maxStackFrameSize);
       if (comp->getOptions()->isAnyVerboseOptionSet(TR_VerboseOSR, TR_VerboseOSRDetails))
-         TR_VerboseLog::writeLineLocked(TR_Vlog_OSR, "OSR COMPILE ABORT in %s: frame size %d, scratch size %d, stack size %d were not accommodated by the VM\n",
+         TR_VerboseLog::writeLineLocked(TR_Vlog_OSR, "OSR COMPILE ABORT in %s: frame size %d, scratch size %d, stack size %d were not accommodated by the VM",
                   comp->signature(), maxFrameSize, getMaxScratchBufferSize(), maxStackFrameSize);
       comp->failCompilation<TR::CompilationException>("OSR buffers could not be enlarged to accomodate compiled method");
       }
@@ -1515,7 +1515,7 @@ bool TR_OSRCompilationData::TR_ScratchBufferInfo::operator==(const TR_ScratchBuf
 
 #if (defined(TR_HOST_POWER) && defined(TR_TARGET_POWER)                       \
            || defined(TR_HOST_S390) && defined(TR_TARGET_S390))               \
-        && defined(__IBMCPP__)
+        && (defined(__IBMCPP__) || defined(__open_xl__))
 __attribute__((__noinline__))
 //This tiny function when inlined by xlC 12 or later at -O3 breaks java -version
 //on Power and causes intermittent crashes on z/OS with xlC 2.1.1

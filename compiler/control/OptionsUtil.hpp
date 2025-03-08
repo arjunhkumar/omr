@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef TR_OPTIONSUTIL_INCL
@@ -37,7 +37,7 @@ class Options;
 
 // Shape of an option processing method
 //
-typedef char * (* OptionFunctionPtr)(char *option, void *base, OptionTable *entry);
+typedef const char * (* OptionFunctionPtr)(const char *option, void *base, OptionTable *entry);
 
 // Flags used for the msgInfo field in TR::OptionTable
 //
@@ -146,9 +146,9 @@ public:
 
    TR_ALLOC(TR_Memory::OptionSet)
 
-   OptionSet(char *s) { init(s); }
+   OptionSet(const char *s) { init(s); }
 
-   void init(char *s) { _optionString = s; _next = 0; _methodRegex = 0; _optLevelRegex = 0; _start=0; _end=0; _options = NULL; }
+   void init(const char *s) { _optionString = s; _next = 0; _methodRegex = 0; _optLevelRegex = 0; _start=0; _end=0; _options = NULL; }
 
    OptionSet *getNext() {return _next;}
 
@@ -157,7 +157,7 @@ public:
    TR::SimpleRegex *getOptLevelRegex() {return _optLevelRegex; }
    bool match(const char *s) { TR_ASSERT(false, "should be unreachable"); return false; }
    TR::Options *getOptions() {return _options;}
-   char *getOptionString() {return _optionString;}
+   const char *getOptionString() {return _optionString;}
    int32_t getStart() {return _start;}
    int32_t getEnd() {return  _end;}
 
@@ -177,7 +177,7 @@ private:
    int32_t _start;
    int32_t _end;
    TR::Options *_options;
-   char *_optionString;
+   const char *_optionString;
    };
 
 }

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef omrcel4ro31_h
@@ -124,7 +124,7 @@ omr_cel4ro31_call(OMR_CEL4RO31_infoBlock *infoBlock);
  * @return whether CEL4RO31 runtime support is available.
  */
 BOOLEAN
-omr_cel4ro31_isSupported(void);
+omr_cel4ro31_is_supported(void);
 
 /**
  * A helper routine to return an error message associated with the CEL4RO31 return code.

@@ -17,7 +17,7 @@ OpenJDK Assembly Exception [2].
 [1] https://www.gnu.org/software/classpath/license.html
 [2] https://openjdk.org/legal/assembly-exception.html
 
-SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 -->
 
 # Eclipse OMR Compiler Technology
@@ -104,7 +104,7 @@ extensible class representation (see [*extensible classes*](../doc/compiler/exte
 At present, the use of the `TR` namespace for the public API is largely aspirational
 as much of the code appears as it did when it was first contributed.  The epic to
 track the work to migrate components of the OMR compiler public API to the `TR`
-namespace is issue [#3519](https://github.com/eclipse/omr/issues/3519).
+namespace is issue [#3519](https://github.com/eclipse-omr/omr/issues/3519).
 Throughout the current compiler code, you may encounter references that are in
 the global namespace but whose identifiers are prefixed simply with `TR_`.
 This is inconsistent with the namespace convention just described and they are

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef j9nongenerated_h
@@ -128,9 +128,7 @@ typedef struct J9VMGC_SublistFragment {
 #define J9MMCONSTANT_IMPLICIT_GC_EXCESSIVE  8
 #define J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_UNLOADING_CLASSES  9
 #define J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_CRITICAL_REGIONS  10
-#if defined(OMR_GC_CONCURRENT_SCAVENGER)
 #define J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_ABORTED_SCAVENGE 11
-#endif
 #if defined(OMR_GC_IDLE_HEAP_MANAGER)
 #define J9MMCONSTANT_EXPLICIT_GC_IDLE_GC 12
 #endif
@@ -201,6 +199,10 @@ typedef struct J9MemorySegment {
 #define MEMORY_TYPE_DEFAULT                 0x2000000
 #define MEMORY_TYPE_FROM_JXE                0x4000000
 #define MEMORY_TYPE_SHARED_META             0x8000000
+/* On Linux, memory marked as MEMORY_TYPE_DISCLAIMABLE_TO_FILE can be disclaimed
+ * to a backing file with madvise().
+ */
+#define MEMORY_TYPE_DISCLAIMABLE_TO_FILE    0x10000000
 #define J9MEMORYSEGMENT_LEFTCHILD(base) AVL_SRP_GETNODE((base)->parentAVLTreeNode.leftChild)
 #define J9MEMORYSEGMENT_RIGHTCHILD(base) AVL_SRP_GETNODE((base)->parentAVLTreeNode.rightChild)
 

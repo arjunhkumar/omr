@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*
@@ -42,6 +42,7 @@
 #include <direct.h>
 #endif /* defined(OMR_OS_WINDOWS) */
 #if !defined(OMR_OS_WINDOWS)
+#include <locale>
 #include <grp.h>
 #include <errno.h>
 #if defined(J9ZOS390)
@@ -52,6 +53,12 @@
 #endif /* defined(J9ZOS390) */
 #include <sys/resource.h> /* For RLIM_INFINITY */
 #endif /* !defined(OMR_OS_WINDOWS) */
+#if defined(OMR_OS_WINDOWS)
+#include <windows.h>
+#else /* defined(OMR_OS_WINDOWS) */
+#include <sys/wait.h>
+#include <unistd.h>
+#endif /* defined(OMR_OS_WINDOWS) */
 
 #if defined(J9ZOS390) && !defined(OMR_EBCDIC)
 #include "atoe.h"
@@ -494,7 +501,6 @@ TEST(PortSysinfoTest, sysinfo_test_sysinfo_env_iterator)
 	J9SysinfoEnvElement element;
 	void *buffer = NULL;
 	uint32_t bufferSizeBytes = 0;
-	int l = 0;
 #undef SI_DEBUG
 
 	reportTestEntry(OMRPORTLIB, testName);
@@ -540,13 +546,11 @@ TEST(PortSysinfoTest, sysinfo_test_sysinfo_env_iterator)
 
 	portTestEnv->log("Environment:\n\n");
 
-	l = 0;
 	while (omrsysinfo_env_iterator_hasNext(&state)) {
 		rc = omrsysinfo_env_iterator_next(&state, &element);
 
 		if (0 == rc) {
 			portTestEnv->log("%s\n", element.nameAndValue);
-			l++;
 		} else {
 			outputErrorMessage(PORTTEST_ERROR_ARGS, "\tomrsysinfo_env_iterator_next returned: %i when 0 was expected\n", rc);
 			goto done;
@@ -580,7 +584,6 @@ TEST(PortSysinfoTest, sysinfo_test_sysinfo_env_iterator)
 #endif
 	}
 
-	l = 0;
 	while (omrsysinfo_env_iterator_hasNext(&state)) {
 
 		rc = omrsysinfo_env_iterator_next(&state, &element);
@@ -590,7 +593,6 @@ TEST(PortSysinfoTest, sysinfo_test_sysinfo_env_iterator)
 #endif
 
 		if (0 == rc) {
-			l++;
 		} else {
 			outputErrorMessage(PORTTEST_ERROR_ARGS, "\tomrsysinfo_env_iterator_next returned: %i when 0 was expected\n", rc);
 			goto done;
@@ -623,7 +625,6 @@ TEST(PortSysinfoTest, sysinfo_test_sysinfo_env_iterator)
 #endif
 	}
 
-	l = 0;
 	while (omrsysinfo_env_iterator_hasNext(&state)) {
 
 		rc = omrsysinfo_env_iterator_next(&state, &element);
@@ -633,7 +634,6 @@ TEST(PortSysinfoTest, sysinfo_test_sysinfo_env_iterator)
 #endif
 
 		if (0 == rc) {
-			l++;
 		} else {
 			outputErrorMessage(PORTTEST_ERROR_ARGS, "\tomrsysinfo_env_iterator_next returned: %i when 0 was expected\n", rc);
 			goto done;
@@ -669,7 +669,11 @@ TEST(PortSysinfoTest, sysinfo_test_sysinfo_set_limit_ADDRESS_SPACE)
 	uint64_t originalCurLimit;
 	uint64_t originalMaxLimit;
 	uint64_t currentLimit;
+#if defined(OSX)
+	const uint64_t as1 = 420000000000;
+#else /* defined(OSX) */
 	const uint64_t as1 = 300000;
+#endif /* defined(OSX) */
 
 	reportTestEntry(OMRPORTLIB, testName);
 
@@ -1295,6 +1299,9 @@ TEST(PortSysinfoTest, sysinfo_testMemoryInfo)
 #else /* defined (OSX) */
 			|| (OMRPORT_MEMINFO_NOT_AVAILABLE == memInfo.cached)
 #endif /* defined(OSX) */
+#if defined (LINUX)
+			|| (OMRPORT_MEMINFO_NOT_AVAILABLE == memInfo.swappiness)
+#endif /* defined(LINUX) */
 		) {
 
 			/* Fail pltest if one of these memory usage parameters were found inconsistent. */
@@ -1683,18 +1690,16 @@ TEST(PortSysinfoTest, sysinfo_test_get_CPU_load)
 {
 	OMRPORT_ACCESS_FROM_OMRPORT(portTestEnv->getPortLibrary());
 
-	/* As per the API specification the first two calls to this API will return a negative portable error code. However
-	 * for the purposes of this test we will not be testing this. This is because the test infrastructure is setup such
-	 * that we cannot guarantee that no other test has called omrsysinfo_get_CPU_utlization or omrsysinfo_get_CPU_load
-	 * up to this point. If some other test did call these APIs then the internal buffers would have been populated and
-	 * as such the omrsysinfo_get_CPU_load could return a zero return code on the very first invocation within this
-	 * test.
+	/* As per the API specification if only one data point has been recorded this API will return a negative portable
+	 * error code. However for the purposes of this test we will not be testing this. This is because the test infrastructure
+	 * is setup such that we cannot guarantee that no other test has called omrsysinfo_get_CPU_load up to this point. If
+	 * some other test calls this API then the internal buffers would have been populated and as such the omrsysinfo_get_CPU_load
+	 * could return a zero return code on the very first invocation within this test.
 	 *
-	 * To avoid inter-test dependencies we do not assert on the return value of the first two calls here, and only test
+	 * To avoid inter-test dependencies we do not assert on the return value of the first call here, and only test
 	 * that the API returns valid numbers within the range outlined in the API specification.
 	 */
 	double cpuLoad;
-	omrsysinfo_get_CPU_load(&cpuLoad);
 	omrsysinfo_get_CPU_load(&cpuLoad);
 	
 	/* Sleep for 100ms before re-sampling processor usage stats. This allows other processes and the operating system to
@@ -3113,4 +3118,95 @@ TEST(PortSysinfoTest, GetProcessorDescription)
 		BOOLEAN feature = omrsysinfo_processor_has_feature(&desc, i);
 		ASSERT_TRUE(feature == TRUE || feature == FALSE);
 	}
+}
+
+/* The method omrsysinfo_get_process_start_time is not implemented on z/TPF. */
+#if !defined(OMRZTPF)
+/**
+ * Test: GetProcessorStartTimeOfNonExistingProcessTest.
+ * Description: Verify that getting the process start time for a non-existing process (UINTPTR_MAX) results in 0 nanoseconds.
+ * Passing Condition: The expected process start time is 0 nanoseconds, and the actual process start time matches this value.
+ */
+TEST(PortSysinfoTest, GetProcessorStartTimeOfNonExistingProcessTest)
+{
+	OMRPORT_ACCESS_FROM_OMRPORT(portTestEnv->getPortLibrary());
+	/*
+	 * If a pid of UINTPTR_MAX exists in the future then the test will need to be modified.
+	 * UINTPTR_MAX represents the maximum unsigned integer value, which can be a 32-bit or a 64-bit depending on the system.
+	 * On unix systems, a pid is represented by pid_t, which can be a 32-bit or a 64-bit signed integer.
+	 * On windows systems, a pid is represented by DWORD, which is a 32-bit unsigned integer, and
+	 * the maximum value of DWORD is not a valid pid as it is reserved for use by the ASFW_ANY parameter.
+	 */
+	uintptr_t pid = UINTPTR_MAX;
+	uint64_t expectedProcessStartTimeInNanoseconds = 0;
+	uint64_t actualProcessStartTimeInNanoseconds = 0;
+	int32_t rc = omrsysinfo_get_process_start_time(pid, &actualProcessStartTimeInNanoseconds);
+	ASSERT_LT(rc, 0);
+	ASSERT_EQ(expectedProcessStartTimeInNanoseconds, actualProcessStartTimeInNanoseconds);
+}
+
+/**
+ * Test: GetProcessorStartTimeOfExistingProcessTest.
+ * Description: Verify that getting the process start time for an existing process results in a valid timestamp.
+ * Passing Condition: The process start time is greater than the test start time and less than the current time at the end of the test.
+ */
+TEST(PortSysinfoTest, GetProcessorStartTimeOfExistingProcessTest)
+{
+	OMRPORT_ACCESS_FROM_OMRPORT(portTestEnv->getPortLibrary());
+	uintptr_t pid = UINTPTR_MAX;
+	uintptr_t success = 0;
+	uint64_t testStartTimeInNanoseconds = omrtime_current_time_nanos(&success);
+	uint64_t processStartTimeInNanoseconds = 0;
+	int32_t rc = 0;
+#if defined(LINUX) || defined(OSX) || defined(AIXPPC) || defined(J9ZOS390)
+	int status = 0;
+	sleep(3);
+	pid = fork();
+	ASSERT_NE(pid, -1);
+	/* The if block will only be invoked by the child process. */
+	if (0 == pid) {
+		sleep(10);
+		/* A call to exit allows the child process to stop and avoids a timeout on x86-64 macOS. */
+		exit(0);
+	}
+	rc = omrsysinfo_get_process_start_time(pid, &processStartTimeInNanoseconds);
+	waitpid(pid, &status, 0);
+#elif defined(OMR_OS_WINDOWS) /* defined(LINUX) || defined(OSX) || defined(AIXPPC) || defined(J9ZOS390) */
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+	BOOL ret = FALSE;
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+	ZeroMemory(&pi, sizeof(pi));
+	ret = CreateProcess(NULL, "cmd.exe /c timeout /t 10", NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+	ASSERT_EQ(ret, TRUE);
+	pid = (uintptr_t)GetProcessId(pi.hProcess);
+	rc = omrsysinfo_get_process_start_time(pid, &processStartTimeInNanoseconds);
+	WaitForSingleObject(pi.hProcess, INFINITE);
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
+#endif /* defined(LINUX) || defined(OSX) || defined(AIXPPC) || defined(J9ZOS390) */
+	ASSERT_EQ(rc, 0);
+	ASSERT_GT(processStartTimeInNanoseconds, testStartTimeInNanoseconds);
+	ASSERT_LT(processStartTimeInNanoseconds, omrtime_current_time_nanos(&success));
+}
+#endif /* !defined(OMRZTPF) */
+
+TEST(PortSysinfoTest, NumberOfContextSwitchesIncreasesMonotonically)
+{
+	OMRPORT_ACCESS_FROM_OMRPORT(portTestEnv->getPortLibrary());
+#if defined(LINUX)
+	uint64_t switches = 0;
+	uint64_t prevSwitches = 0;
+	ASSERT_EQ(omrsysinfo_get_number_context_switches(&prevSwitches), 0);
+
+	for (size_t i = 0; i < 500; i += 1) {
+		ASSERT_EQ(omrsysinfo_get_number_context_switches(&switches), 0);
+		ASSERT_GE(switches, prevSwitches);
+		prevSwitches = switches;
+	}
+#else /* defined(LINUX) */
+	uint64_t switches = 0;
+	ASSERT_EQ(omrsysinfo_get_number_context_switches(&switches), OMRPORT_ERROR_SYSINFO_NOT_SUPPORTED);
+#endif /* defined(LINUX) */
 }

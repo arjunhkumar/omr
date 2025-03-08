@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 ///////////////////////////////////////////////////////////////////////////
@@ -33,12 +33,17 @@
 #include "compile/Compilation.hpp"
 #include "env/TRMemory.hpp"
 #include "env/jittypes.h"
+#include "il/AnyConst.hpp"
 #include "il/MethodSymbol.hpp"
 #include "il/Node.hpp"
 #include "infra/Assert.hpp"
 #include "infra/deque.hpp"
 #include "infra/Link.hpp"
 #include "infra/List.hpp"
+#include "infra/map.hpp"
+#include "infra/TRlist.hpp"
+#include "infra/Uncopyable.hpp"
+#include "optimizer/DeferredOSRAssumption.hpp"
 #include "optimizer/InlinerFailureReason.hpp"
 
 namespace TR { class CompilationFilters;}
@@ -58,6 +63,8 @@ namespace TR { class SymbolReference; }
 namespace TR { class TreeTop; }
 class TR_CallSite;
 struct TR_VirtualGuardSelection;
+
+namespace TR { struct RequiredConst; }
 
 class TR_CallStack : public TR_Link<TR_CallStack>
    {
@@ -127,13 +134,43 @@ class TR_CallStack : public TR_Link<TR_CallStack>
 
    };
 
+namespace TR {
+
+/**
+ * \brief A constant value that was observed during call target selection.
+ *
+ * When IL is generated for a call target, it's necessary in general to repeat
+ * any constant folding that occurred while selecting targets recursively
+ * within it so that the IL is guaranteed to match what the inliner saw.
+ *
+ * This repeated folding is important whenever a value might be allowed to be
+ * folded despite the possibility of a later change. It also allows constants
+ * to be speculative by specifying the assumptions that are necessary in order
+ * for the folding to be correct, and by informing the IL generator of the
+ * locations where such assumptions have been made (though the locations are
+ * tracked externally to this class).
+ */
+struct RequiredConst
+   {
+   TR::AnyConst _value; ///< The value.
+
+   /// The assumptions required to guarantee the value is constant, if any.
+   TR::list<TR::DeferredOSRAssumption*, TR::Region&> _assumptions;
+
+   RequiredConst(const TR::AnyConst &value, TR::Region &region)
+      : _value(value), _assumptions(region) {}
+   };
+
+} // namespace TR
+
 struct TR_CallTarget : public TR_Link<TR_CallTarget>
    {
    TR_ALLOC(TR_Memory::Inliner);
 
    friend class TR_InlinerTracer;
 
-   TR_CallTarget(TR_CallSite *callsite,
+   TR_CallTarget(TR::Region &memRegion,
+                 TR_CallSite *callsite,
                  TR::ResolvedMethodSymbol *calleeSymbol,
                  TR_ResolvedMethod *calleeMethod,
                  TR_VirtualGuardSelection *guard,
@@ -190,6 +227,12 @@ struct TR_CallTarget : public TR_Link<TR_CallTarget>
    TR_PrexArgInfo              *_prexArgInfo;   // used by computePrexInfo to calculate prex on generatedIL and transform IL
    TR_PrexArgInfo              *_ecsPrexArgInfo; // used by ECS and findInlineTargets to assist in choosing correct inline targets
 
+   /**
+    * \brief Constant values that were observed during call target selection
+    * within this particular call target, keyed on bytecode index.
+    */
+   TR::map<int32_t, TR::RequiredConst> _requiredConsts;
+
    void addDeadCallee(TR_CallSite *cs)
       {
       _deletedCallees.add(cs);
@@ -225,8 +268,8 @@ struct TR_CallTarget : public TR_Link<TR_CallTarget>
                   bool isInterface,  \
                   TR_ByteCodeInfo & bcInfo, \
                   TR::Compilation *comp, \
-                  int32_t depth=-1, \
-                  bool allConsts = false) :  \
+                  int32_t depth, \
+                  bool allConsts) :  \
                      BASE (callerResolvedMethod, \
                                  callNodeTreeTop, \
                                  parent, \
@@ -265,7 +308,7 @@ struct TR_CallTarget : public TR_Link<TR_CallTarget>
    TR_CALLSITE_DEFAULT_ALLOC \
    TR_CALLSITE_INHERIT_CONSTRUCTOR_COMMON (EXTENDED,BASE)
 
-class TR_CallSite : public TR_Link<TR_CallSite>
+class TR_CallSite : public TR_Link<TR_CallSite>, private TR::Uncopyable
    {
       public:
 
@@ -286,41 +329,8 @@ class TR_CallSite : public TR_Link<TR_CallSite>
                   bool isInterface,
                   TR_ByteCodeInfo & bcInfo,
                   TR::Compilation *comp,
-                  int32_t depth=-1,
-                  bool allConsts = false);
-
-      TR_CallSite(const TR_CallSite& other) :
-         _allConsts (other._allConsts),
-         _bcInfo (other._bcInfo),
-         _byteCodeIndex (other._byteCodeIndex),
-         _callerBlock (other._callerBlock),
-         _callerResolvedMethod (other._callerResolvedMethod),
-         _callNode (other._callNode),
-         _callNodeTreeTop (other._callNodeTreeTop),
-         _cursorTreeTop (other._cursorTreeTop),
-         _comp (other._comp),
-         _cpIndex (other._cpIndex),
-         _depth (other._depth),
-         _ecsPrexArgInfo (other._ecsPrexArgInfo),
-         _failureReason (other._failureReason),
-         _forceInline (other._forceInline),
-         _initialCalleeMethod (other._initialCalleeMethod),
-         _initialCalleeSymbol (other._initialCalleeSymbol),
-         _interfaceMethod (other._interfaceMethod),
-         _isBackEdge (other._isBackEdge),
-         _isIndirectCall (other._isIndirectCall),
-         _isInterface (other._isInterface),
-         _mytargets (0, other._comp->allocator()),
-         _myRemovedTargets(0, other._comp->allocator()),
-         _parent (other._parent),
-         _receiverClass (other._receiverClass),
-         _stmtNo (other._stmtNo),
-         _unavailableTemps (other._comp->trMemory()),
-         _unavailableBlockTemps (other._comp->trMemory()),
-         _vftSlot (other._vftSlot),
-         _visitCount (other._visitCount)
-         {
-         }
+                  int32_t depth,
+                  bool allConsts);
 
       TR_InlinerFailureReason getCallSiteFailureReason() { return _failureReason; }
       //Call Site Specific

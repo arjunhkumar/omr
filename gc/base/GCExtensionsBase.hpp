@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(GCEXTENSIONSBASE_HPP_)
@@ -33,6 +33,7 @@
 #include "AllocationStats.hpp"
 #include "ArrayObjectModel.hpp"
 #include "BaseVirtual.hpp"
+#include "CPUUtilStats.hpp"
 #include "ExcessiveGCStats.hpp"
 #include "Forge.hpp"
 #include "GlobalGCStats.hpp"
@@ -281,10 +282,13 @@ public:
 #endif /* OMR_GC_DOUBLE_MAP_ARRAYLETS */
 	bool isVirtualLargeObjectHeapRequested;
 	bool isVirtualLargeObjectHeapEnabled;
-	uintptr_t requestedPageSize;
-	uintptr_t requestedPageFlags;
-	uintptr_t gcmetadataPageSize;
-	uintptr_t gcmetadataPageFlags;
+
+	uintptr_t requestedPageSize;	/**< Memory page size for Object Heap */
+	uintptr_t requestedPageFlags;	/**< Memory page flags for Object Heap */
+	uintptr_t gcmetadataPageSize;	/**< Memory page size for GC Meta data */
+	uintptr_t gcmetadataPageFlags;	/**< Memory page flags for GC Meta data */
+	uintptr_t sparseHeapPageSize;	/**< Memory page size for Sparse Object Heap */
+	uintptr_t sparseHeapPageFlags;	/**< Memory page flags for Sparse Object Heap */
 
 #if defined(OMR_GC_MODRON_SCAVENGER)
 	MM_SublistPool rememberedSet;
@@ -354,7 +358,8 @@ public:
 	OMR_VMThread* vmThreadAllocatedMost;
 
 	const char* gcModeString;
-	uintptr_t splitFreeListSplitAmount;
+	uintptr_t splitFreeListSplitAmount; /**< The number of split freelists in heap (or in tenure for gencon) */
+	bool splitFreeListAmountForced; /**< Flag to distinguish if splitFreeListAmount is externally enforced (for example, specified by command line) or determined heuristically */
 	uintptr_t splitFreeListNumberChunksPrepared; /**< Used in MPSAOL postProcess. Shared for all MPSAOLs. Do not overwrite during postProcess for any MPSAOL. */
 	bool enableHybridMemoryPool;
 
@@ -405,8 +410,8 @@ public:
 	bool useGCStartupHints; /**< Enabled/disable usage of heap sizing startup hints from Shared Cache */
 
 	uintptr_t workpacketCount; /**< this value is ONLY set if -Xgcworkpackets is specified - otherwise the workpacket count is determined heuristically */
-	uintptr_t packetListSplit; /**< the number of ways to split packet lists, set by -XXgc:packetListLockSplit=, or determined heuristically based on the number of GC threads */
-
+	uintptr_t packetListSplit; /**< the number of ways to split packet lists, set by command line option, or determined heuristically based on the number of GC threads */
+	bool packetListSplitForced;  /**< Flag to distinguish if packetListSplit is externally enforced (for example, specified by command line) */
 	uintptr_t markingArraySplitMaximumAmount; /**< maximum number of elements to split array scanning work in marking scheme */
 	uintptr_t markingArraySplitMinimumAmount; /**< minimum number of elements to split array scanning work in marking scheme */
 
@@ -461,9 +466,9 @@ public:
 #endif /* defined(OMR_GC_BATCH_CLEAR_TLH) */
 	omrthread_monitor_t gcStatsMutex;
 	uintptr_t gcThreadCount; /**< Initial number of GC threads - chosen default or specified in java options*/
-	bool gcThreadCountForced; /**< true if number of GC threads is specified in java options. Currently we have a few ways to do this:
-										-Xgcthreads		-Xthreads= (RT only)	-XthreadCount= */
-	uintptr_t dispatcherHybridNotifyThreadBound; /** Bound for determining hybrid notification type (Individual notifies for count < MIN(bound, maxThreads/2), otherwise notify_all) */
+	bool gcThreadCountSpecified; /**< true if number of GC threads is specified in command line options. */
+	bool gcThreadCountForced; /**< true if user forced a fixed number of GC threads. Default is false, but a command line option could set it if not wanting adaptive threading */
+	uintptr_t dispatcherHybridNotifyThreadBound; /**< Bound for determining hybrid notification type (Individual notifies for count < MIN(bound, maxThreads/2), otherwise notify_all) */
 
 #if defined(OMR_GC_MODRON_SCAVENGER) || defined(OMR_GC_VLHGC)
 	enum ScavengerScanOrdering {
@@ -500,7 +505,8 @@ public:
 	bool scvTenureStrategyHistory; /**< Flag for enabling the History scavenger tenure strategy. */
 	bool scavengerEnabled;
 	bool scavengerRsoScanUnsafe;
-	uintptr_t cacheListSplit; /**< the number of ways to split scanCache lists, set by -XXgc:cacheListLockSplit=, or determined heuristically based on the number of GC threads */
+	uintptr_t cacheListSplit; /**< the number of ways to split scanCache lists, set by command line option, or determined heuristically based on the number of GC threads */
+	bool cacheListSplitForced;/**< Flag to distinguish if cacheList is externally enforced (for example, specified by command line) */
 #if defined(OMR_GC_CONCURRENT_SCAVENGER)
 	bool softwareRangeCheckReadBarrier; /**< enable software read barrier instead of hardware guarded loads when running with CS, complimentary to concurrentScavengerHWSupport with CS active */
 	bool softwareRangeCheckReadBarrierForced; /**< true if usage of softwareRangeCheckReadBarrier is requested explicitly */
@@ -509,9 +515,10 @@ public:
 	bool concurrentScavengerHWSupport; /**< set to true if CS runs with HW support, complimentary to softwareRangeCheckReadBarrier with CS active */
 	uintptr_t concurrentScavengerBackgroundThreads; /**< number of background GC threads during concurrent phase of Scavenge */
 	bool concurrentScavengerBackgroundThreadsForced; /**< true if concurrentScavengerBackgroundThreads set via command line option */
-	uintptr_t concurrentScavengerSlack; /**< amount of bytes added on top of avearge allocated bytes during concurrent cycle, in calcualtion for survivor size */
-	float concurrentScavengerAllocDeviationBoost; /**< boost factor for allocate rate and its deviation, used for tilt calcuation in Concurrent Scavenger */
-	bool concurrentScavengeExhaustiveTermination; /**< control flag to enable/disable concurrent phase termination optimization using involing async mutator callbacks */
+	uintptr_t concurrentScavengerSlack; /**< amount of bytes added on top of average allocated bytes during concurrent cycle, in calculation for survivor size - increase when sudden but rare spikes in allocation are expected */
+	float concurrentScavengerAllocAverageBoost; /**< boost factor for allocate rate, used for tilt calculation in CS - similar to Slack but expressed in relative rather than absolute terms */
+	float concurrentScavengerAllocDeviationBoost; /**< boost factor for allocate rate deviation, used for tilt calculation in CS - increase when frequent small deviations in allocation are expected */
+	bool concurrentScavengeExhaustiveTermination; /**< control flag to enable/disable concurrent phase termination optimization using involving async mutator callbacks */
 #endif	/* defined(OMR_GC_CONCURRENT_SCAVENGER) */
 	uintptr_t scavengerFailedTenureThreshold;
 	uintptr_t maxScavengeBeforeGlobal;
@@ -565,8 +572,8 @@ public:
 
 	/* global variables for excessiveGC functionality */
 	MM_UserSpecifiedParameterBool excessiveGCEnabled; /**< should we check for excessiveGC? (set through -XdisableExcessiveGC and -XenableExcessiveGC) */
-	bool isRecursiveGC; /**< is the current executing gc a result of another gc (ie: scavenger triggering a global collect) */
-	bool didGlobalGC; /**< has a global gc occurred in the current gc (possibly as a result of a recursive gc) */
+	bool isRecursiveGC; /**< is the current executing GC a result of another GC (ie: scavenger triggering a global collect) */
+	bool didGlobalGC; /**< has a global GC (all heap GCed) occurred in the current GC (possibly as a result of a recursive GC) */
 	ExcessiveLevel excessiveGCLevel;
 	float excessiveGCnewRatioWeight;
 	uintptr_t excessiveGCratio;
@@ -737,8 +744,10 @@ public:
 	};
 	HeapInitializationFailureReason heapInitializationFailureReason; /**< Error code provided additional information about heap initialization failure */
 	bool scavengerAlignHotFields; /**< True if the scavenger is to check the hot field description for an object in order to better cache align it when tenuring (enabled with the -Xgc:hotAlignment option) */
-	uintptr_t suballocatorInitialSize; /**< the initial chunk size in bytes for the J9Heap suballocator (enabled with the -Xgc:suballocatorInitialSize option) */
-	uintptr_t suballocatorCommitSize; /**< the commit size in bytes for the J9Heap suballocator (enabled with the -Xgc:suballocatorCommitSize option) */
+	uintptr_t suballocatorInitialSize; /**< the initial chunk size in bytes for the heap suballocator (enabled with the -Xgc:suballocatorInitialSize option) */
+	uintptr_t suballocatorCommitSize; /**< the commit size in bytes for the heap suballocator (enabled with the -Xgc:suballocatorCommitSize option) */
+	uintptr_t suballocatorIncrementSize; /**< the increment size in bytes for the heap suballocator (enabled with the -Xgc:suballocatorIncrementSize option) */
+	bool suballocatorQuickAlloc; /**< use OMRPORT_VMEM_ALLOC_QUICK for the heap suballocator (disabled with the -Xgc:suballocatorQuickAllocDisable option) (Linux only) */
 
 #if defined(OMR_GC_COMPRESSED_POINTERS)
 	bool shouldAllowShiftingCompression; /**< temporary option to enable compressed reference scaling by shifting pointers */
@@ -871,6 +880,7 @@ public:
 #endif /* defined(OMR_VALGRIND_MEMCHECK) */
 
 	bool shouldForceLowMemoryHeapCeilingShiftIfPossible; /**< Whether we should force compressed reference shift to 3 **/
+	MM_CPUUtilStats cpuUtilStats; /**< CPU/process util between any STW GC increments, hence not part of any Collector Stats */
 	/* Function Members */
 private:
 
@@ -894,7 +904,7 @@ protected:
 	virtual bool initialize(MM_EnvironmentBase* env);
 	virtual void tearDown(MM_EnvironmentBase* env);
 	virtual void computeDefaultMaxHeap(MM_EnvironmentBase* env);
-
+	virtual void reinitializeForRestore(MM_EnvironmentBase* env);
 public:
 	static MM_GCExtensionsBase* newInstance(MM_EnvironmentBase* env);
 	virtual void kill(MM_EnvironmentBase* env);
@@ -1514,6 +1524,8 @@ public:
 		, requestedPageFlags(OMRPORT_VMEM_PAGE_FLAG_NOT_USED)
 		, gcmetadataPageSize(0)
 		, gcmetadataPageFlags(OMRPORT_VMEM_PAGE_FLAG_NOT_USED)
+		, sparseHeapPageSize(0)
+		, sparseHeapPageFlags(OMRPORT_VMEM_PAGE_FLAG_NOT_USED)
 #if defined(OMR_GC_MODRON_SCAVENGER)
 		, rememberedSet()
 		, oldHeapSizeOnLastGlobalGC(UDATA_MAX)
@@ -1566,6 +1578,7 @@ public:
 		, vmThreadAllocatedMost(NULL)
 		, gcModeString(NULL)
 		, splitFreeListSplitAmount(0)
+		, splitFreeListAmountForced(false)
 		, splitFreeListNumberChunksPrepared(0)
 		, enableHybridMemoryPool(false)
 		, largeObjectArea(false)
@@ -1603,6 +1616,7 @@ public:
 		, useGCStartupHints(true)
 		, workpacketCount(0) /* only set if -Xgcworkpackets specified */
 		, packetListSplit(0)
+		, packetListSplitForced(false)
 		, markingArraySplitMaximumAmount(DEFAULT_ARRAY_SPLIT_MAXIMUM_SIZE)
 		, markingArraySplitMinimumAmount(DEFAULT_ARRAY_SPLIT_MINIMUM_SIZE)
 		, rootScannerStatsEnabled(false)
@@ -1648,6 +1662,7 @@ public:
 		, batchClearTLH(0)
 #endif /* defined(OMR_GC_BATCH_CLEAR_TLH) */
 		, gcThreadCount(0)
+		, gcThreadCountSpecified(false)
 		, gcThreadCountForced(false)
 		, dispatcherHybridNotifyThreadBound(16)
 #if defined(OMR_GC_MODRON_SCAVENGER) || defined(OMR_GC_VLHGC)
@@ -1681,6 +1696,7 @@ public:
 		, scavengerEnabled(false)
 		, scavengerRsoScanUnsafe(false)
 		, cacheListSplit(0)
+		, cacheListSplitForced(false)
 #if defined(OMR_GC_CONCURRENT_SCAVENGER)
 		, softwareRangeCheckReadBarrier(false)
 		, softwareRangeCheckReadBarrierForced(false)
@@ -1690,7 +1706,8 @@ public:
 		, concurrentScavengerBackgroundThreads(1)
 		, concurrentScavengerBackgroundThreadsForced(false)
 		, concurrentScavengerSlack(0)
-		, concurrentScavengerAllocDeviationBoost(2.0)
+		, concurrentScavengerAllocAverageBoost(1.5)
+		, concurrentScavengerAllocDeviationBoost(5.0)
 		, concurrentScavengeExhaustiveTermination(true)
 #endif /* defined(OMR_GC_CONCURRENT_SCAVENGER) */
 		, scavengerFailedTenureThreshold(0)
@@ -1855,8 +1872,10 @@ public:
 		, heapCeiling(0) /* default for normal platforms is 0 (i.e. no ceiling) */
 		, heapInitializationFailureReason(HEAP_INITIALIZATION_FAILURE_REASON_NO_ERROR)
 		, scavengerAlignHotFields(true) /* VM Design 1774: hot field alignment is on by default */
-		, suballocatorInitialSize(SUBALLOCATOR_INITIAL_SIZE) /* default for J9Heap suballocator initial size is 200 MB */
-		, suballocatorCommitSize(SUBALLOCATOR_COMMIT_SIZE) /* default for J9Heap suballocator commit size is 50 MB */
+		, suballocatorInitialSize(SUBALLOCATOR_INITIAL_SIZE) /* default for heap suballocator initial size is 200 MB */
+		, suballocatorCommitSize(SUBALLOCATOR_COMMIT_SIZE) /* default for heap suballocator commit size is 50 MB */
+		, suballocatorIncrementSize(SUBALLOCATOR_INCREMENT_SIZE) /* default for heap suballocator commit size is 8 MB or 256 MB for AIX */
+		, suballocatorQuickAlloc(true) /* use mmap-based allocation by default for the heap suballocator (Linux only) */
 #if defined(OMR_GC_COMPRESSED_POINTERS)
 		, shouldAllowShiftingCompression(true) /* VM Design 1810: shifting compression enabled, by default, for compressed refs */
 		, shouldForceSpecifiedShiftingCompression(0)
@@ -1956,6 +1975,7 @@ public:
 		, valgrindMempoolAddr(0)
 		, memcheckHashTable(NULL)
 		, shouldForceLowMemoryHeapCeilingShiftIfPossible(false)
+		, cpuUtilStats()
 #endif /* defined(OMR_VALGRIND_MEMCHECK) */
 	{
 		_typeId = __FUNCTION__;

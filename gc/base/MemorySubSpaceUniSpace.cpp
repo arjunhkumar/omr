@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 
@@ -257,17 +257,23 @@ MM_MemorySubSpaceUniSpace::timeForHeapContract(MM_EnvironmentBase *env, MM_Alloc
 		return false;
 	}
 
-	/* Don't shrink if we have not met the allocation request
-	 * ..we will be expanding soon if possible anyway
+	/* Don't shrink if this is implicit aggressive GC or we have not met the allocation request,
+	 * we will be expanding soon if possible anyway
 	 */
 	if (allocDescription) {
+		if (env->_cycleState->_gcCode.isImplicitAggressiveGC()) {
+			_contractionSize = 0;
+			Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit8(env->getLanguageVMThread());
+			return false;
+		}
+
 		/* MS in allocDescription may be NULL so get from env */
 		MM_MemorySpace *memorySpace = env->getMemorySpace();
 		uintptr_t largestFreeChunk = memorySpace->findLargestFreeEntry(env, allocDescription);
 
 		if (allocDescription->getBytesRequested() > largestFreeChunk) {
-			Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit4(env->getLanguageVMThread(), allocDescription->getBytesRequested(), largestFreeChunk);
 			_contractionSize = 0;
+			Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit4(env->getLanguageVMThread(), allocDescription->getBytesRequested(), largestFreeChunk);
 			return false;
 		}
 	}
@@ -282,6 +288,7 @@ MM_MemorySubSpaceUniSpace::timeForHeapContract(MM_EnvironmentBase *env, MM_Alloc
 			/* the softmx is less than the currentsize so we're going to attempt an aggressive contract */
 			_contractionSize = activeMemorySize - actualSoftMx;
 			_extensions->heap->getResizeStats()->setLastContractReason(SOFT_MX_CONTRACT);
+			Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit9(env->getLanguageVMThread(), _contractionSize);
 			return true;
 		}
 	}
@@ -315,8 +322,8 @@ MM_MemorySubSpaceUniSpace::timeForHeapContract(MM_EnvironmentBase *env, MM_Alloc
 		gcCount = _extensions->globalGCStats.gcCount;
 #endif /* defined(OMR_GC_MODRON_STANDARD) || defined(OMR_GC_REALTIME) */
 		if (_extensions->heap->getResizeStats()->getLastHeapExpansionGCCount() + _extensions->heapContractionStabilizationCount > gcCount) {
-			Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit5(env->getLanguageVMThread());
 			_contractionSize = 0;
+			Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit5(env->getLanguageVMThread());
 			return false;	
 		}	
 	} else {
@@ -333,8 +340,8 @@ MM_MemorySubSpaceUniSpace::timeForHeapContract(MM_EnvironmentBase *env, MM_Alloc
 		uintptr_t freeBytesAtSystemGCStart = _extensions->heap->getResizeStats()->getFreeBytesAtSystemGCStart();
 		
 		if (freeBytesAtSystemGCStart < minimumFree) {
-	 		Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit6(env->getLanguageVMThread(), freeBytesAtSystemGCStart, minimumFree);
 			_contractionSize = 0;
+			Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit6(env->getLanguageVMThread(), freeBytesAtSystemGCStart, minimumFree);
 	 		return false;	
 		}	
 	 }	
@@ -706,10 +713,14 @@ MM_MemorySubSpaceUniSpace::getHeapFreeMaximumHeuristicMultiplier(MM_EnvironmentB
 		gcPercentage = _extensions->getGlobalCollector()->getGCTimePercentage(env);
 	}
 
-	uintptr_t expectedGcPercentage = (_extensions->heapContractionGCRatioThreshold._valueSpecified + _extensions->heapExpansionGCRatioThreshold._valueSpecified) / 2;
-	uintptr_t gcRatio = gcPercentage / expectedGcPercentage;
-	uintptr_t freeMaxMultiplier = OMR_MIN(_extensions->heapFreeMaximumRatioMultiplier + 6 * gcRatio * gcRatio, _extensions->heapFreeMaximumRatioDivisor);
+	float expectedGcPercentage = ((float)_extensions->heapContractionGCRatioThreshold._valueSpecified
+			+ (float)_extensions->heapExpansionGCRatioThreshold._valueSpecified) / 2.0f;
+
+	float gcRatio = (float)gcPercentage / expectedGcPercentage;
 	
+	uintptr_t freeMaxMultiplier = OMR_MIN((uintptr_t)((float)_extensions->heapFreeMaximumRatioMultiplier
+			+ 6.0f * gcRatio * gcRatio), _extensions->heapFreeMaximumRatioDivisor);
+
 	Trc_MM_MemorySubSpaceUniSpace_getHeapFreeMaximumHeuristicMultiplier(env->getLanguageVMThread(), freeMaxMultiplier);
 
 	return freeMaxMultiplier;
@@ -726,10 +737,14 @@ MM_MemorySubSpaceUniSpace::getHeapFreeMinimumHeuristicMultiplier(MM_EnvironmentB
 		gcPercentage = _extensions->getGlobalCollector()->getGCTimePercentage(env);
 	}
 
-	uintptr_t expectedGcPercentage = (_extensions->heapContractionGCRatioThreshold._valueSpecified + _extensions->heapExpansionGCRatioThreshold._valueSpecified) / 2;
-	uintptr_t gcRatio = gcPercentage / expectedGcPercentage;
-	uintptr_t freeMinMultiplier = OMR_MIN(_extensions->heapFreeMinimumRatioMultiplier + 1 * gcRatio * gcRatio, _extensions->heapFreeMinimumRatioDivisor - 5);
+	float expectedGcPercentage = ((float)_extensions->heapContractionGCRatioThreshold._valueSpecified
+			+ (float)_extensions->heapExpansionGCRatioThreshold._valueSpecified) / 2.0f;
+
+	float gcRatio = (float)gcPercentage / expectedGcPercentage;
 	
+	uintptr_t freeMinMultiplier = OMR_MIN((uintptr_t)((float)_extensions->heapFreeMinimumRatioMultiplier
+			+ 1.0f * gcRatio * gcRatio), _extensions->heapFreeMinimumRatioDivisor - 5);
+
 	Trc_MM_MemorySubSpaceUniSpace_getHeapFreeMinimumHeuristicMultiplier(env->getLanguageVMThread(), freeMinMultiplier);
 
 	return freeMinMultiplier;

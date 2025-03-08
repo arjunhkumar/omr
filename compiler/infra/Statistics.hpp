@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef _STATISTICS_HPP__
@@ -272,13 +272,13 @@ class TR_StatsEvents
    public:
    enum {NAME_LEN=31};
    TR_StatsEvents() {}
-   TR_StatsEvents(const char *name, char **binNames, int minEventId)
+   TR_StatsEvents(const char *name, const char **binNames, int minEventId)
       {
       init(name, binNames, minEventId);
       }
    // the init method can be used if we want to declare an array of stats
    // that are initialized later (in a for loop)
-   void init(const char *name, char **binNames, int minEventId)
+   void init(const char *name, const char **binNames, int minEventId)
       {
       strncpy(_name, name, NAME_LEN);
       _name[NAME_LEN] = 0; // just in case name is longer than _name
@@ -341,12 +341,12 @@ class TR_StatsEvents
       }
    unsigned samples() const {return _numSamples;}
    protected:
-   char     _name[NAME_LEN+1];
-   int      _bins[N];
-   char**   _binNames;
-   int      _minEventId;  // value of smallest bin
-   int      _numSamples;
-   int      _numInvalidSamples;
+   char         _name[NAME_LEN+1];
+   int          _bins[N];
+   const char **_binNames;
+   int          _minEventId;  // value of smallest bin
+   int          _numSamples;
+   int          _numInvalidSamples;
    };
 
 #endif

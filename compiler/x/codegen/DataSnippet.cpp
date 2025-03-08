@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "x/codegen/DataSnippet.hpp"
@@ -56,9 +56,15 @@ TR::X86DataSnippet::addMetaDataForCodeAddress(uint8_t *cursor)
       bool needRelocation = TR::Compiler->cls.classUnloadAssumptionNeedsRelocation(cg()->comp());
       if (needRelocation && !cg()->comp()->compileRelocatableCode())
          {
-         cg()->addExternalRelocation(new (TR::comp()->trHeapMemory())
-                                  TR::ExternalRelocation(cursor, NULL, TR_ClassUnloadAssumption, cg()),
-                                  __FILE__, __LINE__, self()->getNode());
+         cg()->addExternalRelocation(
+            TR::ExternalRelocation::create(
+               cursor,
+               NULL,
+               TR_ClassUnloadAssumption,
+               cg()),
+            __FILE__,
+            __LINE__,
+            getNode());
          }
 
       if (cg()->comp()->target().is64Bit())
@@ -75,11 +81,16 @@ TR::X86DataSnippet::addMetaDataForCodeAddress(uint8_t *cursor)
       TR_OpaqueClassBlock *clazz = getData<TR_OpaqueClassBlock *>();
       if (clazz && cg()->comp()->compileRelocatableCode() && cg()->comp()->getOption(TR_UseSymbolValidationManager))
          {
-         cg()->addExternalRelocation(new (cg()->trHeapMemory()) TR::ExternalRelocation(cursor,
-                                                               (uint8_t *)clazz,
-                                                               (uint8_t *)TR::SymbolType::typeClass,
-                                                               TR_SymbolFromManager,
-                                                               cg()),  __FILE__, __LINE__, getNode());
+         cg()->addExternalRelocation(
+            TR::ExternalRelocation::create(
+               cursor,
+               (uint8_t *)clazz,
+               (uint8_t *)TR::SymbolType::typeClass,
+               TR_SymbolFromManager,
+               cg()),
+            __FILE__,
+            __LINE__,
+            getNode());
          }
       }
    }
@@ -92,7 +103,7 @@ uint8_t *TR::X86DataSnippet::emitSnippetBody()
    // align to 16 bytes
    if (getDataSize() % 16 == 0)
       {
-      cursor = (uint8_t *)(((intptr_t)(cursor + 15)) & -(1 << 4));
+      cursor = (uint8_t *)(((intptr_t)(cursor + 15)) & -(1<<4));
       }
 
    getSnippetLabel()->setCodeLocation(cursor);

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/InstOpCode.hpp"
@@ -49,6 +49,7 @@ const OMR::ARM64::InstOpCode::OpCodeBinaryEntry OMR::ARM64::InstOpCode::binaryEn
 	/* System */
 		0xD503309F,	/* DSB       	dsb	 */
 		0xD50330BF,	/* DMB       	dmb	 */
+		0xD503203F,	/* YIELD     	yield	 */
 	/* Unconditional branch (register) */
 		0xD61F0000,	/* BR        	br	 */
 		0xD63F0000,	/* BLR       	blr	 */
@@ -622,8 +623,8 @@ const OMR::ARM64::InstOpCode::OpCodeBinaryEntry OMR::ARM64::InstOpCode::binaryEn
 		0x9B008000,	/* MSUB      	msubx	 */
 		0x9B208000,	/* SMSUBL    	smsubl	 */
 		0x9BA08000,	/* UMSUBL    	umsubl	 */
-		0x9B400000,	/* SMULH     	smulh	 */
-		0x9BC00000,	/* UMULH     	umulh	 */
+		0x9B407C00,	/* SMULH     	smulh	 */
+		0x9BC07C00,	/* UMULH     	umulh	 */
 		0X1F400000,	/* FMADD        fmaddd   */
 		0X1F000000,	/* FMADD        fmadds   */
 	/* Data-processing (2 source) */
@@ -771,12 +772,18 @@ const OMR::ARM64::InstOpCode::OpCodeBinaryEntry OMR::ARM64::InstOpCode::binaryEn
 		0x6EA13800,	/* SHLL2    	vshll2_2d	*/
 	/* Vector Compare */
 		0x6E208C00,	/* CMEQ      	vcmeq16b */
-		0x6E608C00,	/* CMEQ      	vcmeq8b */
+		0x2E208C00,	/* CMEQ      	vcmeq8b */
+		0x6E608C00,	/* CMEQ      	vcmeq8h */
+		0x2E608C00,	/* CMEQ      	vcmeq4h */
 		0x6EA08C00,	/* CMEQ      	vcmeq4s */
+		0x2EA08C00,	/* CMEQ      	vcmeq2s */
 		0x6EE08C00,	/* CMEQ      	vcmeq2d */
 		0x4E209800,	/* CMEQ      	vcmeq16b_zero */
+		0x0E209800,	/* CMEQ      	vcmeq8b_zero */
 		0x4E609800,	/* CMEQ      	vcmeq8h_zero */
+		0x0E609800,	/* CMEQ      	vcmeq4h_zero */
 		0x4EA09800,	/* CMEQ      	vcmeq4s_zero */
+		0x0EA09800,	/* CMEQ      	vcmeq2s_zero */
 		0x4EE09800,	/* CMEQ      	vcmeq2d_zero */
 		0x6E203C00,	/* CMHS      	vcmhs16b */
 		0x6E603C00,	/* CMHS      	vcmhs8h */
@@ -901,6 +908,10 @@ const OMR::ARM64::InstOpCode::OpCodeBinaryEntry OMR::ARM64::InstOpCode::binaryEn
 		0x4E405800,	/* UZP2      	vuzp2_8h */
 		0x4E805800,	/* UZP2      	vuzp2_4s */
 		0x4EC05800,	/* UZP2      	vuzp2_2d */
+		0x0E002800,	/* TRN1      	vtrn1_8b */
+		0x4E002800,	/* TRN1      	vtrn1_16b */
+		0x0E006800,	/* TRN2      	vtrn2_8b */
+		0x4E006800,	/* TRN2      	vtrn2_16b */
 	/* Vector extract */
 		0x6E000000,	/* EXT       	vext16b	 */
 	/* Vector Data-processing (1 source) */
@@ -919,6 +930,7 @@ const OMR::ARM64::InstOpCode::OpCodeBinaryEntry OMR::ARM64::InstOpCode::binaryEn
 		0x4EE0B800,	/* ABS     	vabs2d   */
 		0x4EA0F800,	/* ABS     	vfabs4s  */
 		0x4EE0F800,	/* ABS     	vfabs2d  */
+		0x6E605800,	/* RBIT  	vrbit16b */
 		0x4E201800,	/* REV16   	vrev16_16b */
 		0x6E200800,	/* REV32   	vrev32_16b */
 		0x6E600800,	/* REV32   	vrev32_8h */
@@ -931,8 +943,20 @@ const OMR::ARM64::InstOpCode::OpCodeBinaryEntry OMR::ARM64::InstOpCode::binaryEn
 		0x4E212800,	/* XTN2    	vxtn2_16b */
 		0x4E612800,	/* XTN2    	vxtn2_8h  */
 		0x4EA12800,	/* XTN2    	vxtn2_4s  */
+		0x4E204800,	/* CLS  	vcls16b */
+		0x4E604800,	/* CLS  	vcls8h  */
+		0x4EA04800,	/* CLS  	vcls4s  */
+		0x6E204800,	/* CLZ  	vclz16b */
+		0x6E604800,	/* CLZ  	vclz8h  */
+		0x6EA04800,	/* CLZ  	vclz4s  */
 		0x0E205800,	/* CNT  	vcnt8b */
 		0x4E205800,	/* CNT  	vcnt16b */
+		0x4E202800,	/* SADDLP	vsaddlp16b */
+		0x4E602800,	/* SADDLP	vsaddlp8h */
+		0x4EA02800,	/* SADDLP	vsaddlp4s */
+		0x6E202800,	/* UADDLP	vuaddlp16b */
+		0x6E602800,	/* UADDLP	vuaddlp8h */
+		0x6EA02800,	/* UADDLP	vuaddlp4s */
 	/* Vector Copy */
 		/* DUP (general) */
 		0x4E010C00,	/* DUP   	vdup16b */

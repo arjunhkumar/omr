@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "il/Block.hpp"
@@ -1157,11 +1157,11 @@ static TR::SymbolReference * createSymRefForNode(TR::Compilation *comp, TR::Reso
          symRef = comp->getSymRefTab()->createTemporary(methodSymbol, TR::Address, true, 0);
          if (value->isNotCollected())
             symRef->getSymbol()->setNotCollected();
-         else if (value->getOpCode().isArrayRef())
+         else if (value->getOpCode().isArrayRef() || value->isDataAddrPointer())
             value->setIsInternalPointer(true);
 
          TR::AutomaticSymbol *pinningArray = NULL;
-         if (value->getOpCode().isArrayRef())
+         if (value->getOpCode().isArrayRef() || value->isDataAddrPointer())
             {
             TR::Node *valueChild = value->getFirstChild();
             if (valueChild->isInternalPointer() &&
@@ -1175,12 +1175,13 @@ static TR::SymbolReference * createSymRefForNode(TR::Compilation *comp, TR::Reso
                   valueChild = valueChild->getFirstChild();
                // If the node we are uncommoning is internal pointer and while iterating a child we found a node that is not
                // Array Reference, There are only two possibilities.
-               // 1. It is  internal poiter which was commoned means could be stored into register or on temp slot.
+               // 1. It is internal pointer which was commoned means could be stored into register or on temp slot.
                // 2. Itself is a pointer to array object.
                TR::SymbolReference *valueChildSymRef = valueChild->getSymbolReference();
                if (valueChildSymRef != NULL &&
-                  ((valueChild->getOpCode().isLoadVarDirect() && valueChildSymRef->getSymbol()->isAuto()) ||
-                  (valueChild->getOpCode().isLoadReg() && valueChildSymRef->getSymbol()->castToAutoSymbol()->isInternalPointer())))
+                   valueChildSymRef->getSymbol()->isAuto() &&
+                  (valueChild->getOpCode().isLoadVarDirect() ||
+                        (valueChild->getOpCode().isLoadReg() && valueChildSymRef->getSymbol()->castToAutoSymbol()->isInternalPointer())))
                   {
                   if (valueChildSymRef->getSymbol()->castToAutoSymbol()->isInternalPointer())
                      {
@@ -2346,7 +2347,7 @@ OMR::Block::addExceptionRangeForSnippet(uint32_t startPC, uint32_t endPC)
    }
 
 void
-OMR::Block::setHandlerInfo(uint32_t c, uint8_t d, uint16_t i, TR_ResolvedMethod * m, TR::Compilation *comp)
+OMR::Block::setHandlerInfo(uint32_t c, uint8_t d, int32_t i, TR_ResolvedMethod * m, TR::Compilation *comp)
    {
    self()->ensureCatchBlockExtensionExists(comp);
    TR_CatchBlockExtension *cbe = _catchBlockExtension;
@@ -2366,7 +2367,7 @@ OMR::Block::setHandlerInfo(uint32_t c, uint8_t d, uint16_t i, TR_ResolvedMethod 
    }
 
 void
-OMR::Block::setHandlerInfoWithOutBCInfo(uint32_t c, uint8_t d, uint16_t i, TR_ResolvedMethod * m, TR::Compilation *comp)
+OMR::Block::setHandlerInfoWithOutBCInfo(uint32_t c, uint8_t d, int32_t i, TR_ResolvedMethod * m, TR::Compilation *comp)
    {
    self()->ensureCatchBlockExtensionExists(comp);
    TR_CatchBlockExtension *cbe = _catchBlockExtension;
@@ -2398,7 +2399,7 @@ OMR::Block::getInlineDepth()
    return _catchBlockExtension->_inlineDepth;
    }
 
-uint16_t
+int32_t
 OMR::Block::getHandlerIndex()
    {
    TR_ASSERT(_catchBlockExtension, "catch block extension does not exist");

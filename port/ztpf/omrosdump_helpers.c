@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -330,7 +330,7 @@ splitPathName(char *finalname, char *pathname)
  * \param[in]        arg->portLibrary    Pointer to an initialized OMRPortLibrary
  *                                        block. If there isn't one at call time,
  *                                        leave this value NULL and set flag
- *                                        J9ZTPF_NO_PORT_LIBRARY
+ *                                        OMRZTPF_NO_PORT_LIBRARY
  * \param[in]        arg->dibPtr            Address of the DIB attached to the faulting
  *                                        UOW at post-interrupt time.
  *
@@ -598,7 +598,7 @@ buildELFHeader(Elf64_Ehdr *buffer)
  * 0004 0004    p_flags        Phdr flags (permissions +OS_specific bits)<b>
  * 0008 0008    p_offset    Offset in file (0-relative) of memory image<b>
  * 0010 0008    p_vaddr        Virtual address of memory image @ run time<b>
- * 0018 0008    p_addr        Physical adress of memory image @ run time<b>
+ * 0018 0008    p_addr        Physical address of memory image @ run time<b>
  * 0020 0008    p_filesz    Size of memory image in file<b>
  * 0028 0008    p_memsz        Size of memory image in memory<b>
  * 0030    0008    p_align        Boundary to align to when loaded<b>

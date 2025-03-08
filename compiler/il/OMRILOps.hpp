@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_ILOPS_INCL
@@ -208,6 +208,31 @@ public:
       }
 
   /** \brief
+   *     Returns vector type
+   *
+   *  \return
+   *     Vector type
+   */
+   TR::DataType getVectorDataType() const
+      {
+      return getVectorDataType(_opCode);
+      }
+
+  /** \brief
+   *     Returns vector type
+   *
+   *  \param op
+   *     Opcode
+   *
+   *  \return
+   *     Vector type
+   */
+   static TR::DataType getVectorDataType(ILOpCode op)
+      {
+      return getVectorResultDataType(op);
+      }
+
+  /** \brief
    *     Returns vector result type
    *
    *  \return
@@ -342,14 +367,13 @@ public:
             TR::DataType dt = getVectorResultDataType(op);
             return TR::DataType::createMaskType(dt.getVectorElementType(), dt.getVectorLength());
             }
-         else if (opcode.isMaskReduction())
+         else if (opcode.isVectorElementResult())
             {
-            return _opCodeProperties[opcode.getTableIndex()].dataType;
+            return getVectorResultDataType(op).getVectorElementType();
             }
          else
             {
-            // scalar result type (e.g. reduction)
-            return getVectorResultDataType(op).getVectorElementType();
+            return _opCodeProperties[opcode.getTableIndex()].dataType;
             }
          }
 
@@ -384,6 +408,7 @@ public:
    bool isFloatingPoint()            const { return typeProperties().testAny(ILTypeProp::Floating_Point); }
    bool isVectorResult()             const { return typeProperties().testAny(ILTypeProp::VectorResult); }
    bool isMaskResult()               const { return typeProperties().testAny(ILTypeProp::MaskResult); }
+   bool isVectorElementResult()      const { return typeProperties().testAny(ILTypeProp::VectorElementResult); }
    bool isIntegerOrAddress()         const { return typeProperties().testAny(ILTypeProp::Integer | ILTypeProp::Address); }
    bool is1Byte()                    const { return typeProperties().testAny(ILTypeProp::Size_1); }
    bool is2Byte()                    const { return typeProperties().testAny(ILTypeProp::Size_2); }
@@ -558,11 +583,12 @@ public:
 
    bool isFunctionCall() const
       {
-      return isCall()                           &&
-             getOpCodeValue() != TR::arraycopy  &&
-             getOpCodeValue() != TR::arrayset   &&
-             getOpCodeValue() != TR::bitOpMem   &&
-             getOpCodeValue() != TR::arraycmp;
+      return isCall()                              &&
+             getOpCodeValue() != TR::arraycopy     &&
+             getOpCodeValue() != TR::arrayset      &&
+             getOpCodeValue() != TR::bitOpMem      &&
+             getOpCodeValue() != TR::arraycmp      &&
+             getOpCodeValue() != TR::arraycmplen;
       }
 
    bool isCompareDouble()
@@ -637,10 +663,11 @@ public:
 
    bool isMemToMemOp()
       {
-      return getOpCodeValue() == TR::bitOpMem ||
-             getOpCodeValue() == TR::arrayset ||
-             getOpCodeValue() == TR::arraycmp ||
-             getOpCodeValue() == TR::arraycopy;
+      return getOpCodeValue() == TR::bitOpMem      ||
+             getOpCodeValue() == TR::arrayset      ||
+             getOpCodeValue() == TR::arraycmp      ||
+             getOpCodeValue() == TR::arraycopy     ||
+             getOpCodeValue() == TR::arraycmplen;
       }
 
    static TR::ILOpCodes getDataTypeConversion(TR::DataType t1, TR::DataType t2);
@@ -1670,6 +1697,57 @@ public:
          case TR::l2d:
             return ILOpCode::createVectorOpCode(TR::vconv, TR::DataType::createVectorType(TR::Int64, vectorLength),
                                                             TR::DataType::createVectorType(TR::Double, vectorLength));
+         case TR::bshl:
+         case TR::sshl:
+         case TR::ishl:
+         case TR::lshl:
+            vectorOperation = TR::vshl;
+            break;
+         case TR::bshr:
+         case TR::sshr:
+         case TR::ishr:
+         case TR::lshr:
+            vectorOperation = TR::vshr;
+            break;
+         case TR::bushr:
+         case TR::sushr:
+         case TR::iushr:
+         case TR::lushr:
+            vectorOperation = TR::vushr;
+            break;
+         case TR::irol:
+         case TR::lrol:
+            vectorOperation = TR::vrol;
+            break;
+         case TR::ipopcnt:
+         case TR::lpopcnt:
+            vectorOperation = TR::vpopcnt;
+            break;
+         case TR::inotz:
+         case TR::lnotz:
+            vectorOperation = TR::vnotz;
+            break;
+         case TR::inolz:
+         case TR::lnolz:
+            vectorOperation = TR::vnolz;
+            break;
+         case TR::bcompressbits:
+         case TR::scompressbits:
+         case TR::icompressbits:
+         case TR::lcompressbits:
+            vectorOperation = TR::vcompressbits;
+            break;
+         case TR::bexpandbits:
+         case TR::sexpandbits:
+         case TR::iexpandbits:
+         case TR::lexpandbits:
+            vectorOperation = TR::vexpandbits;
+            break;
+         case TR::sbyteswap:
+         case TR::ibyteswap:
+         case TR::lbyteswap:
+            vectorOperation = TR::vbyteswap;
+            break;
          default:
             return TR::BadILOp;
          }

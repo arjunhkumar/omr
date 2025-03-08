@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/Optimizer.hpp"
@@ -155,10 +155,7 @@ const OptimizationStrategy reorderArrayIndexOpts[] =
 
 const OptimizationStrategy cheapObjectAllocationOpts[] =
    {
-   { eachEscapeAnalysisPassGroup, IfEAOpportunitiesAndNotOptServer    },
    { explicitNewInitialization, IfNews      }, // do before local dead store
-    // basicBlockHoisting,                     // merge block into pred and prepare for local dead store
-   { localDeadStoreElimination              }, // remove local/parm/some field stores
    { endGroup                               }
    };
 
@@ -191,16 +188,12 @@ const OptimizationStrategy cheapGlobalValuePropagationOpts[] =
    { treeSimplification,          IfOptServer }, // for WAS trace folding
    { localCSE,                    IfEnabledAndOptServer }, // for WAS trace folding
    { treeSimplification,          IfEnabledAndOptServer }, // for WAS trace folding
-   { globalValuePropagation,      IfMoreThanOneBlock },
-   { localValuePropagation,       IfOneBlock },
+   { globalValuePropagation,      IfLoopsMarkLastRun },
    { treeSimplification,          IfEnabled },
    { cheapObjectAllocationGroup             },
-   { globalValuePropagation,      IfEnabled }, // if inlined a call or an object
    { treeSimplification,          IfEnabled },
    { catchBlockRemoval,           IfEnabled }, // if checks were removed
    { osrExceptionEdgeRemoval                }, // most inlining is done by now
-   { redundantMonitorElimination, IfMonitors }, // performed if method has monitors
-   { redundantMonitorElimination, IfEnabledAndMonitors }, // performed if method has monitors
    { globalValuePropagation,      IfEnabledAndMoreThanOneBlockMarkLastRun}, // mark monitors requiring sync
    { virtualGuardTailSplitter,    IfEnabled }, // merge virtual guards
    { CFGSimplification                    },
@@ -1558,6 +1551,12 @@ int32_t OMR::Optimizer::performOptimization(const OptimizationStrategy *optimiza
             doThisOptimization = true;
          }
          break;
+      case IfLoopsAndNotCompileTimeSensitive:
+         {
+         if (comp()->mayHaveLoops() && comp()->getOption(TR_NotCompileTimeSensitive))
+            doThisOptimization = true;
+         }
+         break;
       case MarkLastRun:
          doThisOptimization = true;
          TR_ASSERT(optNum < OMR::numOpts ,"No current support for marking groups as last (optNum=%d,numOpt=%d\n",optNum,OMR::numOpts); //make sure we didn't mark groups
@@ -2574,8 +2573,8 @@ bool OMR::Optimizer::areNodesEquivalent(TR::Node *node1, TR::Node *node2,  TR::C
          // for some reason this tests hasPinningArrayPointer only when the node also is true on _flags.testAny(internalPointer)
          bool haveIPs =    node1->isInternalPointer() && node2->isInternalPointer();
          bool haveNoIPs = !node1->isInternalPointer() && !node2->isInternalPointer();
-         TR::AutomaticSymbol * pinning1 = node1->getOpCode().hasPinningArrayPointer() ? node1->getPinningArrayPointer() : NULL;
-         TR::AutomaticSymbol * pinning2 = node2->getOpCode().hasPinningArrayPointer() ? node2->getPinningArrayPointer() : NULL;
+         TR::AutomaticSymbol * pinning1 = node1->hasPinningArrayPointer() ? node1->getPinningArrayPointer() : NULL;
+         TR::AutomaticSymbol * pinning2 = node2->hasPinningArrayPointer() ? node2->getPinningArrayPointer() : NULL;
          if ((haveIPs && (pinning1 == pinning2)) || haveNoIPs)
             return true;
          else

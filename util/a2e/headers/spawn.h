@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*
@@ -36,8 +36,7 @@
 #if __TARGET_LIB__ == 0X22080000                                   /*ibm@28725*/
 #include <//'PP.ADLE370.OS39028.SCEEH.H(spawn)'>                   /*ibm@28725*/
 #else                                                              /*ibm@28725*/
-#include "prefixpath.h"
-#include PREFIXPATH(spawn.h)                                    /*ibm@28725*/
+#include_next <spawn.h>                                            /*ibm@28725*/
 #endif                                                             /*ibm@28725*/
 
 #if defined(IBM_ATOE)
@@ -49,12 +48,10 @@
             extern "C" {
 		#endif
 
-        pid_t      atoe_spawnp (const char *, const int, const int[],
-						const struct inheritance *, const char *[],
-						const char *[]);
-        pid_t      atoe_spawnpe(const char *, const int, const int[],
-						const struct inheritance *, const char *[],
-						const char *[], int);
+        pid_t      atoe_spawnp (const char *filename, int fd_cnt, const int *fd_map,
+						const struct inheritance *inherit, const char **argv, const char **envp);
+        pid_t      atoe_spawnpe(const char *filename, int fd_cnt, const int *fd_map,
+						const struct inheritance *inherit, const char **argv, const char **envp, int envlen);
 
 		#ifdef __cplusplus
             }

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdint.h>
@@ -194,13 +194,15 @@ OMR::ResolvedMethodSymbol::ResolvedMethodSymbol(TR_ResolvedMethod * method, TR::
 
    self()->setParameterList();
 
-   _properties.set(CanSkipNullChecks                   , self()->safeToSkipNullChecks());
-   _properties.set(CanSkipBoundChecks                  , self()->safeToSkipBoundChecks());
-   _properties.set(CanSkipCheckCasts                   , self()->safeToSkipCheckCasts());
-   _properties.set(CanSkipDivChecks                    , self()->safeToSkipDivChecks());
-   _properties.set(CanSkipArrayStoreChecks             , self()->safeToSkipArrayStoreChecks());
-   _properties.set(CanSkipChecksOnArrayCopies          , self()->safeToSkipChecksOnArrayCopies());
-   _properties.set(CanSkipZeroInitializationOnNewarrays, self()->safeToSkipZeroInitializationOnNewarrays());
+   _properties.set(CanSkipNullChecks                          , self()->safeToSkipNullChecks());
+   _properties.set(CanSkipBoundChecks                         , self()->safeToSkipBoundChecks());
+   _properties.set(CanSkipCheckCasts                          , self()->safeToSkipCheckCasts());
+   _properties.set(CanSkipDivChecks                           , self()->safeToSkipDivChecks());
+   _properties.set(CanSkipArrayStoreChecks                    , self()->safeToSkipArrayStoreChecks());
+   _properties.set(CanSkipNonNullableArrayNullStoreCheck      , self()->safeToSkipNonNullableArrayNullStoreCheck());
+   _properties.set(CanSkipFlattenableArrayElementNonHelperCall, self()->safeToSkipFlattenableArrayElementNonHelperCall());
+   _properties.set(CanSkipChecksOnArrayCopies                 , self()->safeToSkipChecksOnArrayCopies());
+   _properties.set(CanSkipZeroInitializationOnNewarrays       , self()->safeToSkipZeroInitializationOnNewarrays());
    }
 
 
@@ -267,7 +269,7 @@ bcIndexForFakeInduce(TR::Compilation* comp, int16_t* callSiteInsertionPoint,
       if (!p) break;
       strncpy(signatureRegex, p, temp - p);
       signatureRegex[temp-p] = '\0';
-      char* tempRegex = signatureRegex;
+      const char *tempRegex = (const char *)signatureRegex;
       TR::SimpleRegex* regex = TR::SimpleRegex::create(tempRegex);
       if (regex)
          {
@@ -1983,12 +1985,7 @@ OMR::ResolvedMethodSymbol::getAutoSymRefs(int32_t slot)
    {
    TR_Memory * m = self()->comp()->trMemory();
    if (!_autoSymRefs)
-      {
-      if (self()->comp()->getJittedMethodSymbol() == self())
-         _autoSymRefs = new (m->trHeapMemory()) TR_Array<List<TR::SymbolReference> >(m, 100, true);
-      else
-         _autoSymRefs = new (m->trHeapMemory()) TR_Array<List<TR::SymbolReference> >(m, _resolvedMethod->numberOfParameterSlots() + _resolvedMethod->numberOfTemps() + 5, true);
-      }
+      _autoSymRefs = new (m->trHeapMemory()) TR_Array<List<TR::SymbolReference> >(m, _resolvedMethod->numberOfParameterSlots() + _resolvedMethod->numberOfTemps() + 5, true);
 
    (*_autoSymRefs)[slot].setRegion(m->heapMemoryRegion());
 

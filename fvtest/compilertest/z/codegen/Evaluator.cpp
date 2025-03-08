@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,11 +16,11 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/CodeGenerator.hpp"
-#include "env/ConcreteFE.hpp"
+#include "env/FrontEnd.hpp"
 #include "z/codegen/S390GenerateInstructions.hpp"
 #include "z/codegen/SystemLinkage.hpp"
 #include "codegen/S390Snippets.hpp"
@@ -46,43 +46,4 @@ void
 TR_Debug::print(TR::FILE *pOutFile, TR::S390RestoreGPR7Snippet *snippet)
    {
    TR_UNIMPLEMENTED();
-   }
-
-void
-TestCompiler::FrontEnd::generateBinaryEncodingPrologue(
-      TR_BinaryEncodingData *beData,
-      TR::CodeGenerator *cg)
-   {
-   TR::Compilation* comp = cg->comp();
-   TR_S390BinaryEncodingData *data = (TR_S390BinaryEncodingData *)beData;
-
-   data->cursorInstruction = cg->getFirstInstruction();
-   data->estimate = 0;
-   data->preProcInstruction = data->cursorInstruction;
-   data->jitTojitStart = data->cursorInstruction;
-   data->cursorInstruction = NULL;
-
-   TR::Instruction * preLoadArgs, * endLoadArgs;
-   preLoadArgs = data->preProcInstruction;
-   endLoadArgs = preLoadArgs;
-
-   TR::Instruction * oldFirstInstruction = data->cursorInstruction;
-
-   data->cursorInstruction = cg->getFirstInstruction();
-
-   static char *disableAlignJITEP = feGetEnv("TR_DisableAlignJITEP");
-
-   // Padding for JIT Entry Point
-   if (!disableAlignJITEP)
-      {
-      data->estimate += 256;
-      }
-
-   while (data->cursorInstruction && data->cursorInstruction->getOpCodeValue() != TR::InstOpCode::proc)
-      {
-      data->estimate = data->cursorInstruction->estimateBinaryLength(data->estimate);
-      data->cursorInstruction = data->cursorInstruction->getNext();
-      }
-
-   cg->getLinkage()->createPrologue(data->cursorInstruction);
    }

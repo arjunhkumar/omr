@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_I386_TREE_EVALUATOR_INCL
@@ -272,12 +272,6 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::X86::TreeEvaluator
    static TR::Register *vandEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vcallEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vcalliEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *vcmpeqEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *vcmpneEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *vcmpgtEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *vcmpgeEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *vcmpltEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *vcmpleEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vdivEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vindexVectorEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vloadEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -290,7 +284,6 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::X86::TreeEvaluator
    static TR::Register *vreturnEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vRegLoadEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vRegStoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *vbitselectEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vsetelemEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vsplatsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -399,7 +392,6 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::X86::TreeEvaluator
    static TR::Register *ilbitEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *inolzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *inotzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *ipopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *lhbitEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *llbitEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *lnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -410,6 +402,8 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::X86::TreeEvaluator
    static TR::Register *sbitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *ibitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *lbitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *lcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *lexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
    static TR::Register *aconstEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *lconstEvaluator(TR::Node *node, TR::CodeGenerator *cg);

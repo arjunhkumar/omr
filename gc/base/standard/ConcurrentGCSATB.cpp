@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -577,7 +577,7 @@ MM_ConcurrentGCSATB::reportConcurrentCollectionStart(MM_EnvironmentBase *env)
 /**
  * TLH is about to be cleared, we must premark it if SATB is active. This is
  * non-trival to do, we must know the start of the last object to mark the proper range of the TLH.
- * Arbitrary bits at the end of the TLH can’t be marked, this is problematic for sweep.
+ * Arbitrary bits at the end of the TLH can't be marked, this is problematic for sweep.
  *
  * To get around this issue we seal the TLH with a bogus/dummy obj at the
  * end of the TLH (done before call to this method). With this, we know the precise addr to batch mark to. We have

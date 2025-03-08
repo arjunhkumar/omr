@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*
@@ -16036,4 +16036,290 @@
    /* .minimumALS  = */ OMR_PROCESSOR_S390_Z16,
    /* .properties  = */ S390OpProp_SetsOperand1 |
                         S390OpProp_UsesM3
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::BDEPG,
+   /* .name        = */ "BDEPG",
+   /* .description = */ "BIT DEPOSIT",
+   /* .opcode[0]   = */ 0xB9,
+   /* .opcode[1]   = */ 0x6D,
+   /* .format      = */ RRFa_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_Is64Bit |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::BEXTG,
+   /* .name        = */ "BEXTG",
+   /* .description = */ "BIT EXTRACT",
+   /* .opcode[0]   = */ 0xB9,
+   /* .opcode[1]   = */ 0x6C,
+   /* .format      = */ RRFa_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_Is64Bit |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::CLZG,
+   /* .name        = */ "CLZG",
+   /* .description = */ "COUNT LEADING ZEROS",
+   /* .opcode[0]   = */ 0xB9,
+   /* .opcode[1]   = */ 0x68,
+   /* .format      = */ RRE_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_Is64Bit |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::CTZG,
+   /* .name        = */ "CTZG",
+   /* .description = */ "COUNT TRAILING ZEROS",
+   /* .opcode[0]   = */ 0xB9,
+   /* .opcode[1]   = */ 0x69,
+   /* .format      = */ RRE_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_Is64Bit |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LLXAB,
+   /* .name        = */ "LLXAB",
+   /* .description = */ "LOAD LOGICAL INDEXED ADDRESS (8)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x61,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LLXAF,
+   /* .name        = */ "LLXAF",
+   /* .description = */ "LOAD LOGICAL INDEXED ADDRESS (32)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x65,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LLXAG,
+   /* .name        = */ "LLXAG",
+   /* .description = */ "LOAD LOGICAL INDEXED ADDRESS (64)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x67,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LLXAH,
+   /* .name        = */ "LLXAH",
+   /* .description = */ "LOAD LOGICAL INDEXED ADDRESS (16)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x63,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LLXAQ,
+   /* .name        = */ "LLXAQ",
+   /* .description = */ "LOAD LOGICAL INDEXED ADDRESS (128)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x69,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LXAB,
+   /* .name        = */ "LXAB",
+   /* .description = */ "LOAD INDEXED ADDRESS (8)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x60,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LXAF,
+   /* .name        = */ "LXAF",
+   /* .description = */ "LOAD INDEXED ADDRESS (32)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x64,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LXAG,
+   /* .name        = */ "LXAG",
+   /* .description = */ "LOAD INDEXED ADDRESS (64)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x66,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LXAH,
+   /* .name        = */ "LXAH",
+   /* .description = */ "LOAD INDEXED ADDRESS (16)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x62,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::LXAQ,
+   /* .name        = */ "LXAQ",
+   /* .description = */ "LOAD INDEXED ADDRESS (128)",
+   /* .opcode[0]   = */ 0xE3,
+   /* .opcode[1]   = */ 0x68,
+   /* .format      = */ RXYc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_LongDispSupported |
+                        S390OpProp_SetsOperand1 |
+                        S390OpProp_IsEmulatable
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::VBLEND,
+   /* .name        = */ "VBLEND",
+   /* .description = */ "VECTOR BLEND",
+   /* .opcode[0]   = */ 0xE7,
+   /* .opcode[1]   = */ 0x89,
+   /* .format      = */ VRRd_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_SetsOperand1 |
+                        S390OpProp_HasExtendedMnemonic |
+                        S390OpProp_UsesM5
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::VEVAL,
+   /* .name        = */ "VEVAL",
+   /* .description = */ "VECTOR EVALUATE",
+   /* .opcode[0]   = */ 0xE7,
+   /* .opcode[1]   = */ 0x88,
+   /* .format      = */ VRIk_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_SetsOperand1
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::VD,
+   /* .name        = */ "VD",
+   /* .description = */ "VECTOR DIVIDE",
+   /* .opcode[0]   = */ 0xE7,
+   /* .opcode[1]   = */ 0xB2,
+   /* .format      = */ VRRc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_SetsOperand1 |
+                        S390OpProp_HasExtendedMnemonic |
+                        S390OpProp_UsesM4 |
+                        S390OpProp_UsesM5
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::VDL,
+   /* .name        = */ "VDL",
+   /* .description = */ "VECTOR DIVIDE LOGICAL",
+   /* .opcode[0]   = */ 0xE7,
+   /* .opcode[1]   = */ 0xB0,
+   /* .format      = */ VRRc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_SetsOperand1 |
+                        S390OpProp_HasExtendedMnemonic |
+                        S390OpProp_UsesM4 |
+                        S390OpProp_UsesM5
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::VGEM,
+   /* .name        = */ "VGEM",
+   /* .description = */ "VECTOR GENERATE ELEMENT MASKS",
+   /* .opcode[0]   = */ 0xE7,
+   /* .opcode[1]   = */ 0x54,
+   /* .format      = */ VRRa_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_SetsOperand1 |
+                        S390OpProp_HasExtendedMnemonic |
+                        S390OpProp_UsesM3
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::VR,
+   /* .name        = */ "VR",
+   /* .description = */ "VECTOR REMAINDER",
+   /* .opcode[0]   = */ 0xE7,
+   /* .opcode[1]   = */ 0xB3,
+   /* .format      = */ VRRc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_SetsOperand1 |
+                        S390OpProp_HasExtendedMnemonic |
+                        S390OpProp_UsesM4 |
+                        S390OpProp_UsesM5
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::VRL,
+   /* .name        = */ "VRL",
+   /* .description = */ "VECTOR REMAINDER LOGICAL",
+   /* .opcode[0]   = */ 0xE7,
+   /* .opcode[1]   = */ 0xB1,
+   /* .format      = */ VRRc_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_SetsOperand1 |
+                        S390OpProp_HasExtendedMnemonic |
+                        S390OpProp_UsesM4 |
+                        S390OpProp_UsesM5
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::VTZ,
+   /* .name        = */ "VTZ",
+   /* .description = */ "VECTOR TEST ZONED",
+   /* .opcode[0]   = */ 0xE6,
+   /* .opcode[1]   = */ 0x7F,
+   /* .format      = */ VRIl_FORMAT,
+   /* .minimumALS  = */ OMR_PROCESSOR_S390_ZNEXT,
+   /* .properties  = */ S390OpProp_SetsCC
    },

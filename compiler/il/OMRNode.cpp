@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "il/Node.hpp"
@@ -215,7 +215,7 @@ OMR::Node::Node(TR::Node *originatingByteCodeNode, TR::ILOpCodes op, uint16_t nu
        + self()->hasBranchDestinationNode()
        + self()->hasBlock()
        + self()->hasArrayStride()
-       + self()->hasPinningArrayPointer()
+       + (self()->hasPinningArrayPointer() && !self()->supportsPinningArrayPointerInNodeExtension())
        + self()->hasDataType() <= 1,
          "_unionPropertyA union is not disjoint for this node %s (%p):\n"
          "  has({SymbolReference, ...}, ..., DataType) = ({%1d,%1d},%1d,%1d,%1d,%1d,%1d)\n",
@@ -225,7 +225,7 @@ OMR::Node::Node(TR::Node *originatingByteCodeNode, TR::ILOpCodes op, uint16_t nu
          self()->hasBranchDestinationNode(),
          self()->hasBlock(),
          self()->hasArrayStride(),
-         self()->hasPinningArrayPointer(),
+         (self()->hasPinningArrayPointer() && !self()->supportsPinningArrayPointerInNodeExtension()),
          self()->hasDataType());
    }
 
@@ -273,18 +273,7 @@ OMR::Node::Node(TR::Node * from, uint16_t numChildren)
    if(comp->getDebug())
       comp->getDebug()->newNode(self());
 
-   TR_IlGenerator * ilGen = comp->getCurrentIlGenerator();
-   if (ilGen)
-      {
-      _byteCodeInfo.setDoNotProfile(0);
-      }
-   else
-      {
-      _byteCodeInfo.setDoNotProfile(1);
-      }
-
-   if (from->getOpCode().isBranch() || from->getOpCode().isSwitch())
-      _byteCodeInfo.setDoNotProfile(1);
+   self()->getByteCodeInfo().setDoNotProfile(from->getByteCodeInfo().doNotProfile());
 
    if (from->getOpCode().isStoreReg() || from->getOpCode().isLoadReg())
       {
@@ -2333,7 +2322,7 @@ OMR::Node::isNotCollected()
 bool
 OMR::Node::computeIsInternalPointer()
    {
-   TR_ASSERT(self()->getOpCode().hasPinningArrayPointer(), "Opcode %s is not supported, node is " POINTER_PRINTF_FORMAT, self()->getOpCode().getName(), self());
+   TR_ASSERT(self()->hasPinningArrayPointer(), "Opcode %s is not supported, node is " POINTER_PRINTF_FORMAT, self()->getOpCode().getName(), self());
    return self()->computeIsCollectedReference();
    }
 
@@ -3649,6 +3638,7 @@ OMR::Node::exceptionsRaised()
             possibleExceptions |= TR::Block:: CanCatchBoundCheck;
          break;
       case TR::arraycmp: // does not throw any exceptions
+      case TR::arraycmplen:
          break;
       case TR::checkcast:
          possibleExceptions |= TR::Block:: CanCatchCheckCast;
@@ -3784,6 +3774,20 @@ OMR::Node::createStoresForVar(TR::SymbolReference * &nodeRef, TR::TreeTop *inser
    TR::SymbolReference *newArrayRef = NULL;
    TR::TreeTop *newStoreTree = NULL;
 
+   if (self()->isDataAddrPointer())
+      {
+      TR::Node *firstChild = self()->getFirstChild();
+      TR::Node *arrayLoadNode = NULL;
+      TR::SymbolReference *newArrayRef = comp->getSymRefTab()->createTemporary(comp->getMethodSymbol(), TR::Address);
+      TR::Node *newStore = TR::Node::createStore(newArrayRef, firstChild);
+      TR::TreeTop *newStoreTree = TR::TreeTop::create(comp, newStore);
+      insertBefore = origInsertBefore->insertBefore(newStoreTree);
+      arrayLoadNode = TR::Node::createLoad(firstChild, newArrayRef);
+      self()->setAndIncChild(0, arrayLoadNode);
+      firstChild->recursivelyDecReferenceCount();
+      return insertBefore;
+      }
+
    bool isInternalPointer = false;
    if ((self()->hasPinningArrayPointer() &&
         self()->computeIsInternalPointer()) ||
@@ -3876,7 +3880,7 @@ OMR::Node::createStoresForVar(TR::SymbolReference * &nodeRef, TR::TreeTop *inser
          if (self()->getOpCode().isArrayRef())
             {
             child = self()->getFirstChild();
-            if (child->isInternalPointer())
+            if (child->isInternalPointer() && !child->isDataAddrPointer())
                pinningArray = child->getPinningArrayPointer();
             else
                {
@@ -3896,13 +3900,25 @@ OMR::Node::createStoresForVar(TR::SymbolReference * &nodeRef, TR::TreeTop *inser
                   }
                else
                   {
-                  newArrayRef = comp->getSymRefTab()->
-                     createTemporary(comp->getMethodSymbol(), TR::Address);
+                  TR::Node *arrayObjectNode = NULL;
+                  TR::Node *arrayLoadNode = NULL;
 
-                  TR::Node *newStore = TR::Node::createStore(newArrayRef, child);
+                  if (child->isDataAddrPointer())
+                     arrayObjectNode = child->getFirstChild();
+
+                  newArrayRef = comp->getSymRefTab()->createTemporary(comp->getMethodSymbol(), TR::Address);
+                  TR::Node *newStore = TR::Node::createStore(newArrayRef, child->isDataAddrPointer() ? arrayObjectNode : child);
                   newStoreTree = TR::TreeTop::create(comp, newStore);
+
                   newArrayRef->getSymbol()->setPinningArrayPointer();
                   pinningArray = newArrayRef->getSymbol()->castToAutoSymbol();
+
+                  if (child->isDataAddrPointer())
+                     {
+                     arrayLoadNode = TR::Node::createLoad(arrayObjectNode, newArrayRef);
+                     child->setAndIncChild(0, arrayLoadNode);
+                     arrayObjectNode->recursivelyDecReferenceCount();
+                     }
                   }
                }
             }
@@ -4457,7 +4473,7 @@ OMR::Node::unsetRegister()
 
 
 int32_t
-OMR::Node::getEvaluationPriority(TR::CodeGenerator * codeGen)
+OMR::Node::getEvaluationPriority(TR::CodeGenerator * cg)
    {
    if (_unionA._register == 0) // not evaluated into register & priority unknown
       {
@@ -4466,7 +4482,7 @@ OMR::Node::getEvaluationPriority(TR::CodeGenerator * codeGen)
       // This way we don't need to resort to visit counts
       self()->setEvaluationPriority(0); // FIXME: remove this once we have
       // dealt with the issue of cycles in nodes
-      return self()->setEvaluationPriority(codeGen->getEvaluationPriority(self()));
+      return self()->setEvaluationPriority(cg->getEvaluationPriority(self()));
       }
    if ((uintptr_t)(_unionA._register) & 1) // evaluation priority
       return static_cast<int32_t>(reinterpret_cast<uintptr_t>(_unionA._register) >> 1);
@@ -4477,6 +4493,11 @@ OMR::Node::getEvaluationPriority(TR::CodeGenerator * codeGen)
 int32_t
 OMR::Node::setEvaluationPriority(int32_t p)
    {
+   // Setting the evaluation priority of a treetop is not meaningful since they do not yield value
+   // In addition, _unionA is also used for guards (which are always treetops), and setting
+   // priorities for them would cause conflict.
+   TR_ASSERT(!self()->getOpCode().isTreeTop(), "cannot set evaluation priority of a treetop");
+
    if (_unionA._register == 0 ||            // not evaluated, priority unknown
        ((uintptr_t)(_unionA._register) & 1))  // not evaluated, priority known
       {
@@ -5046,9 +5067,15 @@ OMR::Node::hasArrayStride()
    }
 
 bool
+OMR::Node::supportsPinningArrayPointerInNodeExtension()
+   {
+   return self()->isDataAddrPointer();
+   }
+
+bool
 OMR::Node::hasPinningArrayPointer()
    {
-   return self()->getOpCode().hasPinningArrayPointer();
+   return self()->getOpCode().hasPinningArrayPointer() || self()->supportsPinningArrayPointerInNodeExtension();
    }
 
 bool
@@ -5188,16 +5215,28 @@ OMR::Node::setArrayStride(int32_t s)
 TR::AutomaticSymbol*
 OMR::Node::getPinningArrayPointer()
    {
-   TR_ASSERT(self()->hasPinningArrayPointer(), "attempting to access _pinningArrayPointer field for node %s %p that does not have it", self()->getOpCode().getName(), this);
-   return _unionPropertyA._pinningArrayPointer;
+   TR_ASSERT(self()->hasPinningArrayPointer() || _unionBase._extension.getNumElems() >= 6, "attempting to access _pinningArrayPointer field for node %s %p that does not support it", self()->getOpCode().getName(), this);
+
+   if (self()->getOpCode().hasPinningArrayPointer())
+      return _unionPropertyA._pinningArrayPointer;
+
+   return _unionBase._extension.getNumElems() >= 6 ? _unionBase._extension.getExtensionPtr()->getElem<TR::AutomaticSymbol *>(5) : NULL;
    }
 
 TR::AutomaticSymbol*
 OMR::Node::setPinningArrayPointer(TR::AutomaticSymbol *s)
    {
    s->setPinningArrayPointer();
-   TR_ASSERT(self()->hasPinningArrayPointer(), "attempting to access _pinningArrayPointer field for node %s %p that does not have it", self()->getOpCode().getName(), this);
-   return (_unionPropertyA._pinningArrayPointer = s);
+   TR_ASSERT(self()->hasPinningArrayPointer(), "attempting to access _pinningArrayPointer field for node %s %p that does not support it", self()->getOpCode().getName(), this);
+
+   if (self()->getOpCode().hasPinningArrayPointer())
+      return _unionPropertyA._pinningArrayPointer = s;
+
+   int extensionElemNum = _unionBase._extension.getNumElems();
+   if (extensionElemNum < 6)
+      self()->addExtensionElements(6 - extensionElemNum);
+
+   return _unionBase._extension.getExtensionPtr()->setElem<TR::AutomaticSymbol *>(5, s);
    }
 
 TR::DataType
@@ -5714,7 +5753,7 @@ OMR::Node::chkThrowInsertedByOSR()
 bool
 OMR::Node::isTheVirtualCallNodeForAGuardedInlinedCall()
    {
-   if (self()->getOpCode().isCall())
+   if (self()->getOpCode().isCall() && !self()->isArrayCopyCall())
       return _flags.testAny(virtualCallNodeForAGuardedInlinedCall);
    else
       return false;
@@ -5739,7 +5778,7 @@ OMR::Node::resetIsTheVirtualCallNodeForAGuardedInlinedCall()
 bool
 OMR::Node::chkTheVirtualCallNodeForAGuardedInlinedCall()
    {
-   return self()->getOpCode().isCall() && _flags.testAny(virtualCallNodeForAGuardedInlinedCall);
+   return self()->getOpCode().isCall() && !self()->isArrayCopyCall() && _flags.testAny(virtualCallNodeForAGuardedInlinedCall);
    }
 
 /**
@@ -5884,17 +5923,25 @@ OMR::Node::chkCompressionSequence()
 bool
 OMR::Node::isInternalPointer()
    {
-   return _flags.testAny(internalPointer) && (self()->getOpCode().hasPinningArrayPointer() || self()->getOpCode().isArrayRef());
+   return _flags.testAny(internalPointer) && (self()->hasPinningArrayPointer() || self()->getOpCode().isArrayRef());
    }
 
 void
 OMR::Node::setIsInternalPointer(bool v)
    {
    TR::Compilation *c = TR::comp();
-   TR_ASSERT(self()->getOpCode().hasPinningArrayPointer() || self()->getOpCode().isArrayRef(),
+   TR_ASSERT(self()->hasPinningArrayPointer() || self()->getOpCode().isArrayRef(),
              "Opcode must be one that can have a pinningArrayPointer or must be an array reference");
    if (performNodeTransformation2(c, "O^O NODE FLAGS: Setting internalPointer flag on node %p to %d\n", self(), v))
       _flags.set(internalPointer, v);
+   }
+
+bool
+OMR::Node::isDataAddrPointer()
+   {
+   return self()->getOpCodeValue() == TR::aloadi
+       && self()->getOpCode().hasSymbolReference()
+       && self()->getSymbolReference() == TR::comp()->getSymRefTab()->findContiguousArrayDataAddrFieldShadowSymRef();
    }
 
 bool
@@ -6109,28 +6156,6 @@ bool
 OMR::Node::chkTableBackedByRawStorage()
    {
    return self()->getOpCodeValue() == TR::arraytranslate && _flags.testAny(tableBackedByRawStorage);
-   }
-
-bool
-OMR::Node::isArrayCmpLen()
-   {
-   TR_ASSERT(self()->getOpCodeValue() == TR::arraycmp, "Opcode must be arraycmp");
-   return _flags.testAny(arrayCmpLen);
-   }
-
-void
-OMR::Node::setArrayCmpLen(bool v)
-   {
-   TR::Compilation *c = TR::comp();
-   TR_ASSERT(self()->getOpCodeValue() == TR::arraycmp, "Opcode must be arraycmp");
-   if (performNodeTransformation2(c, "O^O NODE FLAGS: Setting arrayCmpLen flag on node %p to %d\n", self(), v))
-      _flags.set(arrayCmpLen, v);
-   }
-
-bool
-OMR::Node::chkArrayCmpLen()
-   {
-   return self()->getOpCodeValue() == TR::arraycmp && _flags.testAny(arrayCmpLen);
    }
 
 bool
@@ -6980,7 +7005,7 @@ OMR::Node::chkUnsigned()
 bool
 OMR::Node::isClassPointerConstant()
    {
-   TR_ASSERT((self()->getOpCodeValue() == TR::aconst)||(self()->getOpCodeValue() == TR::aloadi), "Can only call this for aconst or iaload\n");
+   TR_ASSERT((self()->getOpCodeValue() == TR::aconst)||(self()->getOpCodeValue() == TR::aloadi), "Can only call this for aconst or aloadi\n");
    return _flags.testAny(classPointerConstant);
    }
 
@@ -7003,7 +7028,7 @@ OMR::Node::chkClassPointerConstant()
 bool
 OMR::Node::isMethodPointerConstant()
    {
-   TR_ASSERT((self()->getOpCodeValue() == TR::aconst)||(self()->getOpCodeValue() == TR::aloadi), "Can only call this for aconst or iaload\n");
+   TR_ASSERT((self()->getOpCodeValue() == TR::aconst)||(self()->getOpCodeValue() == TR::aloadi), "Can only call this for aconst or aloadi\n");
    return _flags.testAny(methodPointerConstant);
    }
 
@@ -7023,18 +7048,18 @@ OMR::Node::chkMethodPointerConstant()
    }
 
 bool
-OMR::Node::isUnneededIALoad()
+OMR::Node::isUnneededAloadi()
    {
-   return (self()->getOpCodeValue() == TR::aloadi && _flags.testAny(unneededIALoad));
+   return (self()->getOpCodeValue() == TR::aloadi && _flags.testAny(unneededAloadi));
    }
 
 void
-OMR::Node::setUnneededIALoad(bool v)
+OMR::Node::setUnneededAloadi(bool v)
    {
    TR::Compilation * c = TR::comp();
-   TR_ASSERT(self()->getOpCodeValue() == TR::aloadi, "Can only call this for iaload");
-   if (performNodeTransformation2(c, "O^O NODE FLAGS: Setting unneededIALoad flag on node %p to %d\n", self(), v))
-      _flags.set(unneededIALoad, v);
+   TR_ASSERT(self()->getOpCodeValue() == TR::aloadi, "Can only call this for aloadi");
+   if (performNodeTransformation2(c, "O^O NODE FLAGS: Setting unneededAloadi flag on node %p to %d\n", self(), v))
+      _flags.set(unneededAloadi, v);
    }
 
 
@@ -7702,4 +7727,27 @@ OMR::Node::isEAEscapeHelperCall()
       return true;
 
    return false;
+   }
+
+
+TR::Node *
+OMR::Node::storeToAddressField(TR::Compilation *comp, TR::Node *obj, TR::SymbolReference *symRef, TR::Node *value)
+   {
+   TR::Node * node;
+
+   if (TR::Compiler->om.writeBarrierType() != gc_modron_wrtbar_none)
+      {
+      node = TR::Node::createWithSymRef(TR::awrtbari, 3, 3, obj, value, obj, symRef);
+      }
+   else
+      {
+      node = TR::Node::createWithSymRef(TR::astorei, 2, 2, obj, value, symRef);
+      }
+
+   if (comp->useCompressedPointers())
+      {
+      node = TR::Node::createCompressedRefsAnchor(node);
+      }
+
+   return node;
    }

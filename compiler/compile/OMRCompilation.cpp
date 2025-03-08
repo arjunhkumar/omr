@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "compile/Compilation.hpp"
@@ -146,7 +146,7 @@ namespace TR { class RegisterMappedSymbol; }
 
 namespace OMR
 {
-tlsDefine(TR::Compilation *, compilation);
+TR_TLS_DEFINE(TR::Compilation *, compilation);
 }
 
 TR::SymbolReference *
@@ -286,6 +286,7 @@ OMR::Compilation::Compilation(
    _gpuPtxCount(0),
    _bitVectorPool(self()),
    _typeLayoutMap((LayoutComparator()), LayoutAllocator(self()->region())),
+   _currentILGenCallTarget(NULL),
    _tlsManager(*self())
    {
    if (target != NULL)
@@ -935,19 +936,20 @@ int32_t OMR::Compilation::compile()
       self()->setOption(TR_DisablePartialInlining);
 
 #ifdef J9_PROJECT_SPECIFIC
-   if (self()->getOptions()->getDelayCompile())
+   if (self()->getOptions()->getDelayCompileWithCPUBurn())
       {
-      uint64_t limit = (uint64_t)self()->getOptions()->getDelayCompile();
+      uint64_t limit = (uint64_t)self()->getOptions()->getDelayCompileWithCPUBurn();
       uint64_t starttime = self()->getPersistentInfo()->getElapsedTime();
-      fprintf(stderr,"\nDelayCompile: Starting a delay of length %" OMR_PRIu64 " for method %s at time %" OMR_PRIu64 ".", limit, self()->signature(), starttime);
-      fflush(stderr);
+      if (self()->getOptions()->getVerboseOption(TR_VerbosePerformance))
+         TR_VerboseLog::writeLineLocked(TR_Vlog_PERF, "DelayCompileWithCPUBurn: Starting a delay of length %" OMR_PRIu64 " for method %s at time %" OMR_PRIu64 ".", limit, self()->signature(), starttime);
       uint64_t temp=0;
       while(1)
          {
          temp = self()->getPersistentInfo()->getElapsedTime();
          if( ( temp - starttime ) > limit)
             {
-            fprintf(stderr,"\nDelayCompile: Finished delay at time = %" OMR_PRIu64 ", elapsed time = %" OMR_PRIu64 "\n", temp, (temp - starttime));
+            if (self()->getOptions()->getVerboseOption(TR_VerbosePerformance))
+               TR_VerboseLog::writeLineLocked(TR_Vlog_PERF, "DelayCompileWithCPUBurn: Finished delay at time = %" OMR_PRIu64 ", elapsed time = %" OMR_PRIu64 ".", temp, (temp - starttime));
             break;
             }
          }
@@ -1673,6 +1675,7 @@ bool OMR::Compilation::canTransformUnsafeCopyToArrayCopy()
    {
    if (!self()->getOptions()->realTimeGC() &&
        !TR::Compiler->om.canGenerateArraylets() &&
+       !self()->getOption(TR_DisableUnsafe) &&
        self()->cg()->canTransformUnsafeCopyToArrayCopy())
       return true;
 
@@ -1683,6 +1686,7 @@ bool OMR::Compilation::canTransformUnsafeSetMemory()
    {
    if (!self()->getOptions()->realTimeGC() &&
        !TR::Compiler->om.canGenerateArraylets() &&
+       !self()->getOption(TR_DisableUnsafe) &&
        self()->cg()->canTransformUnsafeSetMemory())
       return true;
 
@@ -1892,7 +1896,7 @@ void OMR::Compilation::setUsesPreexistence(bool v)
 
 // Dump the trees for the method and return the number of nodes in the trees.
 //
-void OMR::Compilation::dumpMethodTrees(char *title, TR::ResolvedMethodSymbol * methodSymbol)
+void OMR::Compilation::dumpMethodTrees(const char *title, TR::ResolvedMethodSymbol * methodSymbol)
    {
    if (self()->getOutFile() == NULL)
       return;
@@ -1910,7 +1914,7 @@ void OMR::Compilation::dumpMethodTrees(char *title, TR::ResolvedMethodSymbol * m
    trfflush(self()->getOutFile());
    }
 
-void OMR::Compilation::dumpMethodTrees(char *title1, const char *title2, TR::ResolvedMethodSymbol *methodSymbol)
+void OMR::Compilation::dumpMethodTrees(const char *title1, const char *title2, TR::ResolvedMethodSymbol *methodSymbol)
    {
    TR::StackMemoryRegion stackMemoryRegion(*self()->trMemory());
    char *title = (char*)self()->trMemory()->allocateStackMemory(20 + strlen(title1) + strlen(title2));
@@ -2482,28 +2486,19 @@ TR_Debug * OMR::Compilation::findOrCreateDebug()
 
 void OMR::Compilation::diagnosticImpl(const char *s, ...)
    {
-#if defined(DEBUG)
    va_list ap;
    va_start(ap, s);
    self()->diagnosticImplVA(s, ap);
    va_end(ap);
-#endif
    }
 
 void OMR::Compilation::diagnosticImplVA(const char *s, va_list ap)
    {
-#if defined(DEBUG)
    if (self()->getOutFile() != NULL)
       {
-      va_list copy;
-      va_copy(copy, ap);
-      char buffer[256];
-      TR::IO::vfprintf(self()->getOutFile(), self()->getDebug()->getDiagnosticFormat(s, buffer, sizeof(buffer)/sizeof(char)),
-                 copy);
+      TR::IO::vfprintf(self()->getOutFile(), s, ap);
       trfflush(self()->getOutFile());
-      va_end(copy);
       }
-#endif
    }
 
 
@@ -2731,4 +2726,26 @@ TR::list<TR::Snippet*> *
 OMR::Compilation::getSnippetsToBePatchedOnClassRedefinition()
    {
    return self()->cg()->getSnippetsToBePatchedOnClassRedefinition();
+   }
+
+TR::Block *
+OMR::Compilation::insertNewFirstBlock()
+   {
+   TR::Node *oldBBStart = self()->getStartTree()->getNode();
+   TR::Block *oldFirstBlock = self()->getStartTree()->getNode()->getBlock();
+   TR::Node *glRegDeps=NULL;
+   if (oldBBStart->getNumChildren() == 1)
+      glRegDeps = oldBBStart->getChild(0);
+
+   TR::CFG *cfg = self()->getFlowGraph();
+   TR::Block *newFirstBlock = TR::Block::createEmptyBlock(oldBBStart, self(), oldFirstBlock->getFrequency());
+
+   newFirstBlock->takeGlRegDeps(self(), glRegDeps);
+   cfg->addNode(newFirstBlock, (TR_RegionStructure *)cfg->getStructure());
+   cfg->join(newFirstBlock, oldFirstBlock);
+   cfg->addEdge(cfg->getStart(), newFirstBlock);
+   cfg->removeEdge(cfg->getStart(), oldFirstBlock);
+   self()->setStartTree(newFirstBlock->getEntry());
+
+   return newFirstBlock;
    }

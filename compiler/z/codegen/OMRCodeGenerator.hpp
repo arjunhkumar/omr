@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_Z_CODEGENERATOR_INCL
@@ -237,13 +237,13 @@ public:
     */
    bool materializesLargeConstants() { return true; }
    bool shouldValueBeInACommonedNode(int64_t value);
-   int64_t getLargestNegConstThatMustBeMaterialized() {return ((-1ll) << 31) - 1;}   // min 32bit signed integer minus 1
+   int64_t getLargestNegConstThatMustBeMaterialized() { return (int64_t)(((~(uint64_t)0) << 31) - 1); } // min 32bit signed integer minus 1
    int64_t getSmallestPosConstThatMustBeMaterialized() {return ((int64_t)0x000000007FFFFFFF) + 1;}   // max 32bit signed integer plus 1
 
    void beginInstructionSelection();
    void endInstructionSelection();
 
-   void checkIsUnneededIALoad(TR::Node *parent, TR::Node* node, TR::TreeTop *tt);
+   void checkIsUnneededAloadi(TR::Node *parent, TR::Node* node, TR::TreeTop *tt);
    void lowerTreesWalk(TR::Node * parent, TR::TreeTop * treeTop, vcount_t visitCount);
 
 
@@ -505,6 +505,9 @@ public:
    bool getCondCodeShouldBePreserved() { return _cgFlags.testAny(S390CG_condCodeShouldBePreserved); }
    void setCondCodeShouldBePreserved(bool b) { _cgFlags.set(S390CG_condCodeShouldBePreserved, b); }
 
+   bool getUseLXAInstructions() { return _cgFlags.testAny(S390CG_useLXAInstructions); }
+   void setUseLXAInstructions(bool b) { _cgFlags.set(S390CG_useLXAInstructions, b); }
+
    uint8_t getFCondMoveBranchOpCond() { return fCondMoveBranchOpCond; }
    void setFCondMoveBranchOpCond(TR::InstOpCode::S390BranchCondition b) { fCondMoveBranchOpCond = (getMaskForBranchCondition(b)) & 0xF; }
 
@@ -722,8 +725,13 @@ public:
 
    int32_t arrayTranslateAndTestMinimumNumberOfIterations() { return 4; }
 
-   /** Yank the scaling opp up a tree in lowerTrees */
-   bool yankIndexScalingOp() {return true;}
+   /**
+    * Yank the scaling op up a tree in lowerTrees
+    */
+   bool yankIndexScalingOp()
+      {
+      return !getUseLXAInstructions();
+      }
 
    bool excludeInvariantsFromGRAEnabled();
 
@@ -767,7 +775,7 @@ public:
 protected:
    TR::list<TR::S390ConstantDataSnippet*>  _constantList;
    TR::list<TR::S390ConstantDataSnippet*>  _snippetDataList;
-   List<TR_Pair<TR::Node, int32_t> > _ialoadUnneeded;
+   List<TR_Pair<TR::Node, int32_t> > _aloadiUnneeded;
 
 private:
 
@@ -831,7 +839,7 @@ protected:
       S390CG_condCodeShouldBePreserved   = 0x00004000,
       S390CG_enableBranchPreload         = 0x00008000,
       S390CG_globalStaticBaseRegisterOn  = 0x00010000,
-      // Available                       = 0x00020000,
+      S390CG_useLXAInstructions          = 0x00020000,
       S390CG_canExceptByTrap             = 0x00040000,
       S390CG_enableTLHPrefetching        = 0x00080000,
       S390CG_enableBranchPreloadForCalls = 0x00100000,

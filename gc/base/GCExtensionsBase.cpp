@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "GCExtensionsBase.hpp"
@@ -38,6 +38,7 @@
 #include "Configuration.hpp"
 #include "RememberedSetSATB.hpp"
 #endif /* defined(OMR_GC_REALTIME) */
+#include "Heap.hpp"
 
 MM_GCExtensionsBase*
 MM_GCExtensionsBase::newInstance(MM_EnvironmentBase* env)
@@ -135,6 +136,10 @@ MM_GCExtensionsBase::initialize(MM_EnvironmentBase* env)
 	gcmetadataPageSize = pageSizes[0];
 	gcmetadataPageFlags = OMRPORT_VMEM_PAGE_FLAG_NOT_USED;
 
+	sparseHeapPageSize = pageSizes[0];
+	sparseHeapPageFlags = OMRPORT_VMEM_PAGE_FLAG_NOT_USED;
+
+
 #define SIXTY_FOUR_KB	((uintptr_t)64 * 1024)
 #define ONE_MB			((uintptr_t)1 * 1024 * 1024)
 #define TWO_MB			((uintptr_t)2 * 1024 * 1024)
@@ -160,6 +165,10 @@ MM_GCExtensionsBase::initialize(MM_EnvironmentBase* env)
 		gcmetadataPageFlags = pageFlags[0];
 	}
 
+	if (!validateDefaultPageParameters(sparseHeapPageSize, sparseHeapPageFlags, pageSizes, pageFlags)) {
+		sparseHeapPageSize = pageSizes[0];
+		sparseHeapPageFlags = pageFlags[0];
+	}
 
 	if (!_forge.initialize(env->getPortLibrary())) {
 		goto failed;
@@ -321,6 +330,14 @@ MM_GCExtensionsBase::computeDefaultMaxHeap(MM_EnvironmentBase* env)
 
 	/* Initialize Xmx, Xmdx */
 	memoryMax = MM_Math::roundToFloor(heapAlignment, (uintptr_t)memoryToRequest);
+}
+
+void
+MM_GCExtensionsBase::reinitializeForRestore(MM_EnvironmentBase* env)
+{
+	OMRPORT_ACCESS_FROM_OMRPORT(env->getPortLibrary());
+	usablePhysicalMemory = omrsysinfo_get_addressable_physical_memory();
+	parSweepChunkSize = 0;
 }
 
 bool

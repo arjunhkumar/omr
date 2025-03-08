@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 ###
@@ -43,6 +43,7 @@ OMR_ARCH_S390 := @OMR_ARCH_S390@
 OMR_ARCH_X86 := @OMR_ARCH_X86@
 OMR_ARCH_RISCV := @OMR_ARCH_RISCV@
 OMR_ENV_DATA64 := @OMR_ENV_DATA64@
+OMR_GC_SPARSE_HEAP_ALLOCATION := @OMR_GC_SPARSE_HEAP_ALLOCATION@
 OMR_ENV_LITTLE_ENDIAN := @OMR_ENV_LITTLE_ENDIAN@
 OMR_EXAMPLE := @OMR_EXAMPLE@
 OMR_RTTI := @OMR_RTTI@
@@ -216,7 +217,7 @@ GLOBAL_LIBPATH += . $(exe_output_dir) $(lib_output_dir)
 # Location of fvtest framework
 OMR_GTEST_DIR := $(top_srcdir)/third_party/gtest-1.8.0
 OMR_GTEST_INCLUDES := $(OMR_GTEST_DIR) $(OMR_GTEST_DIR)/include $(top_srcdir)/fvtest/omrGtestGlue
-OMR_PUGIXML_DIR := $(top_srcdir)/third_party/pugixml-1.5
+OMR_PUGIXML_DIR := $(top_srcdir)/third_party/pugixml-1.8
 
 # googletest code requires exception handling
 ifeq (linux,$(OMR_HOST_OS))

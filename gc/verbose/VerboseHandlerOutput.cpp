@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "AllocateDescription.hpp"
@@ -279,6 +279,8 @@ MM_VerboseHandlerOutput::getHeapFixupReasonString(uintptr_t reason)
 			return "class unloading";
 		case FIXUP_DEBUG_TOOLING:
 			return "debug tooling";
+		case FIXUP_AND_CLEAR_HEAP:
+			return "fixup and clear heap";
 		default:
 			return "unknown";
 	}
@@ -310,6 +312,9 @@ MM_VerboseHandlerOutput::outputInitializedStanza(MM_EnvironmentBase *env, MM_Ver
 #endif /* OMR_GC_CONCURRENT_SCAVENGER */
 
 	buffer->formatAndOutput(env, 1, "<attribute name=\"maxHeapSize\" value=\"0x%zx\" />", _extensions->memoryMax);
+	if (0 < _extensions->softMx) {
+		buffer->formatAndOutput(env, 1, "<attribute name=\"softMx\" value=\"0x%zx\" />", _extensions->softMx);
+	}
 	buffer->formatAndOutput(env, 1, "<attribute name=\"initialHeapSize\" value=\"0x%zx\" />", _extensions->initialMemorySize);
 
 #if defined(OMR_GC_COMPRESSED_POINTERS)
@@ -358,7 +363,14 @@ MM_VerboseHandlerOutput::outputInitializedStanza(MM_EnvironmentBase *env, MM_Ver
 
 	buffer->formatAndOutput(env, 1, "<system>");
 	buffer->formatAndOutput(env, 2, "<attribute name=\"physicalMemory\" value=\"%llu\" />", omrsysinfo_get_physical_memory());
+	buffer->formatAndOutput(env, 2, "<attribute name=\"addressablePhysicalMemory\" value=\"%llu\" />", omrsysinfo_get_addressable_physical_memory());
+	bool containerLimitSet = false;
+	if (OMR_CGROUP_SUBSYSTEM_MEMORY == omrsysinfo_cgroup_are_subsystems_enabled(OMR_CGROUP_SUBSYSTEM_MEMORY)) {
+		containerLimitSet = omrsysinfo_cgroup_is_memlimit_set();
+	}
+	buffer->formatAndOutput(env, 2, "<attribute name=\"container memory limit set\" value=\"%s\" />", containerLimitSet ? "true" : "false");
 	buffer->formatAndOutput(env, 2, "<attribute name=\"numCPUs\" value=\"%zu\" />", omrsysinfo_get_number_CPUs_by_type(OMRPORT_CPU_ONLINE));
+	buffer->formatAndOutput(env, 2, "<attribute name=\"numCPUs active\" value=\"%zu\" />", omrsysinfo_get_number_CPUs_by_type(OMRPORT_CPU_TARGET));
 	buffer->formatAndOutput(env, 2, "<attribute name=\"architecture\" value=\"%s\" />", omrsysinfo_get_CPU_architecture());
 	buffer->formatAndOutput(env, 2, "<attribute name=\"os\" value=\"%s\" />", omrsysinfo_get_OS_type());
 	buffer->formatAndOutput(env, 2, "<attribute name=\"osVersion\" value=\"%s\" />", omrsysinfo_get_OS_version());
@@ -378,10 +390,11 @@ MM_VerboseHandlerOutput::outputInitializedRegion(MM_EnvironmentBase *env, MM_Ver
 	const char *arrayletDoubleMappingStatus = _extensions->indexableObjectModel.isDoubleMappingEnabled() ? "enabled" : "disabled";
 	const char *arrayletDoubleMappingRequested = isArrayletDoubleMapRequested ? "true" : "false";
 #endif /* OMR_GC_DOUBLE_MAP_ARRAYLETS */
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
 	bool isVirtualLargeObjectHeapRequested = _extensions->isVirtualLargeObjectHeapRequested;
 	const char *virtualLargeObjectHeapStatus = _extensions->isVirtualLargeObjectHeapEnabled ? "enabled" : "disabled";
 	const char *virtualLargeObjectHeapRequested = isVirtualLargeObjectHeapRequested ? "true" : "false";
-
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
 	buffer->formatAndOutput(env, 1, "<region>");
 	buffer->formatAndOutput(env, 2, "<attribute name=\"regionSize\" value=\"%zu\" />", _extensions->getHeap()->getHeapRegionManager()->getRegionSize());
 	buffer->formatAndOutput(env, 2, "<attribute name=\"regionCount\" value=\"%zu\" />", _extensions->getHeap()->getHeapRegionManager()->getTableRegionCount());
@@ -391,8 +404,10 @@ MM_VerboseHandlerOutput::outputInitializedRegion(MM_EnvironmentBase *env, MM_Ver
 		buffer->formatAndOutput(env, 2, "<attribute name=\"arrayletDoubleMappingRequested\" value=\"%s\"/>", arrayletDoubleMappingRequested);
 		buffer->formatAndOutput(env, 2, "<attribute name=\"arrayletDoubleMapping\" value=\"%s\"/>", arrayletDoubleMappingStatus);
 #endif /* OMR_GC_DOUBLE_MAP_ARRAYLETS */
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
 		buffer->formatAndOutput(env, 2, "<attribute name=\"virtualLargeObjectHeapRequested\" value=\"%s\"/>", virtualLargeObjectHeapRequested);
 		buffer->formatAndOutput(env, 2, "<attribute name=\"virtualLargeObjectHeapStatus\" value=\"%s\"/>", virtualLargeObjectHeapStatus);
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
 	}
 	buffer->formatAndOutput(env, 1, "</region>");
 }
@@ -594,8 +609,12 @@ MM_VerboseHandlerOutput::handleExclusiveStart(J9HookInterface** hook, uintptr_t 
 	manager->setLastExclusiveAccessStartTime(currentTime);
 
 	OMR_VMThread* lastResponder = event->lastResponder;
-	char escapedLastResponderName[64];
-	getThreadName(escapedLastResponderName,sizeof(escapedLastResponderName),lastResponder);
+	char escapedLastResponderName[64] = "";
+
+	/* Last Responder thread can be passed NULL in the case of Safe Point Exclusive */
+	if (NULL != lastResponder) {
+		getThreadName(escapedLastResponderName, sizeof(escapedLastResponderName), lastResponder);
+	}
 
 	char tagTemplate[200];
 	getTagTemplate(tagTemplate, sizeof(tagTemplate), manager->getIdAndIncrement(), omrtime_current_time_millis());
@@ -604,8 +623,12 @@ MM_VerboseHandlerOutput::handleExclusiveStart(J9HookInterface** hook, uintptr_t 
 		writer->formatAndOutput(env, 0, "<warning details=\"clock error detected, following timing may be inaccurate\" />");
 	}	
 	writer->formatAndOutput(env, 0, "<exclusive-start %s intervalms=\"%llu.%03.3llu\">", tagTemplate, deltaTime / 1000, deltaTime % 1000);
-	writer->formatAndOutput(env, 1, "<response-info timems=\"%llu.%03.3llu\" idlems=\"%llu.%03.3llu\" threads=\"%zu\" lastid=\"%p\" lastname=\"%s\" />",
-			exclusiveAccessTime / 1000, exclusiveAccessTime % 1000, meanIdleTime / 1000, meanIdleTime % 1000, event->haltedThreads, (NULL == lastResponder ? NULL : lastResponder->_language_vmthread), escapedLastResponderName);
+
+	writer->formatAndOutput(
+		env, 1, "<response-info timems=\"%llu.%03.3llu\" idlems=\"%llu.%03.3llu\" threads=\"%zu\" lastid=\"%p\" lastname=\"%s\" />",
+		exclusiveAccessTime / 1000, exclusiveAccessTime % 1000, meanIdleTime / 1000, meanIdleTime % 1000, event->haltedThreads,
+		(NULL == lastResponder ? NULL : lastResponder->_language_vmthread), escapedLastResponderName);
+
 	writer->formatAndOutput(env, 0, "</exclusive-start>");
 	writer->flush(env);
 	exitAtomicReportingBlock();
@@ -867,12 +890,18 @@ MM_VerboseHandlerOutput::printAllocationStats(MM_EnvironmentBase* env)
 	OMRPORT_ACCESS_FROM_OMRPORT(env->getPortLibrary());
 
 	enterAtomicReportingBlock();
-	writer->formatAndOutput(env, 0, "<allocation-stats totalBytes=\"%zu\" >", systemStats->bytesAllocated());
+	writer->formatAndOutput(env, 0, "<allocation-stats totalBytes=\"%zu\" discardedBytes=\"%zu\" >", systemStats->bytesAllocated(), systemStats->_tlhDiscardedBytes);
 
 	if (_extensions->isVLHGC()) {
 #if defined(OMR_GC_VLHGC)
-		writer->formatAndOutput(env, 1, "<allocated-bytes non-tlh=\"%zu\" tlh=\"%zu\" arrayletleaf=\"%zu\"/>",
+		if (_extensions->isVirtualLargeObjectHeapEnabled) {
+			writer->formatAndOutput(env, 1, "<allocated-bytes non-tlh=\"%zu\" tlh=\"%zu\" offheap=\"%zu\"/>",
 				systemStats->nontlhBytesAllocated(), systemStats->tlhBytesAllocated(), systemStats->_arrayletLeafAllocationBytes);
+
+		} else {
+			writer->formatAndOutput(env, 1, "<allocated-bytes non-tlh=\"%zu\" tlh=\"%zu\" arrayletleaf=\"%zu\"/>",
+				systemStats->nontlhBytesAllocated(), systemStats->tlhBytesAllocated(), systemStats->_arrayletLeafAllocationBytes);
+		}
 #endif /* OMR_GC_VLHGC */
 	} else if (_extensions->isStandardGC()) {
 #if defined(OMR_GC_MODRON_STANDARD)
@@ -914,6 +943,11 @@ MM_VerboseHandlerOutput::handleGCStart(J9HookInterface** hook, uintptr_t eventNu
 
 	enterAtomicReportingBlock();
 	writer->formatAndOutput(env, 0, "<gc-start %s>", tagTemplate);
+
+	if (stats->_cpuUtilStats._validData) {
+		writer->formatAndOutput(env, 1, "<cpu-util id=\"%zu\" total=\"%.2f\" process=\"%.2f\" />",
+				_manager->getIdAndIncrement(), stats->_cpuUtilStats._avgCpuUtil * 100, stats->_cpuUtilStats._avgProcUtil * 100);
+	}
 	outputMemoryInfo(env, _manager->getIndentLevel() + 1, stats);
 	writer->formatAndOutput(env, 0, "</gc-start>");
 	exitAtomicReportingBlock();

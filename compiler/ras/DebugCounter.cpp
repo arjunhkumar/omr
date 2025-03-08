@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "ras/DebugCounter.hpp"
@@ -35,6 +35,7 @@
 #include "env/PersistentInfo.hpp"
 #include "env/jittypes.h"
 #include "env/StackMemoryRegion.hpp"
+#include "env/VerboseLog.hpp"
 #include "il/DataTypes.hpp"
 #include "il/ILOpCodes.hpp"
 #include "il/Node.hpp"
@@ -141,12 +142,15 @@ TR::DebugCounter::generateRelocation(TR::Compilation *comp, uint8_t *location, T
    {
    counter->finalizeReloData(comp, node);
 
-   TR::ExternalRelocation *r = new (comp->trHeapMemory()) TR::ExternalRelocation(location,
-                                                                                 (uint8_t *)counter,
-                                                                                 TR_DebugCounter,
-                                                                                 comp->cg());
-
-   comp->cg()->addExternalRelocation(r, __FILE__, __LINE__, node);
+   comp->cg()->addExternalRelocation(
+      TR::ExternalRelocation::create(
+         location,
+         (uint8_t *)counter,
+         TR_DebugCounter,
+         comp->cg()),
+      __FILE__,
+      __LINE__,
+      node);
    }
 
 void
@@ -459,11 +463,45 @@ void TR::DebugCounterAggregation::accumulate()
       }
    }
 
+
+int64_t TR::DebugCounterAggregation::getCount()
+   {
+   int64_t count = 0;
+   ListIterator<CounterDelta> it(_counterDeltas);
+
+   for (CounterDelta *counterDelta = it.getFirst(); counterDelta; counterDelta = it.getNext())
+      {
+      count += counterDelta->counter->getCount();
+      }
+
+   return count;
+   }
+
+void TR::DebugCounterAggregation::printCounters(bool printZeroCounters)
+   {
+   ListIterator<CounterDelta> it(_counterDeltas);
+
+   for (CounterDelta *counterDelta = it.getFirst(); counterDelta; counterDelta = it.getNext())
+      {
+      TR::DebugCounter *counter = counterDelta->counter;
+      int64_t count = counter->getCount();
+
+      if (count || printZeroCounters)
+         {
+         TR_VerboseLog::writeLineLocked(TR_Vlog_PERF, "Counter count=%d %s", count, counter->getName());
+         }
+      }
+   }
+
 TR::DebugCounter *TR::DebugCounterGroup::findCounter(const char *nameChars, int32_t nameLength)
    {
    if (nameChars == NULL)
       return NULL;
+#if defined(__open_xl__)
+   char *name = (char*)__builtin_alloca(nameLength+1);
+#else /* defined(__open_xl__) */
    char *name = (char*)alloca(nameLength+1);
+#endif /* defined(__open_xl__) */
    strncpy(name, nameChars, nameLength);
    name[nameLength] = 0;
 
@@ -479,7 +517,11 @@ TR::DebugCounterAggregation *TR::DebugCounterGroup::findAggregation(const char *
    {
    if (nameChars == NULL)
       return NULL;
-   char *name = (char*)alloca(nameLength+1);
+#if defined(__open_xl__)
+      char *name = (char*)__builtin_alloca(nameLength+1);
+#else /* defined(__open_xl__) */
+      char *name = (char*)alloca(nameLength+1);
+#endif /* defined(__open_xl__) */
    strncpy(name, nameChars, nameLength);
    name[nameLength] = 0;
 

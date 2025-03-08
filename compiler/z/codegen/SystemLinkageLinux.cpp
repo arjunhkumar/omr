@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 // See also S390Linkage.cpp which contains more S390 Linkage
@@ -403,10 +403,10 @@ TR::S390zLinuxSystemLinkage::setParameterLinkageRegisterIndex(TR::ResolvedMethod
 void
 TR::S390zLinuxSystemLinkage::generateInstructionsForCall(TR::Node* callNode, TR::RegisterDependencyConditions* deps, intptr_t targetAddress, TR::Register* methodAddressReg, TR::Register* javaLitOffsetReg, TR::LabelSymbol* returnFromJNICallLabel, TR::Snippet* callDataSnippet, bool isJNIGCPoint)
    {
-   TR::CodeGenerator * codeGen = cg();
+   TR::CodeGenerator * cg = this->cg();
 
    TR::RegisterDependencyConditions * postDeps = new (trHeapMemory())
-      TR::RegisterDependencyConditions(NULL, deps->getPostConditions(), 0, deps->getAddCursorForPost(), cg());
+      TR::RegisterDependencyConditions(NULL, deps->getPostConditions(), 0, deps->getAddCursorForPost(), this->cg());
 
    TR::Register * systemReturnAddressRegister =
       deps->searchPostConditionRegister(getReturnAddressRegister());
@@ -420,15 +420,15 @@ TR::S390zLinuxSystemLinkage::generateInstructionsForCall(TR::Node* callNode, TR:
          {
          TR_ASSERT(callNode->getSymbolReference()->getSymbol()->castToMethodSymbol()->isComputed(), "system linkage only supports computed indirect call for now %p\n", callNode);
          // get the address of the function descriptor
-         TR::Register *targetReg = codeGen->evaluate(callNode->getFirstChild());
-         generateRRInstruction(codeGen, TR::InstOpCode::BASR, callNode, systemReturnAddressRegister, targetReg, deps);
+         TR::Register *targetReg = cg->evaluate(callNode->getFirstChild());
+         generateRRInstruction(cg, TR::InstOpCode::BASR, callNode, systemReturnAddressRegister, targetReg, deps);
          }
       else
          {
          TR::SymbolReference *callSymRef = callNode->getSymbolReference();
          TR::Symbol *callSymbol = callSymRef->getSymbol();
          TR::Register * fpReg = systemReturnAddressRegister;
-         TR::Instruction * callInstr = new (trHeapMemory()) TR::S390RILInstruction(TR::InstOpCode::BRASL, callNode, fpReg, callSymbol, callSymRef, codeGen);
+         TR::Instruction * callInstr = new (trHeapMemory()) TR::S390RILInstruction(TR::InstOpCode::BRASL, callNode, fpReg, callSymbol, callSymRef, cg);
          callInstr->setDependencyConditions(deps);
          }
       }

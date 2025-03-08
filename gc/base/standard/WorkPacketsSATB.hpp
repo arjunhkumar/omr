@@ -18,7 +18,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(WORKPACKETSSATB_HPP_)
@@ -42,13 +42,25 @@ public:
 	virtual bool initialize(MM_EnvironmentBase *env);
 	virtual void tearDown(MM_EnvironmentBase *env);
 
-	MM_IncrementalOverflow *getIncrementalOverflowHandler() const { return (MM_IncrementalOverflow*)_overflowHandler; }
+	MM_IncrementalOverflow *getIncrementalOverflowHandler() const
+	{
+		return ((MM_IncrementalOverflow *)_overflowHandler);
+	}
 
-	MMINLINE bool effectiveTraceExhausted() { return ((_emptyPacketList.getCount() + _inUseBarrierPacketList.getCount()) == _activePackets); };
+	MMINLINE bool effectiveTraceExhausted()
+	{
+		return ((_emptyPacketList.getCount() + _inUseBarrierPacketList.getCount()) == _activePackets);
+	}
 
-	MMINLINE uintptr_t getBarrierPacketCount() { return (_inUseBarrierPacketList.getCount()); };
+	MMINLINE uintptr_t getBarrierPacketCount()
+	{
+		return (_inUseBarrierPacketList.getCount());
+	}
 
-	MMINLINE bool inUsePacketsAvailable(MM_EnvironmentBase *env) { return !_inUseBarrierPacketList.isEmpty();}
+	MMINLINE bool inUsePacketsAvailable(MM_EnvironmentBase *env)
+	{
+		return (!_inUseBarrierPacketList.isEmpty());
+	}
 
 	virtual MM_Packet *getBarrierPacket(MM_EnvironmentBase *env);
 	virtual void putInUsePacket(MM_EnvironmentBase *env, MM_Packet *packet);
@@ -58,6 +70,16 @@ public:
 	void moveInUseToNonEmpty(MM_EnvironmentBase *env);
 
 	void resetAllPackets(MM_EnvironmentBase *env);
+
+#if defined(J9VM_OPT_CRIU_SUPPORT)
+	/**
+	 * Reinitialize (split) the WorkPacketLists (including SATB barrier RS) to accommodate the restore thread count.
+	 *
+	 * @param[in] env the current environment.
+	 * @return boolean indicating whether the WorkPacket lists were successfully updated.
+	 */
+	virtual bool reinitializeForRestore(MM_EnvironmentBase *env);
+#endif /* defined(J9VM_OPT_CRIU_SUPPORT) */
 
 	/**
 	 * Create a MM_WorkPacketsRealtime object.

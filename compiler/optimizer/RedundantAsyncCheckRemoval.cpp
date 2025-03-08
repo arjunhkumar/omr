@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/RedundantAsyncCheckRemoval.hpp"
@@ -402,6 +402,10 @@ bool TR_RedundantAsyncCheckRemoval::callDoesAnImplicitAsyncCheck(TR::Node *callN
        (symbol->getRecognizedMethod()==TR::java_lang_Math_min_I) ||
        (symbol->getRecognizedMethod()==TR::java_lang_Math_max_L) ||
        (symbol->getRecognizedMethod()==TR::java_lang_Math_min_L) ||
+       (symbol->getRecognizedMethod()==TR::java_lang_Math_max_D) ||
+       (symbol->getRecognizedMethod()==TR::java_lang_Math_min_D) ||
+       (symbol->getRecognizedMethod()==TR::java_lang_Math_max_F) ||
+       (symbol->getRecognizedMethod()==TR::java_lang_Math_min_F) ||
        (symbol->getRecognizedMethod()==TR::java_lang_Math_abs_L) ||
        (symbol->getRecognizedMethod()==TR::java_lang_Math_abs_D) ||
        (symbol->getRecognizedMethod()==TR::java_lang_Math_abs_F) ||
@@ -420,7 +424,11 @@ bool TR_RedundantAsyncCheckRemoval::callDoesAnImplicitAsyncCheck(TR::Node *callN
        (symbol->getRecognizedMethod()==TR::java_lang_Integer_rotateLeft) ||
        (symbol->getRecognizedMethod()==TR::java_lang_Long_rotateLeft) ||
        (symbol->getRecognizedMethod()==TR::java_lang_Integer_rotateRight) ||
-       (symbol->getRecognizedMethod()==TR::java_lang_Long_rotateRight)
+       (symbol->getRecognizedMethod()==TR::java_lang_Long_rotateRight) ||
+       (symbol->getRecognizedMethod()==TR::java_lang_Integer_compress) ||
+       (symbol->getRecognizedMethod()==TR::java_lang_Long_compress) ||
+       (symbol->getRecognizedMethod()==TR::java_lang_Integer_expand) ||
+       (symbol->getRecognizedMethod()==TR::java_lang_Long_expand)
        )
        return false;
 
@@ -431,8 +439,11 @@ bool TR_RedundantAsyncCheckRemoval::callDoesAnImplicitAsyncCheck(TR::Node *callN
    if (symbol->isNative() &&
        ((symbol->getRecognizedMethod()==TR::sun_misc_Unsafe_compareAndSwapInt_jlObjectJII_Z) ||
        (symbol->getRecognizedMethod()==TR::sun_misc_Unsafe_compareAndSwapLong_jlObjectJJJ_Z) ||
-       (symbol->getRecognizedMethod()==TR::sun_misc_Unsafe_compareAndSwapObject_jlObjectJjlObjectjlObject_Z))
-      )
+       (symbol->getRecognizedMethod()==TR::sun_misc_Unsafe_compareAndSwapObject_jlObjectJjlObjectjlObject_Z) ||
+       (symbol->getRecognizedMethod()==TR::jdk_internal_misc_Unsafe_compareAndExchangeInt) ||
+       (symbol->getRecognizedMethod()==TR::jdk_internal_misc_Unsafe_compareAndExchangeLong) ||
+       (symbol->getRecognizedMethod()==TR::jdk_internal_misc_Unsafe_compareAndExchangeObject) ||
+       (symbol->getRecognizedMethod()==TR::jdk_internal_misc_Unsafe_compareAndExchangeReference)))
       return false;
 #endif
    return true;
@@ -1282,7 +1293,7 @@ void TR_RedundantAsyncCheckRemoval::getNearestAncestors(TR_StructureSubGraphNode
 
 void TR_RedundantAsyncCheckRemoval::markAncestors(TR_StructureSubGraphNode *node, TR_StructureSubGraphNode *entry)
    {
-   return;  // Disable it for performance. For more details, refer to https://github.com/eclipse/omr/pull/1138
+   return;  // Disable it for performance. For more details, refer to https://github.com/eclipse-omr/omr/pull/1138
 
    if (node == entry)
       return;

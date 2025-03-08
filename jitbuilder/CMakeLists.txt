@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 include(OmrCompilerSupport)
@@ -26,7 +26,6 @@ find_package(PythonInterp REQUIRED)
 
 # JitBuilder Files
 set(JITBUILDER_OBJECTS
-	env/FrontEnd.cpp
 	compile/ResolvedMethod.cpp
 	control/Jit.cpp
 	ilgen/JBIlGeneratorMethodDetails.cpp
@@ -34,7 +33,6 @@ set(JITBUILDER_OBJECTS
 	optimizer/JBOptimizer.cpp
 	optimizer/Optimizer.hpp
 	runtime/JBCodeCacheManager.cpp
-	runtime/JBJitConfig.cpp
 )
 
 if(OMR_ARCH_X86)
@@ -144,7 +142,7 @@ if(OMR_JITBUILDER AND OMR_ENV_DATA64)
 	add_subdirectory(release)
 endif()
 
-if(OMR_JITBUILDER_TEST)
+if(OMR_JITBUILDER_TEST AND NOT (OMR_OS_OSX AND OMR_ARCH_X86))
 	add_test(
 		NAME TestJitBuilderAPIGenerator
 		COMMAND ${PYTHON_EXECUTABLE} run_tests.py
@@ -155,15 +153,3 @@ endif()
 if(OMR_LLJB)
 	add_subdirectory(lljb)
 endif()
-
-# install(TARGETS jitbuilder
-#         ARCHIVE       DESTINATION ${CMAKE_BINARY_DIR}/jitbuilder_release
-#         PUBLIC_HEADER DESTINATION ${CMAKE_BINARY_DIR}/jitbuilder_release/include
-#         )
-#
-# # Create release directory
-# file(MAKE_DIRECTORY jitbuilder_release)
-# file(COPY ${jitbuilder_library} DESTINATION jitbuilder_release)
-# file(COPY ${CMAKE_SOURCE_DIR}/compiler/env   DESTINATION jitbuilder_release/include)
-# file(COPY ${CMAKE_SOURCE_DIR}/compiler/il    DESTINATION jitbuilder_release/include)
-# file(COPY ${CMAKE_SOURCE_DIR}/compiler/ilgen DESTINATION jitbuilder_release/include)

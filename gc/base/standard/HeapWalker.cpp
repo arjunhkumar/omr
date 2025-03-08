@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 #include "omrcfg.h"
 #include "omrgcconsts.h"
@@ -189,7 +189,7 @@ MM_HeapWalker::allObjectSlotsDo(MM_EnvironmentBase *env, MM_HeapWalkerSlotFunc f
 		modifiedWalkFlags &= ~J9_MU_WALK_NEW_AND_REMEMBERED_ONLY;
 	}
 
-	allObjectsDo(env, heapWalkerObjectSlotsDo, (void *)&slotObjectDoUserData, modifiedWalkFlags, parallel, prepareHeapForWalk);
+	allObjectsDo(env, heapWalkerObjectSlotsDo, (void *)&slotObjectDoUserData, modifiedWalkFlags, parallel, prepareHeapForWalk, false);
 
 #if defined(OMR_GC_MODRON_SCAVENGER)
 	/* If J9_MU_WALK_NEW_AND_REMEMBERED_ONLY is specified, allObjectsDo will only walk
@@ -205,7 +205,7 @@ MM_HeapWalker::allObjectSlotsDo(MM_EnvironmentBase *env, MM_HeapWalkerSlotFunc f
  * Walk all objects in the heap in a single threaded linear fashion.
  */
 void
-MM_HeapWalker::allObjectsDo(MM_EnvironmentBase *env, MM_HeapWalkerObjectFunc function, void *userData, uintptr_t walkFlags, bool parallel, bool prepareHeapForWalk)
+MM_HeapWalker::allObjectsDo(MM_EnvironmentBase *env, MM_HeapWalkerObjectFunc function, void *userData, uintptr_t walkFlags, bool parallel, bool prepareHeapForWalk, bool includeDeadObjects)
 {
 	uintptr_t typeFlags = 0;
 
@@ -225,7 +225,7 @@ MM_HeapWalker::allObjectsDo(MM_EnvironmentBase *env, MM_HeapWalkerObjectFunc fun
 		if (typeFlags == (region->getTypeFlags() & typeFlags)) {
 			/* Optimization to avoid virtual dispatch for every slot in the system */
 			omrobjectptr_t object = NULL;
-			GC_ObjectHeapIteratorAddressOrderedList liveObjectIterator(extensions, region, false);
+			GC_ObjectHeapIteratorAddressOrderedList liveObjectIterator(extensions, region, includeDeadObjects);
 
 			while (NULL != (object = liveObjectIterator.nextObject())) {
 				function(omrVMThread, region, object, userData);

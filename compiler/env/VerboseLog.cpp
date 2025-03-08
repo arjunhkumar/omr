@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "env/VerboseLog.hpp"
@@ -63,9 +63,11 @@ const char * TR_VerboseLog::_vlogTable[] =
    "#PROFILING: ",
    "#JITServer: ",
    "#AOTCOMPRESSION: ",
+   "#BenefitInliner: ",
    "#FSD: ",
    "#VECTOR API: ",
    "#CHECKPOINT RESTORE: ",
+   "#METHOD STATS: "
    };
 
 void TR_VerboseLog::writeLine(TR_VlogTag tag, const char *format, ...)
@@ -124,4 +126,14 @@ void TR_VerboseLog::write(TR_VlogTag tag, const char *format, ...)
 void TR_VerboseLog::initialize(void *config)
    {
    _config = config;
+   }
+
+// This is never called. It's just a place to put static_assert() where
+// definitions in this file are available (for e.g. array initializers) and
+// where private members of TR_VerboseLog are also visible.
+void TR_VerboseLog::privateStaticAsserts()
+   {
+   static_assert(
+      sizeof(_vlogTable) / sizeof(_vlogTable[0]) == TR_Vlog_numTags,
+      "TR_VlogTag and _vlogTable are out of sync");
    }

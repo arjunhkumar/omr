@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stddef.h>
@@ -60,6 +60,7 @@ TR::Symbol * OMR::Symbol::create(AllocatorType m, TR::DataType d, uint32_t s)
 OMR::Symbol::Symbol(TR::DataType d) :
    _size(0),
    _name(0),
+   _declaredClass(0),
    _flags(0),
    _flags2(0),
    _localIndex(0)
@@ -69,6 +70,7 @@ OMR::Symbol::Symbol(TR::DataType d) :
 
 OMR::Symbol::Symbol(TR::DataType d, uint32_t size) :
    _name(0),
+   _declaredClass(0),
    _flags(0),
    _flags2(0),
    _localIndex(0)
@@ -116,7 +118,6 @@ OMR::Symbol::convertSigCharToType(char sigChar)
       case 'F': return TR::Float;
       case 'D': return TR::Double;
       case 'L':
-      case 'Q':
       case '[': return TR::Address;
       }
    TR_ASSERT(0, "unknown signature character");

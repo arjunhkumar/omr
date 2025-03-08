@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if defined(J9ZOS390)
@@ -170,7 +170,10 @@ OMR::CodeGenPhase::performProcessRelocationsPhase(TR::CodeGenerator * cg, TR::Co
 
    cg->processRelocations();
 
-   cg->trimCodeMemoryToActualSize();
+   if (!comp->getOption(TR_DisableCodeAllocationTrimming))
+      {
+      cg->trimCodeMemoryToActualSize();
+      }
    cg->registerAssumptions();
 
    cg->syncCode(cg->getBinaryBufferStart(), static_cast<uint32_t>(cg->getBinaryBufferCursor() - cg->getBinaryBufferStart()));
@@ -214,11 +217,11 @@ OMR::CodeGenPhase::performProcessRelocationsPhase(TR::CodeGenerator * cg, TR::Co
       {
       if (cg->comp()->target().is64Bit())
          {
-         setDllSlip((char*)cg->getCodeStart(), (char*)cg->getCodeStart() + cg->getCodeLength(), "SLIPDLL64", comp);
+         setDllSlip((const char *)cg->getCodeStart(), (const char *)cg->getCodeStart() + cg->getCodeLength(), "SLIPDLL64", comp);
          }
       else
          {
-         setDllSlip((char*)cg->getCodeStart(), (char*)cg->getCodeStart() + cg->getCodeLength(), "SLIPDLL31", comp);
+         setDllSlip((const char *)cg->getCodeStart(), (const char *)cg->getCodeStart() + cg->getCodeLength(), "SLIPDLL31", comp);
          }
       }
 
@@ -251,7 +254,20 @@ OMR::CodeGenPhase::performEmitSnippetsPhase(TR::CodeGenerator * cg, TR::CodeGenP
    TR::LexicalMemProfiler mp("Emit Snippets", comp->phaseMemProfiler());
    LexicalTimer pt("Emit Snippets", comp->phaseTimer());
 
-   cg->emitSnippets();
+   if (cg->getLastWarmInstruction() &&
+       comp->getOption(TR_MoveSnippetsToWarmCode))
+      {
+      // Snippets will follow warm blocks
+      uint8_t * oldCursor = cg->getBinaryBufferCursor();
+      cg->setBinaryBufferCursor(cg->getWarmCodeEnd());
+      cg->emitSnippets();
+      cg->setWarmCodeEnd(cg->getBinaryBufferCursor());
+      cg->setBinaryBufferCursor(oldCursor);
+      }
+   else
+      {
+      cg->emitSnippets();
+      }
 
    if (comp->getOption(TR_EnableOSR))
       {

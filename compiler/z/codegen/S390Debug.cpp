@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if defined (_MSC_VER) && (_MSC_VER < 1900)
@@ -324,6 +324,7 @@ TR_Debug::printz(TR::FILE *pOutFile, TR::Instruction * instr)
       case TR::Instruction::IsVRIg:
       case TR::Instruction::IsVRIh:
       case TR::Instruction::IsVRIi:
+      case TR::Instruction::IsVRIl:
             print(pOutFile, (TR::S390VRIInstruction *) instr);
          break;
       case TR::Instruction::IsVRRa:
@@ -901,8 +902,7 @@ TR_Debug::print(TR::FILE *pOutFile, TR::S390PseudoInstruction * instr)
             }
          for (int32_t i = 0; i < instr->getFenceNode()->getNumRelocations(); ++i)
             {
-            if (!_comp->getOption(TR_MaskAddresses))
-               trfprintf(pOutFile, " %p", instr->getFenceNode()->getRelocationDestination(i));
+            trfprintf(pOutFile, " %p", instr->getFenceNode()->getRelocationDestination(i));
             }
          trfprintf(pOutFile, " ]");
 
@@ -1972,51 +1972,6 @@ TR_Debug::print(TR::FILE *pOutFile, TR::MemoryReference * mr, TR::Instruction * 
    trfflush(pOutFile);
    }
 
-
-
-static void intToString(int num, char *str, int len=10, bool padWithZeros=false)
-   {
-   unsigned char packedDecValue[16];
-   unsigned char c[16];
-   int i=0,j=0,n=0;
-
-   #if !defined(LINUX) && !defined(TR_HOST_X86)
-   __cvd(num, (char *)packedDecValue);
-   __unpk(c, len-1, packedDecValue, 7 );
-   c[len-1] = c[len-1] | 0xf0;
-
-   if (!padWithZeros) while((c[j]=='0') && (j < len-1)) { j++; }
-   if (num < 0) str[n++]='-';
-   for (i=0; i < len-j; i++) str[n+i] = c[i+j];
-   str[n+len-j]=NULL;
-
-   #else
-   if (!padWithZeros) sprintf(str, "%d", num);
-   else  sprintf(str, "%0*d", len, num);
-   #endif
-   }
-
-static void intToHex(uint32_t num, char *str, int len)
-   {
-   unsigned char temp[16];
-   const unsigned char ebcdic_translate[16] =
-                     { 0xF0, 0xF1, 0xF2, 0xF3,
-                       0xF4, 0xF5, 0xF6, 0xF7,
-           0xF8, 0xF9, 0xC1, 0xC2,
-           0xC3, 0xC4, 0xC5, 0xC6
-                     };
-
-   #if !defined(LINUX) && !defined(TR_HOST_X86)
-   memcpy(temp, &num, 4);
-   __unpk((unsigned char *)str, len, temp, 4);
-   __tr((unsigned char *)str, ebcdic_translate-240, len);
-   str[len]=NULL;
-   #else
-   sprintf(str, "%0*X", len,num);
-   #endif
-
-   }
-
 char *
 TR_Debug::printSymbolName(TR::FILE *pOutFile, TR::Symbol *sym,  TR::SymbolReference *symRef, TR::MemoryReference * mr)
    {
@@ -2795,6 +2750,14 @@ TR_Debug::print(TR::FILE *pOutFile, TR::S390VRIInstruction * instr)
       case TR::Instruction::IsVRIi:
          trfprintf(pOutFile, ",0x%x",
                maskHalf(static_cast<TR::S390VRIiInstruction*>(instr)->getImmediateField3()));
+         break;
+      case TR::Instruction::IsVRIk:
+         trfprintf(pOutFile, ",0x%x",
+               maskHalf(static_cast<TR::S390VRIkInstruction*>(instr)->getImmediateField5()));
+         break;
+      case TR::Instruction::IsVRIl:
+         trfprintf(pOutFile, ",0x%x",
+               maskHalf(static_cast<TR::S390VRIlInstruction*>(instr)->getImmediateField3()));
          break;
       default:
          TR_ASSERT(false, "Unknown VRI type");

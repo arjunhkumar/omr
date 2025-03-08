@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "z/codegen/S390GenerateInstructions.hpp"
@@ -664,7 +664,7 @@ generateRXInstruction(TR::CodeGenerator * cg, TR::InstOpCode::Mnemonic op, TR::N
       }
    else
       {
-      TR_ASSERT_FATAL(instructionFormat == RXYa_FORMAT, "Mnemonic (%s) is incorrectly used as an RXY instruction", TR::InstOpCode::metadata[op].name);
+      TR_ASSERT_FATAL(instructionFormat == RXYa_FORMAT || instructionFormat == RXYc_FORMAT, "Mnemonic (%s) is incorrectly used as an RXY instruction", TR::InstOpCode::metadata[op].name);
 
       result = preced != NULL ?
          new (INSN_HEAP) TR::S390RXYInstruction(op, n, treg, mf, preced, cg) :
@@ -1771,6 +1771,34 @@ generateVRIiInstruction(
 
 #ifdef J9_PROJECT_SPECIFIC
    if (op == TR::InstOpCode::VCVD || op == TR::InstOpCode::VCVDG)
+      {
+      generateS390DAAExceptionRestoreSnippet(cg, n, instr, op, false);
+      }
+#endif
+
+   return instr;
+   }
+
+TR::Instruction *
+generateVRIkInstruction(TR::CodeGenerator * cg, TR::InstOpCode::Mnemonic op, TR::Node * n, TR::Register * targetReg, TR::Register * sourceReg2,
+                        TR::Register * sourceReg3, TR::Register * sourceReg4, uint8_t constantImm5 /* 8 bit */)
+   {
+   return new (INSN_HEAP) TR::S390VRIkInstruction(cg, op, n, targetReg, sourceReg2, sourceReg3, sourceReg4, constantImm5);
+   }
+
+TR::Instruction *
+generateVRIlInstruction(
+                      TR::CodeGenerator        * cg,
+                      TR::InstOpCode::Mnemonic   op,
+                      TR::Node                 * n,
+                      TR::Register             * sourceReg1,
+                      TR::Register             * sourceReg2,
+                      uint16_t                   constantImm3)  /* 16 bits  */
+   {
+   TR::Instruction* instr =  new (INSN_HEAP) TR::S390VRIlInstruction(cg, op, n, sourceReg1, sourceReg2, constantImm3);
+
+#ifdef J9_PROJECT_SPECIFIC
+   if (op == TR::InstOpCode::VTZ)
       {
       generateS390DAAExceptionRestoreSnippet(cg, n, instr, op, false);
       }

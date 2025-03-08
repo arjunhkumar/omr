@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "omrcfg.h"
@@ -1301,7 +1301,7 @@ MM_MemoryPoolSplitAddressOrderedList::releaseFreeMemoryPages(MM_EnvironmentBase*
 {
 	uintptr_t releasedMemory = 0;
 
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; i++) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; i++) {
 		_heapFreeLists[i]._lock.acquire();
 		_heapFreeLists[i]._timesLocked += 1;
 		releasedMemory += releaseFreeEntryMemoryPages(env, _heapFreeLists[i]._freeList);
@@ -1310,3 +1310,44 @@ MM_MemoryPoolSplitAddressOrderedList::releaseFreeMemoryPages(MM_EnvironmentBase*
 
 	return releasedMemory;
 }
+
+#if defined(J9VM_OPT_CRIU_SUPPORT)
+bool
+MM_MemoryPoolSplitAddressOrderedList::reinitializeForRestore(MM_EnvironmentBase *env)
+{
+	if (_extensions->splitFreeListSplitAmount > _heapFreeListCount) {
+		/* Free lists must not exceed the pre-allocated _maximumHeapFreeListCount number of entries. */
+		_extensions->splitFreeListSplitAmount = OMR_MIN(
+				_extensions->splitFreeListSplitAmount, _maximumHeapFreeListCount);
+
+		/* Initialize values from _heapFreeListCount to the newly set splitFreeListSplitAmount. */
+		for (uintptr_t i = _heapFreeListCount; i < _extensions->splitFreeListSplitAmount; ++i) {
+			_currentThreadFreeList[i] = 0;
+
+			_heapFreeLists[i] = J9ModronFreeList();
+
+			if (!_heapFreeLists[i].initialize(env)) {
+				return false;
+			}
+
+			new (&_largeObjectAllocateStatsForFreeList[i]) MM_LargeObjectAllocateStats(env);
+
+			if (!_largeObjectAllocateStatsForFreeList[i].initialize(
+					env, (uint16_t)_extensions->largeObjectAllocationProfilingTopK,
+					_extensions->largeObjectAllocationProfilingThreshold,
+					_extensions->largeObjectAllocationProfilingVeryLargeObjectThreshold,
+					(float)_extensions->largeObjectAllocationProfilingSizeClassRatio / (float)100.0,
+					_extensions->heap->getMaximumMemorySize(), getTlhMaximumSize() + _minimumFreeEntrySize,
+					_extensions->tlhMinimumSize, 2)) {
+				return false;
+			}
+		}
+
+		_heapFreeListCount = _extensions->splitFreeListSplitAmount;
+	} else {
+		Assert_MM_true(_extensions->splitFreeListSplitAmount == _heapFreeListCount);
+	}
+
+	return true;
+}
+#endif /* defined(J9VM_OPT_CRIU_SUPPORT) */

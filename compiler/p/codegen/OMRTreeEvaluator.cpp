@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdint.h>
@@ -919,7 +919,24 @@ OMR::Power::TreeEvaluator::mTrueCountEvaluator(TR::Node *node, TR::CodeGenerator
 TR::Register*
 OMR::Power::TreeEvaluator::mFirstTrueEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   TR::Node *firstChild = node->getFirstChild();
+
+   TR_ASSERT_FATAL_WITH_NODE(node, firstChild->getDataType().getVectorLength() == TR::VectorLength128,
+                             "Only 128-bit vectors are supported %s", node->getDataType().toString());
+
+   TR_ASSERT_FATAL_WITH_NODE(node, firstChild->getDataType().getVectorNumLanes() == 16,
+                             "Unsupported vector type %s for mFirstTrue\n", firstChild->getDataType().toString());
+
+
+   TR::Register *srcReg = cg->evaluate(firstChild);
+   TR::Register *resReg = cg->allocateRegister(TR_GPR);
+
+   generateTrg1Src1Instruction(cg, OMR::InstOpCode::vclzlsbb, node, resReg, srcReg);
+
+   node->setRegister(resReg);
+   cg->decReferenceCount(firstChild);
+
+   return resReg;
    }
 
 TR::Register*
@@ -931,7 +948,26 @@ OMR::Power::TreeEvaluator::mLastTrueEvaluator(TR::Node *node, TR::CodeGenerator 
 TR::Register*
 OMR::Power::TreeEvaluator::mToLongBitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   TR::Node *firstChild = node->getFirstChild();
+
+   TR_ASSERT_FATAL_WITH_NODE(node, firstChild->getDataType().getVectorLength() == TR::VectorLength128,
+                             "Only 128-bit vectors are supported %s", node->getDataType().toString());
+
+   TR_ASSERT_FATAL_WITH_NODE(node, firstChild->getDataType().getVectorNumLanes() == 16,
+                             "Unsupported vector type %s for mToLongBits\n", firstChild->getDataType().toString());
+
+   TR::Register *srcReg = cg->evaluate(firstChild);
+   TR::Register *tmpReg = cg->allocateRegister(TR_VRF);
+   TR::Register *resReg = cg->allocateRegister(TR_GPR);
+
+   generateTrg1Src1Instruction(cg, OMR::InstOpCode::xxbrq, node, tmpReg, srcReg);
+   generateTrg1Src1Instruction(cg, OMR::InstOpCode::vextractbm, node, resReg, tmpReg);
+
+   cg->stopUsingRegister(tmpReg);
+   node->setRegister(resReg);
+   cg->decReferenceCount(firstChild);
+
+   return resReg;
    }
 
 TR::Register*
@@ -2204,6 +2240,192 @@ OMR::Power::TreeEvaluator::lbitpermuteEvaluator(TR::Node *node, TR::CodeGenerato
    return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
    }
 
+static inline TR::Register*
+compressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg, TR::DataType type)
+   {
+   TR::Node *srcNode = node->getFirstChild();
+   TR::Node *maskNode = node->getSecondChild();
+   TR::Register *srcReg = NULL;
+   TR::Register *maskReg = NULL;
+   TR::Register *resReg = NULL;
+
+   if (type != TR::Int64)
+      {
+      TR::InstOpCode::Mnemonic loadOpcode;
+      uint64_t zeroExtendMask;
+      uint32_t length;
+      switch (type)
+         {
+         case TR::Int32:
+            loadOpcode = TR::InstOpCode::lwz;
+            zeroExtendMask = CONSTANT64(0x00000000ffffffff);
+            length = 4;
+            break;
+         case TR::Int16:
+            loadOpcode = TR::InstOpCode::lhz;
+            zeroExtendMask = CONSTANT64(0x000000000000ffff);
+            length = 2;
+            break;
+         case TR::Int8:
+            loadOpcode = TR::InstOpCode::lbz;
+            zeroExtendMask = CONSTANT64(0x00000000000000ff);
+            length = 1;
+            break;
+         default:
+            TR_ASSERT_FATAL(false, "Unrecognized compressbits type %s\n", type.toString());
+            break;
+         }
+
+      // Only one of src or mask needs to be zero-extended
+      // First check if either can be zero-extended at compile time
+      if (maskNode->getOpCode().isLoadConst())
+         {
+         int64_t mask = maskNode->getUnsignedLongInt() & zeroExtendMask;
+         maskReg = cg->allocateRegister();
+         loadConstant(cg, maskNode, mask, maskReg);
+         resReg = maskReg;
+         }
+      else if (srcNode->getOpCode().isLoadConst())
+         {
+         int64_t src = srcNode->getUnsignedLongInt() & zeroExtendMask;
+         srcReg = cg->allocateRegister();
+         loadConstant(cg, srcNode, src, srcReg);
+         resReg = srcReg;
+         }
+      // Otherwise check if either is in memory and can therefore be loaded with a zero-extending opcode
+      else if (maskNode->getReferenceCount() == 1 && maskNode->getOpCode().isMemoryReference() && maskNode->getRegister() == NULL)
+         {
+         maskReg = cg->allocateRegister();
+         TR::LoadStoreHandler::generateLoadNodeSequence(cg, maskReg, maskNode, loadOpcode, length);
+         resReg = maskReg;
+         }
+      else if (srcNode->getReferenceCount() == 1 && srcNode->getOpCode().isMemoryReference() && srcNode->getRegister() == NULL)
+         {
+         srcReg = cg->allocateRegister();
+         TR::LoadStoreHandler::generateLoadNodeSequence(cg, srcReg, srcNode, loadOpcode, length);
+         resReg = srcReg;
+         }
+      // If no zero-extension shortcut applied, default to zero-extending the mask
+      if (resReg == NULL)
+         {
+         maskReg = cg->gprClobberEvaluate(maskNode);
+         generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rldicl, node, maskReg, maskReg, 0, zeroExtendMask);
+         resReg = maskReg;
+         }
+      // Evaluate the missing operand
+      if (maskReg == NULL)
+         {
+         maskReg = cg->evaluate(maskNode);
+         }
+      else
+         {
+         srcReg = cg->evaluate(srcNode);
+         }
+      }
+   else
+      {
+      srcReg = cg->evaluate(srcNode);
+      maskReg = cg->gprClobberEvaluate(maskNode);
+      resReg = maskReg;
+      }
+
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::pextd, node, resReg, srcReg, maskReg);
+
+   // Results smaller than 32 bits need to be sign extended to register width
+   if (type == TR::Int8)
+      {
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, resReg, resReg);
+      }
+   else if (type == TR::Int16)
+      {
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::extsh, node, resReg, resReg);
+      }
+
+   node->setRegister(resReg);
+
+   cg->decReferenceCount(srcNode);
+   cg->decReferenceCount(maskNode);
+
+   return resReg;
+   }
+
+TR::Register*
+OMR::Power::TreeEvaluator::bcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return compressbitsEvaluator(node, cg, TR::Int8);
+   }
+
+TR::Register*
+OMR::Power::TreeEvaluator::scompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return compressbitsEvaluator(node, cg, TR::Int16);
+   }
+
+TR::Register*
+OMR::Power::TreeEvaluator::icompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return compressbitsEvaluator(node, cg, TR::Int32);
+   }
+
+TR::Register*
+OMR::Power::TreeEvaluator::lcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR_ASSERT_FATAL(cg->comp()->target().is64Bit(), "lcompressbits is only supported in 64-bit mode.\n");
+   return compressbitsEvaluator(node, cg, TR::Int64);
+   }
+
+static TR::Register*
+expandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg, TR::DataType type)
+   {
+   TR::Node *srcNode = node->getFirstChild();
+   TR::Node *maskNode = node->getSecondChild();
+   TR::Register *srcReg = cg->gprClobberEvaluate(srcNode);
+   TR::Register *maskReg = cg->evaluate(maskNode);
+
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::pdepd, node, srcReg, srcReg, maskReg);
+
+   // Results smaller than 32 bits need to be sign extended to register width
+   if (type == TR::Int8)
+      {
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::extsb, node, srcReg, srcReg);
+      }
+   else if (type == TR::Int16)
+      {
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::extsh, node, srcReg, srcReg);
+      }
+
+   node->setRegister(srcReg);
+   cg->decReferenceCount(maskNode);
+   cg->decReferenceCount(srcNode);
+
+   return srcReg;
+   }
+
+TR::Register*
+OMR::Power::TreeEvaluator::bexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return expandbitsEvaluator(node, cg, TR::Int8);
+   }
+
+TR::Register*
+OMR::Power::TreeEvaluator::sexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return expandbitsEvaluator(node, cg, TR::Int16);
+   }
+
+TR::Register*
+OMR::Power::TreeEvaluator::iexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return expandbitsEvaluator(node, cg, TR::Int32);
+   }
+
+TR::Register*
+OMR::Power::TreeEvaluator::lexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR_ASSERT_FATAL(cg->comp()->target().is64Bit(), "lexpandbits is only supported in 64-bit mode.\n");
+   return expandbitsEvaluator(node, cg, TR::Int64);
+   }
+
 class TR_OpaqueClassBlock;
 class TR_OpaqueMethodBlock;
 
@@ -2978,7 +3200,7 @@ TR::Register *OMR::Power::TreeEvaluator::bstoreEvaluator(TR::Node *node, TR::Cod
    return NULL;
    }
 
-// also handles isstore
+// also handles sstorei
 TR::Register *OMR::Power::TreeEvaluator::sstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
    TR::Node *valueChild;
@@ -3028,6 +3250,9 @@ TR::Register *OMR::Power::TreeEvaluator::vloadEvaluator(TR::Node *node, TR::Code
    TR_ASSERT_FATAL_WITH_NODE(node, node->getDataType().getVectorLength() == TR::VectorLength128,
                    "Only 128-bit vectors are supported %s", node->getDataType().toString());
 
+   TR_ASSERT_FATAL(!node->getDataType().isMask() || node->getDataType().getVectorElementType() == TR::Int8,
+                   "Only load of Byte masks is currently supported"); // TODO: support other mask types
+
    TR::InstOpCode::Mnemonic opcode;
    TR_RegisterKinds kind;
 
@@ -3061,6 +3286,19 @@ TR::Register *OMR::Power::TreeEvaluator::vloadEvaluator(TR::Node *node, TR::Code
    TR::Register *dstReg = cg->allocateRegister(kind);
 
    TR::LoadStoreHandler::generateLoadNodeSequence(cg, dstReg, node, opcode, 16, true);
+
+   if (node->getDataType().isMask() &&
+       node->getDataType().getVectorElementType() == TR::Int8)
+      {
+      // Lowest mask bit needs to be expanded to the whole mask element
+      TR::Register *tmpReg = cg->allocateRegister(TR_VRF);
+      generateTrg1ImmInstruction(cg, TR::InstOpCode::vspltisb, node, tmpReg, 15);
+      // move lowest bit to the sign position
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vslb, node, dstReg, dstReg, tmpReg);
+      // extend sign bit to the right
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vsrab, node, dstReg, dstReg, tmpReg);
+      cg->stopUsingRegister(tmpReg);
+      }
 
    node->setRegister(dstReg);
    return dstReg;
@@ -4613,6 +4851,131 @@ TR::Register* OMR::Power::TreeEvaluator::vmfirstNonZeroEvaluator(TR::Node *node,
    return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
    }
 
+TR::Register* OMR::Power::TreeEvaluator::vpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vexpandEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vshlEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmshlEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vshrEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmshrEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vushrEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmushrEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vrolEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmrolEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::mcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
+TR::Register* OMR::Power::TreeEvaluator::vmexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return TR::TreeEvaluator::unImpOpEvaluator(node, cg);
+   }
+
 static void inlineArrayCopy(TR::Node *node, int64_t byteLen, TR::Register *src, TR::Register *dst, TR::CodeGenerator *cg)
    {
    if (byteLen == 0)
@@ -5052,48 +5415,20 @@ TR::Register *OMR::Power::TreeEvaluator::arraytranslateEvaluator(TR::Node *node,
          }
       }
 
-   TR::LabelSymbol *labelArrayTranslateStart  = generateLabelSymbol(cg);
-   TR::LabelSymbol *labelNonZeroLengthInput   = generateLabelSymbol(cg);
-   TR::LabelSymbol *labelArrayTranslateDone   = generateLabelSymbol(cg);
-   labelArrayTranslateStart->setStartInternalControlFlow();
-   labelArrayTranslateDone->setEndInternalControlFlow();
-
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, labelArrayTranslateStart);
-
-   generateTrg1Src1ImmInstruction(cg,TR::InstOpCode::Op_cmpi, node, condReg, inputLenReg, 0);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::bgt, node, labelNonZeroLengthInput, condReg);
-
-
-      {  //Zero length input, return value in outputLenReg.
-         generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, inputReg, 0);
-         generateLabelInstruction(cg, TR::InstOpCode::b, node, labelArrayTranslateDone);
+   TR_RuntimeHelper helper;
+   if (sourceByte)
+      {
+      TR_ASSERT(!node->isTargetByteArrayTranslate(), "Both source and target are byte for array translate");
+      helper = arraytranslateOT ? TR_PPCarrayTranslateTROT : TR_PPCarrayTranslateTROT255;
       }
-
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, labelNonZeroLengthInput);
-
-      {  //Array Translate helper call, greater-than-zero length input.
-         TR_RuntimeHelper helper;
-         if (sourceByte)
-            {
-            TR_ASSERT(!node->isTargetByteArrayTranslate(), "Both source and target are byte for array translate");
-            if (arraytranslateOT)
-            {
-               helper = TR_PPCarrayTranslateTROT;
-            }
-            else
-               helper = TR_PPCarrayTranslateTROT255;
-            }
-         else
-            {
-            TR_ASSERT(node->isTargetByteArrayTranslate(), "Both source and target are word for array translate");
-            helper = arraytranslateTRTO255 ? TR_PPCarrayTranslateTRTO255 : TR_PPCarrayTranslateTRTO;
-            }
-         TR::SymbolReference *helperSym = cg->symRefTab()->findOrCreateRuntimeHelper(helper);
-         uintptr_t          addr = (uintptr_t)helperSym->getMethodAddress();
-         generateDepImmSymInstruction(cg, TR::InstOpCode::bl, node, addr, deps, helperSym);
+   else
+      {
+      TR_ASSERT(node->isTargetByteArrayTranslate(), "Both source and target are word for array translate");
+      helper = arraytranslateTRTO255 ? TR_PPCarrayTranslateTRTO255 : TR_PPCarrayTranslateTRTO;
       }
-
-   generateDepLabelInstruction(cg, TR::InstOpCode::label, node, labelArrayTranslateDone, deps);
+   TR::SymbolReference *helperSym = cg->symRefTab()->findOrCreateRuntimeHelper(helper);
+   uintptr_t addr = (uintptr_t)helperSym->getMethodAddress();
+   generateDepImmSymInstruction(cg, TR::InstOpCode::bl, node, addr, deps, helperSym);
 
    for (uint32_t i = 0; i < node->getNumChildren(); ++i)
       cg->decReferenceCount(node->getChild(i));
@@ -5321,8 +5656,8 @@ static inline void loadArrayCmpSources(TR::Node *node, TR::InstOpCode::Mnemonic 
       }
    }
 
-static TR::Register *inlineArrayCmpP10(TR::Node *node, TR::CodeGenerator *cg)
-{
+static TR::Register *inlineArrayCmpP10(TR::Node *node, TR::CodeGenerator *cg, bool isArrayCmpLen)
+   {
    TR::Node *src1AddrNode = node->getChild(0);
    TR::Node *src2AddrNode = node->getChild(1);
    TR::Node *lengthNode = node->getChild(2);
@@ -5333,6 +5668,7 @@ static TR::Register *inlineArrayCmpP10(TR::Node *node, TR::CodeGenerator *cg)
    TR::Register *returnReg =  cg->allocateRegister(TR_GPR);
    TR::Register *tempReg = cg->gprClobberEvaluate(lengthNode);
    TR::Register *temp2Reg = cg->allocateRegister(TR_GPR);
+   TR::Register *pairReg = nullptr;
 
    TR::Register *vec0Reg = cg->allocateRegister(TR_VRF);
    TR::Register *vec1Reg = cg->allocateRegister(TR_VRF);
@@ -5344,17 +5680,33 @@ static TR::Register *inlineArrayCmpP10(TR::Node *node, TR::CodeGenerator *cg)
    TR::LabelSymbol *endLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *resultLabel = generateLabelSymbol(cg);
 
+   bool is64bit = cg->comp()->target().is64Bit();
+   TR_ASSERT_FATAL_WITH_NODE(lengthNode, lengthNode->getDataType().isInt64(), "lengthNode not int64. Datatype: %s", node->getDataType().toString());
+
+   if (!is64bit)
+      {
+      pairReg = tempReg;
+      tempReg = tempReg->getLowOrder();
+      }
+
    generateLabelInstruction(cg, TR::InstOpCode::label, node, startLabel);
    startLabel->setStartInternalControlFlow();
 
    generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, indexReg, 0);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpi4, node, condReg, tempReg, 16);
+   generateTrg1Src1ImmInstruction(cg, is64bit ? TR::InstOpCode::cmpi8 : TR::InstOpCode::cmpli4, node, condReg, tempReg, 16);
 
    // We don't need length anymore as we can calculate the appropriate index by using indexReg and the remainder
    generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, returnReg, tempReg, 0, 0xF);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, residueStartLabel, condReg);
 
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, tempReg, tempReg, 4);
+   if (is64bit)
+      {
+      generateShiftRightLogicalImmediateLong(cg, node, tempReg, tempReg, 4);
+      }
+   else
+      {
+      generateShiftRightLogicalImmediate(cg, node, tempReg, tempReg, 4);
+      }
    generateSrc1Instruction(cg, TR::InstOpCode::mtctr, node, tempReg);
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, loopStartLabel);
@@ -5386,7 +5738,7 @@ static TR::Register *inlineArrayCmpP10(TR::Node *node, TR::CodeGenerator *cg)
 
    generateTrg1Src1Instruction(cg, TR::InstOpCode::vclzlsbb, node, tempReg, vec0Reg);
 
-   if (!node->isArrayCmpLen())
+   if (!isArrayCmpLen)
       {
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, returnReg, returnReg, -1);
       }
@@ -5398,7 +5750,7 @@ static TR::Register *inlineArrayCmpP10(TR::Node *node, TR::CodeGenerator *cg)
    // index = index + offset, if we need to return unmatched index, then we are done here
    generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, returnReg, indexReg, returnReg);
 
-   if (!node->isArrayCmpLen())
+   if (!isArrayCmpLen)
       {
       generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, tempReg, returnReg, src1AddrReg);
       generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, indexReg, returnReg, src2AddrReg);
@@ -5409,6 +5761,10 @@ static TR::Register *inlineArrayCmpP10(TR::Node *node, TR::CodeGenerator *cg)
       generateTrg1Src1Instruction(cg, TR::InstOpCode::neg, node, tempReg, tempReg);
       generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, returnReg, tempReg, 2, 3);
       generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, returnReg, returnReg, tempReg);
+      }
+   else if (!is64bit)
+      {
+      generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, temp2Reg, 0);
       }
 
    int32_t numRegs = 9;
@@ -5430,19 +5786,475 @@ static TR::Register *inlineArrayCmpP10(TR::Node *node, TR::CodeGenerator *cg)
    generateDepLabelInstruction(cg, TR::InstOpCode::label, node, endLabel, dependencies);
    endLabel->setEndInternalControlFlow();
 
-   node->setRegister(returnReg);
+   if (isArrayCmpLen && !is64bit)
+      {
+      TR::Register *lowReturnReg = returnReg;
+      returnReg = cg->allocateRegisterPair(returnReg, temp2Reg);
+      node->setRegister(returnReg);
+      TR::Register *liveRegs[4] = { src1AddrReg, src2AddrReg, lowReturnReg, temp2Reg };
+      dependencies->stopUsingDepRegs(cg, 4, liveRegs);
+      cg->stopUsingRegister(pairReg);
+      }
+   else
+      {
+      node->setRegister(returnReg);
+      TR::Register *liveRegs[3] = { src1AddrReg, src2AddrReg, returnReg };
+      dependencies->stopUsingDepRegs(cg, 3, liveRegs);
+      }
    cg->decReferenceCount(src1AddrNode);
    cg->decReferenceCount(src2AddrNode);
    cg->decReferenceCount(lengthNode);
-   TR::Register *liveRegs[3] = { src1AddrReg, src2AddrReg, returnReg };
-   dependencies->stopUsingDepRegs(cg, 3, liveRegs);
 
    return returnReg;
-}
+   }
 
-
-static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg)
+static TR::Register *inlineVectorArrayCmp(TR::Node *node, TR::CodeGenerator *cg, bool isArrayCmpLen)
    {
+   bool is64bit = cg->comp()->target().is64Bit();
+   bool isAtLeastP9 = cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P9);
+   bool isLE = cg->comp()->target().cpu.isLittleEndian();
+
+   TR::Node *src1AddrNode = node->getChild(0);
+   TR::Node *src2AddrNode = node->getChild(1);
+   TR::Node *lengthNode = node->getChild(2);
+
+   TR_ASSERT_FATAL_WITH_NODE(lengthNode, lengthNode->getDataType().isInt64(), "lengthNode not int64. Datatype: %s", node->getDataType().toString());
+
+   TR::Register *src1AddrReg = cg->evaluate(src1AddrNode);
+   TR::Register *src2AddrReg = cg->evaluate(src2AddrNode);
+   TR::Register *lengthReg = cg->gprClobberEvaluate(lengthNode);
+
+   TR::Register *offsetReg = cg->allocateRegister(TR_GPR);
+   TR::Register *tempReg = cg->allocateRegister(TR_GPR);
+   TR::Register *tempReg2 = cg->allocateRegister(TR_GPR);
+   TR::Register *pairReg = nullptr;
+
+   TR::Register *vec1Reg = cg->allocateRegister(TR_VRF);
+   TR::Register *vec2Reg = cg->allocateRegister(TR_VRF);
+
+   TR::Register *cr0Reg = cg->allocateRegister(TR_CCR);
+   TR::Register *cr6Reg = cg->allocateRegister(TR_CCR);
+
+   /* On 32bit, the length value will never exceed a 32bit value so only the lower 32 bits are needed. */
+   if (!is64bit)
+      {
+      pairReg = lengthReg;
+      lengthReg = lengthReg->getLowOrder();
+      }
+
+   TR::LabelSymbol *startLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *load16LoopLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *skipLoad16Label = generateLabelSymbol(cg);
+   TR::LabelSymbol *skipLoad8Label = generateLabelSymbol(cg);
+   TR::LabelSymbol *skipLoad4PreZeroCheckLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *skipLoad4Label = generateLabelSymbol(cg);
+   TR::LabelSymbol *load4DiffLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *load8DiffLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *load16DiffLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *returnFalseBeforeLoadLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *returnFalseLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *returnTrueLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *endLabel = generateLabelSymbol(cg);
+
+   int32_t numRegs = 10;
+   TR::RegisterDependencyConditions *dependencies = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0, numRegs, cg->trMemory());
+   dependencies->addPostCondition(src1AddrReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(src2AddrReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(lengthReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(offsetReg, TR::RealRegister::NoReg);
+   dependencies->getPostConditions()->getRegisterDependency(3)->setExcludeGPR0();
+   dependencies->addPostCondition(tempReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(tempReg2, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(vec1Reg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(vec2Reg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(cr0Reg, TR::RealRegister::cr0);
+   dependencies->addPostCondition(cr6Reg, TR::RealRegister::cr6);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, startLabel);
+   startLabel->setStartInternalControlFlow();
+
+   generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, offsetReg, 0);
+
+   /* If array length is less than 4 jump to the byte by byte handling. */
+   generateTrg1Src1ImmInstruction(cg, is64bit ? TR::InstOpCode::cmpli8 : TR::InstOpCode::cmpli4, node, cr6Reg, lengthReg, 4);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, skipLoad4PreZeroCheckLabel, cr6Reg);
+
+   if (is64bit)
+      {
+      /* Array length is at least 4. If it is less than 8, jump to the section that loads 4 bytes from the array. */
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli8, node, cr6Reg, lengthReg, 8);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, skipLoad8Label, cr6Reg);
+      }
+
+   /*
+    * Under 64bit array length is at least 8. If it is less than 16, jump to the section that loads 8 bytes from the array.
+    * Under 32bit array length is at least 4. If it is less than 16, jump to the section that loads 4 bytes from the array.
+    */
+   generateTrg1Src1ImmInstruction(cg, is64bit ? TR::InstOpCode::cmpli8 : TR::InstOpCode::cmpli4, node, cr6Reg, lengthReg, 16);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, skipLoad16Label, cr6Reg);
+
+   /*
+    * Array length is at least 16 so we can use vector operations to compare the arrays.
+    * The maximum number of iterations is put into the count register.
+    */
+   if (is64bit)
+      {
+      generateShiftRightLogicalImmediateLong(cg, node, tempReg, lengthReg, 4);
+      }
+   else
+      {
+      generateShiftRightLogicalImmediate(cg, node, tempReg, lengthReg, 4);
+      }
+   generateSrc1Instruction(cg, TR::InstOpCode::mtctr, node, tempReg);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, load16LoopLabel);
+
+   if (isAtLeastP9)
+      {
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvb16x, node, vec1Reg, offsetReg, src1AddrReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvb16x, node, vec2Reg, offsetReg, src2AddrReg);
+      }
+   else
+      {
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvw4x, node, vec1Reg, offsetReg, src1AddrReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lxvw4x, node, vec2Reg, offsetReg, src2AddrReg);
+      }
+
+   /* If a difference is found in the 16 loaded bytes, jump to load16DiffLabel to figure out where the first mismatched byte is. */
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::vcmpequb_r, node, vec1Reg, vec1Reg, vec2Reg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bge, node, load16DiffLabel, cr6Reg);
+
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, offsetReg, offsetReg, 16);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bdnz, node, load16LoopLabel, cr6Reg);
+
+   /* If there are no more bytes, the arrays match each other. */
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf_r, node, tempReg, offsetReg, lengthReg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, returnTrueLabel, cr0Reg);
+
+   /* If there are less than 4 bytes left, jump to the byte by byte handling. */
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli4, node, cr6Reg, tempReg, 4);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, skipLoad4Label, cr6Reg);
+   if (is64bit)
+      {
+      /* There are at least 4 bytes left. If there are less than 8 bytes left jump to the 4 byte load section. */
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli4, node, cr6Reg, tempReg, 8);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, skipLoad8Label, cr6Reg);
+      }
+
+   /*
+    * Under 64bit, there are 8 to 15 bytes left at this point.
+    * Under 32bit, there are 4 to 15 bytes left since the check against 8 is skipped under 32 bit.
+    */
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, skipLoad16Label);
+
+   if (is64bit)
+      {
+      /* Use 8 byte loads to search for a mismatch between the two arrays. No loop is needed since there are less than 16 bytes left. */
+      if (isLE)
+         {
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::ldbrx, node, tempReg, offsetReg, src1AddrReg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::ldbrx, node, tempReg2, offsetReg, src2AddrReg);
+         }
+      else
+         {
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::ldx, node, tempReg, offsetReg, src1AddrReg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::ldx, node, tempReg2, offsetReg, src2AddrReg);
+         }
+      /* If a mismatch is found, jump to load8DiffLabel to find the exact location. */
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp8, node, cr6Reg, tempReg, tempReg2);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, load8DiffLabel, cr6Reg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, offsetReg, offsetReg, 8);
+
+      /* If there are no more bytes, the arrays match each other. */
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::subf_r, node, tempReg, offsetReg, lengthReg);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, returnTrueLabel, cr0Reg);
+
+      /* If there are less than 4 bytes left, jump to the byte by byte handling. */
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli4, node, cr6Reg, tempReg, 4);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, skipLoad4Label, cr6Reg);
+
+      /* There are 4 to 7 bytes left at this point. */
+      generateLabelInstruction(cg, TR::InstOpCode::label, node, skipLoad8Label);
+      }
+
+   /*
+    * Use 4 byte loads to search for a mismatch between the two arrays.
+    * Under 64bit, there are 4 to 7 bytes left so this only needs to be done once.
+    * Under 32bit, there are 4 to 15 bytes left so this may need to be done 3 times in an unrolled loop.
+    */
+   if (isLE)
+      {
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lwbrx, node, tempReg, offsetReg, src1AddrReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lwbrx, node, tempReg2, offsetReg, src2AddrReg);
+      }
+   else
+      {
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lwzx, node, tempReg, offsetReg, src1AddrReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lwzx, node, tempReg2, offsetReg, src2AddrReg);
+      }
+   /* If a mismatch is found, jump to load4DiffLabel to find the exact location. */
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6Reg, tempReg, tempReg2);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, load4DiffLabel, cr6Reg);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, offsetReg, offsetReg, 4);
+
+   if (!is64bit)
+      {
+      /* If there are no more bytes, the arrays match each other. */
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::subf_r, node, tempReg, offsetReg, lengthReg);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, returnTrueLabel, cr0Reg);
+      /* If there are less than 4 bytes left, jump to the byte by byte handling. */
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli4, node, cr6Reg, tempReg, 4);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, skipLoad4Label, cr6Reg);
+
+      /* Use 4 byte loads to search for a mismatch between the two arrays. */
+      if (isLE)
+         {
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::lwbrx, node, tempReg, offsetReg, src1AddrReg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::lwbrx, node, tempReg2, offsetReg, src2AddrReg);
+         }
+      else
+         {
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::lwzx, node, tempReg, offsetReg, src1AddrReg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::lwzx, node, tempReg2, offsetReg, src2AddrReg);
+         }
+      /* If a mismatch is found, jump to load4DiffLabel to find the exact location. */
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6Reg, tempReg, tempReg2);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, load4DiffLabel, cr6Reg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, offsetReg, offsetReg, 4);
+
+      /* If there are no more bytes, the arrays match each other. */
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::subf_r, node, tempReg, offsetReg, lengthReg);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, returnTrueLabel, cr0Reg);
+      /* If there are less than 4 bytes left, jump to the byte by byte handling. */
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli4, node, cr6Reg, tempReg, 4);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, skipLoad4Label, cr6Reg);
+
+      /* Use 4 byte loads to search for a mismatch between the two arrays. */
+      if (isLE)
+         {
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::lwbrx, node, tempReg, offsetReg, src1AddrReg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::lwbrx, node, tempReg2, offsetReg, src2AddrReg);
+         }
+      else
+         {
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::lwzx, node, tempReg, offsetReg, src1AddrReg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::lwzx, node, tempReg2, offsetReg, src2AddrReg);
+         }
+      /* If a mismatch is found, jump to load4DiffLabel to find the exact location. */
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6Reg, tempReg, tempReg2);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, load4DiffLabel, cr6Reg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, offsetReg, offsetReg, 4);
+      }
+
+   /* If there are no more bytes, the arrays match each other. */
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, skipLoad4PreZeroCheckLabel);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::subf_r, node, tempReg, offsetReg, lengthReg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, returnTrueLabel, cr0Reg);
+
+   /* Only 1 to 3 bytes left so they are handled byte by byte. */
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, skipLoad4Label);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, tempReg, offsetReg, src1AddrReg);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, tempReg2, offsetReg, src2AddrReg);
+   /* If a mismatch is found, the exact offset is in offsetReg because a byte load was used. */
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6Reg, tempReg, tempReg2);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, returnFalseLabel, cr6Reg);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, offsetReg, offsetReg, 1);
+   /* If there are no more bytes, the arrays match each other. */
+   generateTrg1Src2Instruction(cg, is64bit ? TR::InstOpCode::cmpl8 : TR::InstOpCode::cmpl4, node, cr6Reg, offsetReg, lengthReg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, returnTrueLabel, cr6Reg);
+
+   /* Only 1 or 2 bytes left. */
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, tempReg, offsetReg, src1AddrReg);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, tempReg2, offsetReg, src2AddrReg);
+   /* If a mismatch is found, the exact offset is in offsetReg because a byte load was used. */
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6Reg, tempReg, tempReg2);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, returnFalseLabel, cr6Reg);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, offsetReg, offsetReg, 1);
+   /* If there are no more bytes, the arrays match each other. */
+   generateTrg1Src2Instruction(cg, is64bit ? TR::InstOpCode::cmpl8 : TR::InstOpCode::cmpl4, node, cr6Reg, offsetReg, lengthReg);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, returnTrueLabel, cr6Reg);
+
+   /* Last byte in the array */
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, tempReg, offsetReg, src1AddrReg);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, tempReg2, offsetReg, src2AddrReg);
+   /* If a mismatch is found, the exact offset is in offsetReg because a byte load was used. */
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6Reg, tempReg, tempReg2);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, returnFalseLabel, cr6Reg);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, offsetReg, offsetReg, 1);
+   /* The end of the array has been reached so the arrays match each other. */
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, returnTrueLabel);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, load4DiffLabel);
+   /*
+    * 4 bytes from each array have already been loaded into tempReg and tempReg2 at this point.
+    * These instructions help pinpoint exactly which of the 4 bytes was the first mismatch.
+    */
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::cmpb, node, tempReg, tempReg, tempReg2);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::nor, node, tempReg, tempReg, tempReg);
+   generateTrg1Src1Instruction(cg, TR::InstOpCode::cntlzw, node, tempReg, tempReg);
+   generateShiftRightLogicalImmediate(cg, node, tempReg, tempReg, 3);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, offsetReg, offsetReg, tempReg);
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, returnFalseBeforeLoadLabel);
+
+   if (is64bit)
+      {
+      /*
+       * 8 bytes from each array have already been loaded into tempReg and tempReg2 at this point.
+       * These instructions help pinpoint exactly which of the 8 bytes was the first mismatch.
+       */
+      generateLabelInstruction(cg, TR::InstOpCode::label, node, load8DiffLabel);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::cmpb, node, tempReg, tempReg, tempReg2);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::nor, node, tempReg, tempReg, tempReg);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::cntlzd, node, tempReg, tempReg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::sradi, node, tempReg, tempReg, 3);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, offsetReg, offsetReg, tempReg);
+      generateLabelInstruction(cg, TR::InstOpCode::b, node, returnFalseBeforeLoadLabel);
+      }
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, load16DiffLabel);
+   /*
+    * 16 bytes from each array have already been loaded into vec1Reg and vec2Reg at this point.
+    * These instructions help pinpoint exactly which of the 16 bytes was the first mismatch.
+    */
+   if (isLE && !isAtLeastP9)
+      {
+      /*
+       * If the processor isn't P9 or later then lxvw4x was initially used to load the data from memory.
+       * Under little endian this will mix up the order of the bytes.
+       * These instructions fix the ordering.
+       * Under big endian, there is no problem so this is not needed.
+       */
+      generateTrg1ImmInstruction(cg, TR::InstOpCode::vspltisw, node, vec2Reg, -16);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vrlw, node, vec1Reg, vec1Reg, vec2Reg);
+      generateTrg1ImmInstruction(cg, TR::InstOpCode::vspltish, node, vec2Reg, 8);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vrlh, node, vec1Reg, vec1Reg, vec2Reg);
+      }
+
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::vnor, node, vec1Reg, vec1Reg, vec1Reg);
+   if (is64bit)
+      {
+      /* Count leading zeroes to find which byte is the first mismatch. vclzd does this in 8 byte chunks. */
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::vclzd, node, vec1Reg, vec1Reg);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mfvsrd, node, tempReg, vec1Reg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::sradi, node, tempReg, tempReg, 3);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, offsetReg, offsetReg, tempReg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli8, node, cr6Reg, tempReg, 8);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, returnFalseBeforeLoadLabel, cr6Reg);
+
+      if (isAtLeastP9)
+         {
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mfvsrld, node, tempReg, vec1Reg);
+         }
+      else
+         {
+         generateTrg1Src2ImmInstruction(cg, TR::InstOpCode::xxpermdi, node, vec1Reg, vec1Reg, vec1Reg, 3);
+         generateTrg1Src1Instruction(cg, TR::InstOpCode::mfvsrd, node, tempReg, vec1Reg);
+         }
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::sradi, node, tempReg, tempReg, 3);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, offsetReg, offsetReg, tempReg);
+      }
+   else
+      {
+      /* Count leading zeroes to find which byte is the first mismatch. vclzw does this in 4 byte chunks. */
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::vclzw, node, vec1Reg, vec1Reg);
+      generateTrg1ImmInstruction(cg, TR::InstOpCode::vspltisw, node, vec2Reg, 3);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::vsrw, node, vec1Reg, vec1Reg, vec2Reg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::xxspltw, node, vec2Reg, vec1Reg, 0);
+
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mfvsrwz, node, tempReg, vec2Reg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, offsetReg, offsetReg, tempReg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli4, node, cr6Reg, tempReg, 4);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, returnFalseBeforeLoadLabel, cr6Reg);
+
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mfvsrwz, node, tempReg, vec1Reg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, offsetReg, offsetReg, tempReg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli4, node, cr6Reg, tempReg, 4);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, returnFalseBeforeLoadLabel, cr6Reg);
+
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::xxspltw, node, vec2Reg, vec1Reg, 2);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mfvsrwz, node, tempReg, vec2Reg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, offsetReg, offsetReg, tempReg);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::cmpli4, node, cr6Reg, tempReg, 4);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, returnFalseBeforeLoadLabel, cr6Reg);
+
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::xxspltw, node, vec2Reg, vec1Reg, 3);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::mfvsrwz, node, tempReg, vec2Reg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, offsetReg, offsetReg, tempReg);
+      }
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, returnFalseBeforeLoadLabel);
+
+   if (!isArrayCmpLen)
+      {
+      /*
+       * Arraycmp case
+       * The offset of the mismatch location is in offsetReg. This can be used to load the byte and determine which array is greater.
+       * If the arrays match, this load is skipped and 0 is directly returned.
+       */
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, tempReg, offsetReg, src1AddrReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::lbzx, node, tempReg2, offsetReg, src2AddrReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::cmp4, node, cr6Reg, tempReg, tempReg2);
+
+      generateLabelInstruction(cg, TR::InstOpCode::label, node, returnFalseLabel);
+      generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, offsetReg, 1);
+      generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, endLabel, cr6Reg);
+      generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, offsetReg, 2);
+      generateLabelInstruction(cg, TR::InstOpCode::b, node, endLabel);
+
+      generateLabelInstruction(cg, TR::InstOpCode::label, node, returnTrueLabel);
+      generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, offsetReg, 0);
+      }
+   else
+      {
+      /*
+       * Arraycmplen case
+       * The offset of the mismatch location is known at this point and is in offsetReg to be returned.
+       * If the arrays were the same, offsetReg contains the length of the arrays.
+       */
+      generateLabelInstruction(cg, TR::InstOpCode::label, node, returnFalseLabel);
+      generateLabelInstruction(cg, TR::InstOpCode::label, node, returnTrueLabel);
+      if (!is64bit)
+         {
+         generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, tempReg2, 0);
+         }
+      }
+
+   generateDepLabelInstruction(cg, TR::InstOpCode::label, node, endLabel, dependencies);
+   endLabel->setEndInternalControlFlow();
+
+   if (is64bit || !isArrayCmpLen)
+      {
+      node->setRegister(offsetReg);
+      TR::Register *liveRegs[3] = { src1AddrReg, src2AddrReg, offsetReg };
+      dependencies->stopUsingDepRegs(cg, 3, liveRegs);
+      }
+   else
+      {
+      TR::Register *lowReturnReg = offsetReg;
+      offsetReg = cg->allocateRegisterPair(lowReturnReg, tempReg2);
+      node->setRegister(offsetReg);
+      TR::Register *liveRegs[4] = { src1AddrReg, src2AddrReg, lowReturnReg, tempReg2 };
+      dependencies->stopUsingDepRegs(cg, 4, liveRegs);
+      cg->stopUsingRegister(pairReg);
+      }
+
+   cg->decReferenceCount(src1AddrNode);
+   cg->decReferenceCount(src2AddrNode);
+   cg->decReferenceCount(lengthNode);
+
+   return offsetReg;
+   }
+
+static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg, bool isArrayCmpLen)
+   {
+   static char *disableP10ArrayCmp = feGetEnv("TR_DisableP10ArrayCmp");
+   if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P10) && (disableP10ArrayCmp == NULL))
+      return inlineArrayCmpP10(node, cg, isArrayCmpLen);
+
+   static char *disableVectorArrayCmp = feGetEnv("TR_DisableVectorArrayCmp");
+   if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P8) && !disableVectorArrayCmp)
+      return inlineVectorArrayCmp(node, cg, isArrayCmpLen);
+
    TR::Node *src1AddrNode = node->getChild(0);
    TR::Node *src2AddrNode = node->getChild(1);
    TR::Node *lengthNode = node->getChild(2);
@@ -5468,11 +6280,23 @@ static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg)
    TR::Register *src1AddrReg = cg->gprClobberEvaluate(src1AddrNode);
    TR::Register *src2AddrReg = cg->gprClobberEvaluate(src2AddrNode);
 
-   byteLen = 4;
-   if (cg->comp()->target().is64Bit())
+   bool is64bit = cg->comp()->target().is64Bit();
+   TR_ASSERT_FATAL_WITH_NODE(lengthNode, lengthNode->getDataType().isInt64(), "lengthNode not int64. Datatype: %s", node->getDataType().toString());
+
+   if (is64bit)
+      {
       byteLen = 8;
+      }
+   else
+      {
+      byteLen = 4;
+      }
 
    byteLenRegister = cg->evaluate(lengthNode);
+   if (!is64bit)
+      {
+      byteLenRegister = byteLenRegister->getLowOrder();
+      }
    byteLenRemainingRegister = cg->allocateRegister(TR_GPR);
    tempReg = cg->allocateRegister(TR_GPR);
 
@@ -5488,13 +6312,20 @@ static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg)
    condReg2 =  cg->allocateRegister(TR_CCR);
 
    mid2Label = generateLabelSymbol(cg);
-   generateTrg1Src1ImmInstruction(cg, (byteLen == 8) ? TR::InstOpCode::cmpi8 : TR::InstOpCode::cmpi4, node, condReg2, byteLenRemainingRegister, byteLen);
+   generateTrg1Src1ImmInstruction(cg, is64bit ? TR::InstOpCode::cmpi8 : TR::InstOpCode::cmpli4, node, condReg2, byteLenRemainingRegister, byteLen);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, mid2Label, condReg2);
 
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, src1AddrReg, src1AddrReg, -1*byteLen);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi2, node, src2AddrReg, src2AddrReg, -1*byteLen);
 
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::srawi, node, tempReg, byteLenRemainingRegister, (byteLen == 8) ? 3 : 2);
+   if (is64bit)
+      {
+      generateShiftRightLogicalImmediateLong(cg, node, tempReg, byteLenRemainingRegister, (byteLen == 8) ? 3 : 2);
+      }
+   else
+      {
+      generateShiftRightLogicalImmediate(cg, node, tempReg, byteLenRemainingRegister, (byteLen == 8) ? 3 : 2);
+      }
    generateSrc1Instruction(cg, TR::InstOpCode::mtctr, node, tempReg);
 
    loopStartLabel = generateLabelSymbol(cg);
@@ -5521,7 +6352,21 @@ static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg)
       generateTrg1MemInstruction (cg, TR::InstOpCode::ldu, node, src2Reg, TR::MemoryReference::createWithDisplacement(cg, src2AddrReg, 8, 8));
       }
 
-   TR::Register *ccReg =  cg->allocateRegister(TR_GPR);
+   TR::Register *ccReg = nullptr;
+   TR::Register *lowReturnReg = nullptr;
+   TR::Register *highReturnReg = nullptr;
+
+   if (!is64bit && isArrayCmpLen)
+      {
+      lowReturnReg = cg->allocateRegister(TR_GPR);
+      highReturnReg = cg->allocateRegister(TR_GPR);
+      ccReg = cg->allocateRegisterPair(lowReturnReg, highReturnReg);
+      }
+   else
+      {
+      ccReg = cg->allocateRegister(TR_GPR);
+      }
+
 
    generateTrg1Src2Instruction(cg, (byteLen == 8) ? TR::InstOpCode::cmp8 : TR::InstOpCode::cmp4, node, condReg, src1Reg, src2Reg);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, residueStartLabel, condReg);
@@ -5535,12 +6380,17 @@ static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg)
 
    generateTrg1Instruction(cg, TR::InstOpCode::mfctr, node, byteLenRemainingRegister);
 
-   generateTrg1Src1ImmInstruction(cg, (byteLen == 8) ? TR::InstOpCode::cmpi8 : TR::InstOpCode::cmpi4, node, condReg2, byteLenRemainingRegister, 0);
+   generateTrg1Src1ImmInstruction(cg, is64bit ? TR::InstOpCode::cmpi8 : TR::InstOpCode::cmpli4, node, condReg2, byteLenRemainingRegister, 0);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, byteLenRemainingRegister, byteLenRemainingRegister, tempReg);
-   generateShiftLeftImmediate(cg, node, byteLenRemainingRegister, byteLenRemainingRegister, (byteLen == 8) ? 3 : 2);
+
+   if (is64bit)
+      generateShiftLeftImmediateLong(cg, node, byteLenRemainingRegister, byteLenRemainingRegister, (byteLen == 8) ? 3 : 2);
+   else
+      generateShiftLeftImmediate(cg, node, byteLenRemainingRegister, byteLenRemainingRegister, (byteLen == 8) ? 3 : 2);
+
    generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, midLabel, condReg2);
 
-   generateTrg1Src2Instruction(cg, (byteLen == 8) ? TR::InstOpCode::cmp8 : TR::InstOpCode::cmp4, node, condReg2, byteLenRemainingRegister, byteLenRegister);
+   generateTrg1Src2Instruction(cg, is64bit ? TR::InstOpCode::cmp8 : TR::InstOpCode::cmpl4, node, condReg2, byteLenRemainingRegister, byteLenRegister);
    generateLabelInstruction(cg, TR::InstOpCode::label, node, midLabel);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, byteLenRemainingRegister, byteLenRemainingRegister, byteLenRegister);
    generateLabelInstruction(cg, TR::InstOpCode::label, node, mid2Label);
@@ -5566,11 +6416,21 @@ static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg)
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, resultLabel);
 
-   if (node->isArrayCmpLen())
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, ccReg, byteLenRemainingRegister, byteLenRegister);
+   if (isArrayCmpLen)
+      {
+      if (is64bit)
+         {
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, ccReg, byteLenRemainingRegister, byteLenRegister);
+         }
+      else
+         {
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::subf, node, lowReturnReg, byteLenRemainingRegister, byteLenRegister);
+         generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, highReturnReg, 0);
+         }
+      }
    else
       {
-      generateTrg1Src1ImmInstruction(cg, (byteLen == 8) ? TR::InstOpCode::cmpi8 : TR::InstOpCode::cmpi4, node, condReg2, byteLenRemainingRegister, 0);
+      generateTrg1Src1ImmInstruction(cg, is64bit ? TR::InstOpCode::cmpli8 : TR::InstOpCode::cmpli4, node, condReg2, byteLenRemainingRegister, 0);
       generateConditionalBranchInstruction(cg, TR::InstOpCode::bne, node, result2Label, condReg2);
       generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, ccReg, 0);
       generateLabelInstruction(cg, TR::InstOpCode::b, node, residueEndLabel);
@@ -5581,6 +6441,10 @@ static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg)
       }
 
    int32_t numRegs = 10;
+   if (!is64bit && isArrayCmpLen)
+      {
+      numRegs = 11;
+      }
 
    TR::RegisterDependencyConditions *dependencies = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0, numRegs, cg->trMemory());
    dependencies->addPostCondition(src1Reg, TR::RealRegister::NoReg);
@@ -5590,7 +6454,15 @@ static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg)
    dependencies->addPostCondition(byteLenRegister, TR::RealRegister::NoReg);
    dependencies->addPostCondition(byteLenRemainingRegister, TR::RealRegister::NoReg);
    dependencies->addPostCondition(tempReg, TR::RealRegister::NoReg);
-   dependencies->addPostCondition(ccReg, TR::RealRegister::NoReg);
+   if (!is64bit && isArrayCmpLen)
+      {
+      dependencies->addPostCondition(lowReturnReg, TR::RealRegister::NoReg);
+      dependencies->addPostCondition(highReturnReg, TR::RealRegister::NoReg);
+      }
+   else
+      {
+      dependencies->addPostCondition(ccReg, TR::RealRegister::NoReg);
+      }
    dependencies->addPostCondition(condReg, TR::RealRegister::NoReg);
    dependencies->addPostCondition(condReg2, TR::RealRegister::NoReg);
 
@@ -5622,11 +6494,12 @@ static TR::Register *inlineArrayCmp(TR::Node *node, TR::CodeGenerator *cg)
 
 TR::Register *OMR::Power::TreeEvaluator::arraycmpEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   TR::Compilation *comp = cg->comp();
-   static char *disableP10ArrayCmp = feGetEnv("TR_DisableP10ArrayCmp");
-   if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P10) && !disableP10ArrayCmp)
-      return inlineArrayCmpP10(node, cg);
-   return inlineArrayCmp(node, cg);
+   return inlineArrayCmp(node, cg, false);
+   }
+
+TR::Register *OMR::Power::TreeEvaluator::arraycmplenEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   return inlineArrayCmp(node, cg, true);
    }
 
 bool OMR::Power::TreeEvaluator::stopUsingCopyReg(
@@ -5676,123 +6549,6 @@ OMR::Power::TreeEvaluator::generateHelperBranchAndLinkInstruction(
       cg, TR::InstOpCode::bl, node,
       (uintptr_t)helperSym->getMethodAddress(),
       conditions, helperSym);
-   }
-
-TR::Register *OMR::Power::TreeEvaluator::setmemoryEvaluator(TR::Node *node, TR::CodeGenerator *cg)
-   {
-   TR::Compilation *comp = cg->comp();
-   TR::Node             *dstAddrNode, *lengthNode, *valueNode;
-   dstAddrNode = node->getChild(0);
-   lengthNode = node->getChild(1);
-   valueNode = node->getChild(2);
-
-   TR::Register         *dstAddrReg, *lengthReg, *valueReg;
-   bool stopUsingCopyReg1, stopUsingCopyReg2 = false, stopUsingCopyReg3 = false;
-
-   stopUsingCopyReg1 = TR::TreeEvaluator::stopUsingCopyReg(dstAddrNode, dstAddrReg, cg);
-
-   lengthReg = cg->evaluate(lengthNode);
-   if (!cg->canClobberNodesRegister(lengthNode))
-      {
-	  TR::Register *lenCopyReg = cg->allocateRegister();
-      generateTrg1Src1Instruction(cg, TR::InstOpCode::mr, lengthNode, lenCopyReg, lengthReg);
-      lengthReg = lenCopyReg;
-      stopUsingCopyReg2 = true;
-      }
-
-   valueReg = cg->evaluate(valueNode);
-   if (!cg->canClobberNodesRegister(valueNode))
-      {
-	  TR::Register *valCopyReg = cg->allocateRegister();
-      generateTrg1Src1Instruction(cg, TR::InstOpCode::mr, valueNode, valCopyReg, valueReg);
-      valueReg = valCopyReg;
-      stopUsingCopyReg3 = true;
-      }
-
-   TR::LabelSymbol * residualLabel =  generateLabelSymbol(cg);
-   TR::LabelSymbol * loopStartLabel =  generateLabelSymbol(cg);
-   TR::LabelSymbol * doneLabel =  generateLabelSymbol(cg);
-   TR::LabelSymbol * label8aligned =  generateLabelSymbol(cg);
-   TR::LabelSymbol * label4aligned =  generateLabelSymbol(cg);
-   TR::LabelSymbol * label2aligned =  generateLabelSymbol(cg);
-   TR::LabelSymbol * label1aligned =  generateLabelSymbol(cg);
-
-   TR::RegisterDependencyConditions *conditions;
-   int32_t numDeps = 5;
-   conditions = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(numDeps, numDeps, cg->trMemory());
-   TR::Register *cndReg = cg->allocateRegister(TR_CCR);
-   TR::addDependency(conditions, cndReg, TR::RealRegister::cr0, TR_CCR, cg);
-   TR::addDependency(conditions, dstAddrReg, TR::RealRegister::NoReg, TR_GPR, cg);
-   TR::addDependency(conditions, lengthReg, TR::RealRegister::NoReg, TR_GPR, cg);
-   TR::addDependency(conditions, valueReg, TR::RealRegister::NoReg, TR_GPR, cg);
-   TR::Register * tempReg = cg->allocateRegister();
-   TR::addDependency(conditions, tempReg, TR::RealRegister::NoReg, TR_GPR, cg);
-
-   // assemble the double word value from byte value
-   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwimi, node, valueReg, valueReg,  8, 0xff00);
-   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwimi, node, valueReg, valueReg,  16, 0xffff0000);
-   generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rldimi, node, valueReg, valueReg,  32, 0xffffffff00000000);
-
-   generateTrg1Src1ImmInstruction(cg, lengthNode->getType().isInt32() ? TR::InstOpCode::cmpli4 : TR::InstOpCode::cmpli8, node, cndReg, lengthReg, 32);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::blt, node, residualLabel, cndReg);
-
-   generateTrg1Src1ImmInstruction(cg, lengthNode->getType().isInt32() ? TR::InstOpCode::srawi : TR::InstOpCode::sradi, node, tempReg, lengthReg, 5);
-   generateSrc1Instruction(cg, TR::InstOpCode::mtctr, node, tempReg);
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, loopStartLabel);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::std, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 0, 8), valueReg);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::std, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 8, 8), valueReg);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::std, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 16, 8), valueReg);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::std, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 24, 8), valueReg);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, dstAddrReg, dstAddrReg, 32);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::bdnz, node, loopStartLabel, cndReg);
-
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, residualLabel); //check 16 aligned
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, tempReg, lengthReg, 16);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, label8aligned, cndReg);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::std, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 0, 8), valueReg);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::std, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 8, 8), valueReg);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, dstAddrReg, dstAddrReg, 16);
-
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, label8aligned); //check 8 aligned
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, tempReg, lengthReg, 8);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, label4aligned, cndReg);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::std, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 0, 8), valueReg);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, dstAddrReg, dstAddrReg, 8);
-
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, label4aligned); //check 4 aligned
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, tempReg, lengthReg, 4);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, label2aligned, cndReg);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::stw, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 0, 4), valueReg);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, dstAddrReg, dstAddrReg, 4);
-
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, label2aligned); //check 2 aligned
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, tempReg, lengthReg, 2);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, label1aligned, cndReg);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::sth, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 0, 2), valueReg);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, dstAddrReg, dstAddrReg, 2);
-
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, label1aligned); //check 1 aligned
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, tempReg, lengthReg, 1);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, doneLabel, cndReg);
-   generateMemSrc1Instruction(cg, TR::InstOpCode::stb, node, TR::MemoryReference::createWithDisplacement(cg, dstAddrReg, 0, 1), valueReg);
-
-   generateDepLabelInstruction(cg, TR::InstOpCode::label, node, doneLabel, conditions);
-
-   if (stopUsingCopyReg1)
-      cg->stopUsingRegister(dstAddrReg);
-   if (stopUsingCopyReg2)
-      cg->stopUsingRegister(lengthReg);
-   if (stopUsingCopyReg3)
-      cg->stopUsingRegister(valueReg);
-
-   cg->stopUsingRegister(cndReg);
-   cg->stopUsingRegister(tempReg);
-
-   cg->decReferenceCount(dstAddrNode);
-   cg->decReferenceCount(lengthNode);
-   cg->decReferenceCount(valueNode);
-
-   return(NULL);
    }
 
 TR::Register *OMR::Power::TreeEvaluator::arraycopyEvaluator(TR::Node *node, TR::CodeGenerator *cg)
@@ -5849,6 +6605,11 @@ TR::Register *OMR::Power::TreeEvaluator::arraycopyEvaluator(TR::Node *node, TR::
       srcAddrNode = node->getChild(2);
       dstAddrNode = node->getChild(3);
       lengthNode = node->getChild(4);
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+      if (TR::Compiler->om.isOffHeapAllocationEnabled())
+         // For correct card-marking calculation, the dstObjNode should be the baseObj not the dataAddrPointer
+         TR_ASSERT_FATAL(!dstObjNode->isDataAddrPointer(), "The dstObjNode child of arraycopy cannot be a dataAddrPointer");
+#endif /* defined(OMR_GC_SPARSE_HEAP_ALLOCATION) */
       }
 
    stopUsingCopyReg1 = TR::TreeEvaluator::stopUsingCopyReg(srcObjNode, srcObjReg, cg);

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #pragma csect(CODE,"TRLINKAGEBase#C")
@@ -100,8 +100,8 @@ extern bool storeHelperImmediateInstruction(TR::Node * valueChild, TR::CodeGener
 // TR::S390Linkage member functions
 ////////////////////////////////////////////////////////////////////////////////
 
-OMR::Z::Linkage::Linkage(TR::CodeGenerator * codeGen)
-   : OMR::Linkage(codeGen),
+OMR::Z::Linkage::Linkage(TR::CodeGenerator * cg)
+   : OMR::Linkage(cg),
       _linkageType(TR_None), _raContextSaveNeeded(true),
       _integerReturnRegister(TR::RealRegister::NoReg),
       _floatReturnRegister(TR::RealRegister::NoReg),
@@ -135,8 +135,8 @@ OMR::Z::Linkage::Linkage(TR::CodeGenerator * codeGen)
  * convention.
  * Even though this method is common, its implementation is machine-specific.
  */
-OMR::Z::Linkage::Linkage(TR::CodeGenerator * codeGen,TR_LinkageConventions lc)
-   : OMR::Linkage(codeGen),
+OMR::Z::Linkage::Linkage(TR::CodeGenerator * cg,TR_LinkageConventions lc)
+   : OMR::Linkage(cg),
       _linkageType(lc), _raContextSaveNeeded(true),
       _integerReturnRegister(TR::RealRegister::NoReg),
       _floatReturnRegister(TR::RealRegister::NoReg),
@@ -2149,12 +2149,12 @@ OMR::Z::Linkage::storeLongDoubleArgumentOnStack(TR::Node * callNode, TR::DataTyp
 int64_t
 OMR::Z::Linkage::killAndAssignRegister(int64_t killMask, TR::RegisterDependencyConditions * deps,
    TR::Register ** virtualRegPtr, TR::RealRegister::RegNum regNum,
-   TR::CodeGenerator * codeGen, bool isAllocate, bool isDummy)
+   TR::CodeGenerator * cg, bool isAllocate, bool isDummy)
    {
    TR::Register * depVirReg = deps->searchPostConditionRegister(regNum);
    if (depVirReg)
       {
-      if (*virtualRegPtr) codeGen->stopUsingRegister(*virtualRegPtr);
+      if (*virtualRegPtr) cg->stopUsingRegister(*virtualRegPtr);
       *virtualRegPtr = depVirReg;
       return killMask;
       }
@@ -2174,7 +2174,7 @@ OMR::Z::Linkage::killAndAssignRegister(int64_t killMask, TR::RegisterDependencyC
 
       deps->addPostCondition(*virtualRegPtr, regNum, DefinesDependentRegister);
       if (isAllocate)
-         codeGen->stopUsingRegister(*virtualRegPtr);
+         cg->stopUsingRegister(*virtualRegPtr);
 
       if (isDummy)
          {
@@ -2191,24 +2191,24 @@ OMR::Z::Linkage::killAndAssignRegister(int64_t killMask, TR::RegisterDependencyC
 int64_t
 OMR::Z::Linkage::killAndAssignRegister(int64_t killMask, TR::RegisterDependencyConditions * deps,
    TR::Register ** virtualRegPtr, TR::RealRegister* realReg,
-   TR::CodeGenerator * codeGen, bool isAllocate, bool isDummy)
+   TR::CodeGenerator * cg, bool isAllocate, bool isDummy)
    {
-   return self()->killAndAssignRegister(killMask, deps, virtualRegPtr, realReg->getRegisterNumber(), codeGen, isAllocate, isDummy );
+   return self()->killAndAssignRegister(killMask, deps, virtualRegPtr, realReg->getRegisterNumber(), cg, isAllocate, isDummy );
    }
 
 
-void OMR::Z::Linkage::generateDispatchReturnLable(TR::Node * callNode, TR::CodeGenerator * codeGen, TR::RegisterDependencyConditions * &deps,
+void OMR::Z::Linkage::generateDispatchReturnLable(TR::Node * callNode, TR::CodeGenerator * cg, TR::RegisterDependencyConditions * &deps,
       TR::Register * javaReturnRegister, bool hasGlRegDeps, TR::Node *GlobalRegDeps)
    {
    TR::LabelSymbol * endOfDirectToJNILabel = generateLabelSymbol(self()->cg());
    TR::RegisterDependencyConditions * postDeps = new (self()->trHeapMemory())
                TR::RegisterDependencyConditions(NULL, deps->getPostConditions(), 0, deps->getAddCursorForPost(), self()->cg());
 
-   generateS390LabelInstruction(codeGen, TR::InstOpCode::label, callNode, endOfDirectToJNILabel, postDeps);
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, callNode, endOfDirectToJNILabel, postDeps);
 
 #ifdef J9_PROJECT_SPECIFIC
-   if (codeGen->getSupportsRuntimeInstrumentation())
-      TR::TreeEvaluator::generateRuntimeInstrumentationOnOffSequence(codeGen, TR::InstOpCode::RION, callNode);
+   if (cg->getSupportsRuntimeInstrumentation())
+      TR::TreeEvaluator::generateRuntimeInstrumentationOnOffSequence(cg, TR::InstOpCode::RION, callNode);
 #endif
 
    callNode->setRegister(javaReturnRegister);

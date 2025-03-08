@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 
@@ -84,6 +84,8 @@ JIT_PRODUCT_BACKEND_SOURCES+=\
     $(JIT_OMR_DIRTY_DIR)/env/TRPersistentMemory.cpp \
     $(JIT_OMR_DIRTY_DIR)/env/VerboseLog.cpp \
     $(JIT_OMR_DIRTY_DIR)/env/FrontEnd.cpp \
+    $(JIT_OMR_DIRTY_DIR)/env/OMRFrontEnd.cpp \
+    $(JIT_OMR_DIRTY_DIR)/env/OMRJitConfig.cpp \
     $(JIT_OMR_DIRTY_DIR)/il/OMRDataTypes.cpp \
     $(JIT_OMR_DIRTY_DIR)/il/OMRTreeTop.cpp \
     $(JIT_OMR_DIRTY_DIR)/il/OMRILOps.cpp \
@@ -213,9 +215,8 @@ JIT_PRODUCT_BACKEND_SOURCES+=\
     $(JIT_OMR_DIRTY_DIR)/codegen/OMRInstruction.cpp \
     $(JIT_OMR_DIRTY_DIR)/codegen/ELFGenerator.cpp \
     $(JIT_OMR_DIRTY_DIR)/codegen/OMRELFRelocationResolver.cpp \
-    $(JIT_OMR_DIRTY_DIR)/env/FEBase.cpp \
-    $(JIT_OMR_DIRTY_DIR)/env/JitConfig.cpp \
     $(JIT_OMR_DIRTY_DIR)/control/CompilationController.cpp \
+    $(JIT_OMR_DIRTY_DIR)/control/OMRCompilationStrategy.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/FEInliner.cpp \
     $(JIT_OMR_DIRTY_DIR)/runtime/Runtime.cpp \
     $(JIT_OMR_DIRTY_DIR)/runtime/Trampoline.cpp \
@@ -245,15 +246,14 @@ JIT_PRODUCT_BACKEND_SOURCES+=\
     $(JIT_OMR_DIRTY_DIR)/runtime/OMRCodeCacheManager.cpp \
     $(JIT_OMR_DIRTY_DIR)/runtime/OMRCodeCacheMemorySegment.cpp \
     $(JIT_OMR_DIRTY_DIR)/runtime/OMRCodeCacheConfig.cpp \
+    $(JIT_OMR_DIRTY_DIR)/runtime/OMRRSSReport.cpp \
     $(JIT_OMR_DIRTY_DIR)/env/OMRCompilerEnv.cpp \
     $(JIT_OMR_DIRTY_DIR)/env/PersistentAllocator.cpp \
     $(JIT_PRODUCT_DIR)/compile/ResolvedMethod.cpp \
     $(JIT_PRODUCT_DIR)/control/Jit.cpp \
-    $(JIT_PRODUCT_DIR)/env/FrontEnd.cpp \
     $(JIT_PRODUCT_DIR)/ilgen/JBIlGeneratorMethodDetails.cpp \
     $(JIT_PRODUCT_DIR)/optimizer/JBOptimizer.cpp \
     $(JIT_PRODUCT_DIR)/runtime/JBCodeCacheManager.cpp \
-    $(JIT_PRODUCT_DIR)/runtime/JBJitConfig.cpp \
 
 CPP_GENERATED_SOURCE_DIR=$(JIT_PRODUCT_DIR)/client/cpp
 CPP_GENERATED_API_SOURCES+=\

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_CLASSENV_INCL
@@ -35,6 +35,7 @@ namespace OMR { typedef OMR::ClassEnv ClassEnvConnector; }
 #include "infra/Annotations.hpp"
 #include "env/jittypes.h"
 #include "env/TRMemory.hpp"
+#include "il/DataTypes.hpp"
 
 struct OMR_VMThread;
 namespace TR { class ClassEnv; }
@@ -88,6 +89,30 @@ public:
    bool isAnonymousClass(TR::Compilation *comp, TR_OpaqueClassBlock *clazz) { return false; }
    bool isValueTypeClass(TR_OpaqueClassBlock *) { return false; }
 
+   /** \brief
+    *    Returns the size of the flattened array element
+    *
+    *    When array elements are flattened, the array element is inlined into the array. For example,
+    *       Class Point {
+    *          int x;
+    *          int y;
+    *       }
+    *    Point pointArray[];
+    *
+    *    If pointArray is not flattened, the size of pointArray[i] is the size of the reference pointer size.
+    *    If pointArray is flattened, the size of pointArray[i] is the total size of x and y and plus padding if there is any.
+    *
+    *  \param comp
+    *    The compilation object
+    *
+    *  \param arrayClass
+    *    The array class that is to be checked
+    *
+    *  \return
+    *    Size of the flattened array element
+    */
+   int32_t flattenedArrayElementSize(TR::Compilation *comp, TR_OpaqueClassBlock *arrayClass) { return 0; }
+
    /**
     * \brief
     *    Checks whether instances of the specified class can be trivially initialized by
@@ -102,6 +127,7 @@ public:
     */
    bool isZeroInitializable(TR_OpaqueClassBlock *clazz) { return true; }
    bool isPrimitiveArray(TR::Compilation *comp, TR_OpaqueClassBlock *) { return false; }
+   TR::DataTypes primitiveArrayComponentType(TR::Compilation *comp, TR_OpaqueClassBlock *) { return TR::NoType; }
    bool isReferenceArray(TR::Compilation *comp, TR_OpaqueClassBlock *) { return false; }
    bool isClassArray(TR::Compilation *comp, TR_OpaqueClassBlock *) { return false; }
    bool isClassFinal(TR::Compilation *comp, TR_OpaqueClassBlock *) { return false; }
@@ -130,8 +156,8 @@ public:
    int32_t flagValueForArrayCheck(TR::Compilation *comp) { return 0; }
    int32_t flagValueForFinalizerCheck(TR::Compilation *comp) { return 0; }
 
-   char *classNameChars(TR::Compilation *, TR::SymbolReference *symRef, int32_t & length);
-   char *classNameChars(TR::Compilation *, TR_OpaqueClassBlock * clazz, int32_t & length) { return NULL; }
+   const char *classNameChars(TR::Compilation *, TR::SymbolReference *symRef, int32_t &length);
+   const char *classNameChars(TR::Compilation *, TR_OpaqueClassBlock *clazz, int32_t &length) { return NULL; }
 
    char *classSignature_DEPRECATED(TR::Compilation *comp, TR_OpaqueClassBlock * clazz, int32_t & length, TR_Memory *) { return NULL; }
    char *classSignature(TR::Compilation *comp, TR_OpaqueClassBlock * clazz, TR_Memory *) { return NULL; }

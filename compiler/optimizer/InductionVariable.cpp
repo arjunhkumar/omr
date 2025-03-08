@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/InductionVariable.hpp"
@@ -31,7 +31,7 @@
 #include "compile/SymbolReferenceTable.hpp"
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
-#include "cs2/bitvectr.h"
+#include "cs2/arrayof.h"
 #include "cs2/llistof.h"
 #include "cs2/sparsrbit.h"
 #include "env/CompilerEnv.hpp"
@@ -71,6 +71,7 @@
 #include "optimizer/LoopCanonicalizer.hpp"
 #include "optimizer/VPConstraint.hpp"
 #include "ras/Debug.hpp"
+#include "optimizer/TransformUtil.hpp"
 
 #define OPT_DETAILS "O^O INDUCTION VARIABLE ANALYSIS: "
 
@@ -926,22 +927,8 @@ int32_t TR_LoopStrider::detectCanonicalizedPredictableLoops(TR_Structure *loopSt
                traceMsg(comp(), "Found an reassociated induction var chance in %s\n", comp()->signature());
 
             TR::SymbolReference *origAuto = symRefTab->getSymRef(j);
-
-            TR::Node *arrayRefNode;
-            int32_t hdrSize = (int32_t)TR::Compiler->om.contiguousArrayHeaderSizeInBytes();
-            if (usingAladd)
-               {
-               TR::Node *constantNode = TR::Node::create(byteCodeInfoNode, TR::lconst);
-               //constantNode->setLongInt(16);
-               constantNode->setLongInt((int64_t)hdrSize);
-               arrayRefNode = TR::Node::create(TR::aladd, 2,
-                     TR::Node::createWithSymRef(byteCodeInfoNode,
-                           TR::aload, 0, origAuto), constantNode);
-               }
-            else
-               arrayRefNode = TR::Node::create(TR::aiadd, 2,
-                     TR::Node::createWithSymRef(byteCodeInfoNode, TR::aload, 0, origAuto),
-                     TR::Node::create(byteCodeInfoNode, TR::iconst, 0, hdrSize));
+            TR::Node *newArrayObjNode = TR::Node::createWithSymRef(byteCodeInfoNode, TR::aload, 0, origAuto);
+            TR::Node *arrayRefNode = TR::TransformUtil::generateArrayElementAddressTrees(comp(), newArrayObjNode, NULL, byteCodeInfoNode);
             arrayRefNode->setIsInternalPointer(true);
 
             if (!origAuto->getSymbol()->isInternalPointer())
@@ -996,7 +983,12 @@ int32_t TR_LoopStrider::detectCanonicalizedPredictableLoops(TR_Structure *loopSt
                      {
                      TR::Node *constantNode  = TR::Node::create(byteCodeInfoNode, TR::lconst);
                      constantNode->setLongInt((int64_t)index);
-                     arrayRefNode = TR::Node::create(TR::aladd, 2, TR::Node::createWithSymRef(byteCodeInfoNode, TR::aload, 0, origAuto), constantNode);
+                     arrayRefNode = TR::Node::createWithSymRef(byteCodeInfoNode, TR::aload, 0, origAuto);
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+                     if (TR::Compiler->om.isOffHeapAllocationEnabled())
+                        arrayRefNode = TR::TransformUtil::generateDataAddrLoadTrees(comp(), arrayRefNode);
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
+                     arrayRefNode = TR::Node::create(TR::aladd, 2, arrayRefNode, constantNode);
                      }
                   else
                      arrayRefNode = TR::Node::create(TR::aiadd, 2, TR::Node::createWithSymRef(byteCodeInfoNode, TR::aload, 0, origAuto), TR::Node::create(byteCodeInfoNode, TR::iconst, 0, index));
@@ -1005,7 +997,14 @@ int32_t TR_LoopStrider::detectCanonicalizedPredictableLoops(TR_Structure *loopSt
                   {
                   TR::SymbolReference *indexSymRef = symRefPair->_indexSymRef;
                   if (usingAladd)
-                     arrayRefNode = TR::Node::create(TR::aladd, 2, TR::Node::createWithSymRef(byteCodeInfoNode, TR::aload, 0, origAuto), TR::Node::createWithSymRef(byteCodeInfoNode, TR::lload, 0, indexSymRef));
+                     {
+                     arrayRefNode = TR::Node::createWithSymRef(byteCodeInfoNode, TR::aload, 0, origAuto);
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+                     if (TR::Compiler->om.isOffHeapAllocationEnabled())
+                        arrayRefNode = TR::TransformUtil::generateDataAddrLoadTrees(comp(), arrayRefNode);
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
+                     arrayRefNode = TR::Node::create(TR::aladd, 2, arrayRefNode, TR::Node::createWithSymRef(byteCodeInfoNode, TR::lload, 0, indexSymRef));
+                     }
                   else
                      arrayRefNode = TR::Node::create(TR::aiadd, 2, TR::Node::createWithSymRef(byteCodeInfoNode, TR::aload, 0, origAuto), TR::Node::createWithSymRef(byteCodeInfoNode, TR::iload, 0, indexSymRef));
                   }
@@ -1913,6 +1912,7 @@ bool TR_LoopStrider::examineTreeForInductionVariableUse(TR::Block *loopInvariant
    TR::Node *originalNode = NULL;
    if (cg()->supportsInternalPointers() &&
        (node->isInternalPointer()) &&
+       !node->isDataAddrPointer() &&
        node->getFirstChild()->getOpCode().isLoadVar() &&
        node->getFirstChild()->getSymbolReference()->getSymbol()->isAutoOrParm() &&
        //node->getFirstChild()->getSymbolReference()->getSymbol()->isAuto() &&
@@ -2175,9 +2175,9 @@ bool TR_LoopStrider::examineTreeForInductionVariableUse(TR::Block *loopInvariant
          seenInductionVariableComputation = true;
          examineChildren = false;
 
-         int32_t differenceInAdditiveConstants = 0;
+         int64_t differenceInAdditiveConstants = 0;
          if (isAdditiveTermConst(index))
-            differenceInAdditiveConstants = (int32_t)(-1*getAdditiveTermConst(index));
+            differenceInAdditiveConstants = (-1*getAdditiveTermConst(index));
 
          examineOpCodesForInductionVariableUse(node, parent, childNum, index, originalNode, replacingNode, linearTerm, mulTerm, newSymbolReference, loopInvariantBlock, pinningArrayPointer, differenceInAdditiveConstants, isInternalPointer, downcastNode, usingAladd);
 
@@ -3000,6 +3000,7 @@ bool TR_LoopStrider::identifyExpressionLinearInInductionVariable(TR::Node *node,
    node->setVisitCount(visitCount);
    if (cg()->supportsInternalPointers() &&
        node->isInternalPointer() &&
+       !node->isDataAddrPointer() &&
        node->getFirstChild()->getOpCode().isLoadVar() &&
        node->getFirstChild()->getSymbolReference()->getSymbol()->isAutoOrParm() &&
        //node->getFirstChild()->getSymbolReference()->getSymbol()->isAuto() &&
@@ -3394,35 +3395,59 @@ bool TR_LoopStrider::reassociateAndHoistComputations(TR::Block *loopInvariantBlo
    TR::AutomaticSymbol *pinningArrayPointer = NULL;
    int32_t originalInternalPointerSymbol = 0;
    TR::Node *originalNode = NULL;
-   if (cg()->supportsInternalPointers() &&
-       (reassociateAndHoistNonPacked() && node->isInternalPointer()) &&
-       node->getFirstChild()->getOpCode().isLoadVar() &&
-       node->getFirstChild()->getSymbolReference()->getSymbol()->isAutoOrParm() &&
-       //node->getFirstChild()->getSymbolReference()->getSymbol()->isAuto() &&
-       _neverWritten->get(node->getFirstChild()->getSymbolReference()->getReferenceNumber()))
+   TR::Node *pinningArrayNode = NULL;
+   /* Tree structures eligible for reassociation and hoisting
+      non off-heap mode:
+         aladd (internal pointer)
+            array_obj (pinning array pointer)
+            add/sub offset
+               index
+               header_size/-header_size
+
+      OffHeap reassociation and hoisting is temporarily disabled
+      TODO enable storing dataAddrPtr in temps
+      off-heap mode:
+         aladd (internal pointer)
+            contiguousArrayDataAddrFieldSymbol (dataAddrPointer, internal pointer)
+               array_obj (pinning array pointer)
+            mul/shift/integer offset
+    */
+   if (cg()->supportsInternalPointers() && reassociateAndHoistNonPacked() &&
+      node->isInternalPointer() && !node->isDataAddrPointer())
       {
-          //printf("Creating internal ptr in %s\n", comp()->signature());
-      isInternalPointer = true;
-      internalPointerSymbol = node->getFirstChild()->getSymbolReference()->getReferenceNumber();
-      originalInternalPointerSymbol = internalPointerSymbol;
-      if (node->getFirstChild()->getSymbolReference()->getSymbol()->isAuto())
-         pinningArrayPointer = node->getFirstChild()->getSymbolReference()->getSymbol()->castToAutoSymbol();
+      if (node->getFirstChild()->isDataAddrPointer())
+         pinningArrayNode = node->getFirstChild()->getFirstChild();
       else
+         pinningArrayNode = node->getFirstChild();
+
+      dumpOptDetails(comp(), "%s: Using %p as pinningArrayNode for internal pointer node %p\n", OPT_DETAILS, pinningArrayNode, node);
+
+      if (pinningArrayNode->getOpCode().isLoadVar() &&
+         pinningArrayNode->getSymbolReference()->getSymbol()->isAutoOrParm() &&
+         _neverWritten->get(pinningArrayNode->getSymbolReference()->getReferenceNumber()))
          {
-         SymRefPair *pair = _parmAutoPairs;
-         while (pair)
+         isInternalPointer = true;
+         internalPointerSymbol = pinningArrayNode->getSymbolReference()->getReferenceNumber();
+         originalInternalPointerSymbol = internalPointerSymbol;
+         if (pinningArrayNode->getSymbolReference()->getSymbol()->isAuto())
+            pinningArrayPointer = pinningArrayNode->getSymbolReference()->getSymbol()->castToAutoSymbol();
+         else
             {
-            if (pair->_indexSymRef == node->getFirstChild()->getSymbolReference())
+            SymRefPair *pair = _parmAutoPairs;
+            while (pair)
                {
-               pinningArrayPointer = pair->_derivedSymRef->getSymbol()->castToAutoSymbol();
-               internalPointerSymbol = pair->_derivedSymRef->getReferenceNumber();
-               break;
+               if (pair->_indexSymRef == pinningArrayNode->getSymbolReference())
+                  {
+                  pinningArrayPointer = pair->_derivedSymRef->getSymbol()->castToAutoSymbol();
+                  internalPointerSymbol = pair->_derivedSymRef->getReferenceNumber();
+                  break;
+                  }
+               pair = pair->_next;
                }
-            pair = pair->_next;
             }
+         originalNode = node;
+         node = node->getSecondChild();
          }
-      originalNode = node;
-      node = node->getSecondChild();
       }
 
    if (isInternalPointer &&
@@ -3439,6 +3464,7 @@ bool TR_LoopStrider::reassociateAndHoistComputations(TR::Block *loopInvariantBlo
             //node->getSymbolReference()->getSymbol()->isAuto() &&
             node->getSymbolReference()->getSymbol()->isAutoOrParm() &&
             _neverWritten->get(node->getSymbolReference()->getReferenceNumber()))) &&
+           !originalNode->getFirstChild()->isDataAddrPointer() && // TODO enable storing dataAddrPtr in temps
            (!_registersScarce || (originalNode->getReferenceCount() > 1)) &&
            (comp()->getSymRefTab()->getNumInternalPointers() < maxInternalPointers()) &&
            (!comp()->cg()->canBeAffectedByStoreTagStalls() ||
@@ -3643,6 +3669,75 @@ bool TR_LoopStrider::reassociateAndHoistComputations(TR::Block *loopInvariantBlo
          }
       }
 
+#ifdef J9_PROJECT_SPECIFIC
+   /* For OffHeap runs, the array access trees don't include headerSize addition.
+    * Offset tree opcode can be either mul/shift or a number, if array stride is 1.
+    * If first child of originalNode is not dataAddr pointer we have already
+    * hoisted the array aload, no need to do it again.
+    */
+   if (false && // TODO enable storing dataAddrPtr in temps
+      TR::Compiler->om.isOffHeapAllocationEnabled() && originalNode && originalNode->getFirstChild()->isDataAddrPointer())
+      {
+      if ((isInternalPointer &&
+            (comp()->getSymRefTab()->getNumInternalPointers() < maxInternalPointers())) &&
+            (!_registersScarce || (node->getReferenceCount() > 1) || _reassociatedNodes.find(node)) &&
+            (!comp()->cg()->canBeAffectedByStoreTagStalls() ||
+               _numInternalPointerOrPinningArrayTempsInitialized < MAX_INTERNAL_POINTER_AUTOS_INITIALIZED) &&
+            performTransformation(comp(), "%s Replacing reassociated internal pointer based on symRef #%d\n", OPT_DETAILS, internalPointerSymbol))
+         {
+         if (_reassociatedAutos->find(originalInternalPointerSymbol) == _reassociatedAutos->end())
+            {
+            TR::SymbolReference *newSymbolReference = comp()->getSymRefTab()->createTemporary(comp()->getMethodSymbol(), TR::Address, isInternalPointer);
+            if (isInternalPointer && !pinningArrayPointer)
+               {
+               TR::SymbolReference *newPinningArray = comp()->getSymRefTab()->createTemporary(comp()->getMethodSymbol(), TR::Address, false);
+               pinningArrayPointer = newPinningArray->getSymbol()->castToAutoSymbol();
+               createParmAutoPair(comp()->getSymRefTab()->getSymRef(internalPointerSymbol), newPinningArray);
+
+               TR::Node *newAload = TR::Node::createLoad(node, comp()->getSymRefTab()->getSymRef(internalPointerSymbol));
+               newAload->setLocalIndex(~0);
+               TR::Node *newStore = TR::Node::createWithSymRef(TR::astore, 1, 1, newAload, newPinningArray);
+               internalPointerSymbol = newPinningArray->getReferenceNumber();
+               TR::TreeTop *placeHolderTree = loopInvariantBlock->getEntry();
+               TR::TreeTop *nextTree = placeHolderTree->getNextTreeTop();
+               newStore->setLocalIndex(~0);
+               TR::TreeTop *newStoreTreeTop = TR::TreeTop::create(comp(), newStore);
+               placeHolderTree->join(newStoreTreeTop);
+               newStoreTreeTop->join(nextTree);
+               dumpOptDetails(comp(), "\nO^O INDUCTION VARIABLE ANALYSIS: Induction variable analysis inserted initialization tree : %p for new symRef #%d\n", newStoreTreeTop->getNode(), newPinningArray->getReferenceNumber());
+               _numInternalPointerOrPinningArrayTempsInitialized++;
+               }
+
+            _newTempsCreated = true;
+            if (isInternalPointer)
+               _numInternalPointers++;
+            else
+               _newNonAddressTempsCreated = true;
+
+            TR::Symbol *symbol = newSymbolReference->getSymbol();
+
+            if (!pinningArrayPointer->isInternalPointer())
+               {
+               symbol->castToInternalPointerAutoSymbol()->setPinningArrayPointer(pinningArrayPointer);
+               pinningArrayPointer->setPinningArrayPointer();
+               }
+            else
+               symbol->castToInternalPointerAutoSymbol()->setPinningArrayPointer(pinningArrayPointer->castToInternalPointerAutoSymbol()->getPinningArrayPointer());
+
+            (*_reassociatedAutos)[originalInternalPointerSymbol] = newSymbolReference;
+            dumpOptDetails(comp(), "reass num %d newsymref %d\n", internalPointerSymbol, newSymbolReference->getReferenceNumber());
+            }
+
+         TR::SymbolReference *internalPointerSymRef = (*_reassociatedAutos)[originalInternalPointerSymbol];
+         originalNode->getFirstChild()->recursivelyDecReferenceCount();
+
+         TR::Node *newLoad = TR::Node::createWithSymRef(node, TR::aload, 0, internalPointerSymRef);
+         newLoad->setLocalIndex(~0);
+         originalNode->setAndIncChild(0, newLoad);
+         dumpOptDetails(comp(), "%s: Replaced array load in %p with %p\n", OPT_DETAILS, originalNode, newLoad);
+         }
+      }
+#endif /* J9_PROJECT_SPECIFIC */
 
    if (examineChildren)
        {
@@ -4573,6 +4668,7 @@ bool TR_LoopStrider::morphExpressionLinearInInductionVariable(TR::Node *parent, 
    node->setVisitCount(visitCount);
    if (cg()->supportsInternalPointers() &&
        node->isInternalPointer() &&
+       !node->isDataAddrPointer() &&
        node->getFirstChild()->getOpCode().isLoadVar() &&
        node->getFirstChild()->getSymbolReference()->getSymbol()->isAuto() &&
        //node->getFirstChild()->getSymbolReference()->getSymbol()->isAutoOrParm() &&
@@ -4582,12 +4678,14 @@ bool TR_LoopStrider::morphExpressionLinearInInductionVariable(TR::Node *parent, 
       }
 
    // pattern match trees
-   // ladd      <-- node
-   //   lmul    <-- firstChild
-   //     i2l
-   //       <index> ; where <index>==> iload;   iadd ;   isub
-   //     lconst                         iload    iload
-   //   lconst                           iconst   iconst
+   // aladd (internalPtr)
+   //   aload
+   //   ladd      <-- node
+   //     lmul    <-- firstChild
+   //       i2l
+   //         <index> ; where <index>==> iload;   iadd ;   isub
+   //       lconst                         iload    iload
+   //     lconst                           iconst   iconst
 
    if (node->getOpCodeValue() == TR::ladd || node->getOpCodeValue() == TR::lsub)
       {
@@ -4622,6 +4720,43 @@ bool TR_LoopStrider::morphExpressionLinearInInductionVariable(TR::Node *parent, 
             }
          }
       }
+   // pattern match trees for indexable object structure that includes a pointer to the data address field (off-heap)
+   // aladd (internalPtr)
+   //   aloadi (internalPtr dataAddrPointer)
+   //     aload
+   //   lmul    <-- node
+   //     i2l
+   //       <index> ; where <index> ==> iload;   iadd ; isub
+   //     lconst
+#ifdef J9_PROJECT_SPECIFIC
+   else if (TR::Compiler->om.isOffHeapAllocationEnabled() &&
+           (node->getOpCodeValue() == TR::lmul || node->getOpCodeValue() == TR::lshl))
+      {
+      bool isLinearInInductionVariable;
+      TR::Node *indVarTree = NULL;
+      if (node->getFirstChild()->getOpCodeValue() == TR::i2l)
+         {
+         indVarTree = node->getFirstChild()->getFirstChild();
+         isLinearInInductionVariable = checkExpressionForInductionVariable(indVarTree);
+         if (isLinearInInductionVariable &&
+               node->getSecondChild()->getOpCodeValue() == TR::lconst)
+            {
+            examineChildren = false;
+
+            // Request a sign-extension only when there is no arithmetic
+            // here, or the arithmetic is known not to overflow.
+            //
+            // If we're looking at possibly overflowing arithmetic,
+            // another expression still might request a sign-extension,
+            // in which case indVarTree will continue to do 32-bit
+            // arithmetic consuming l2i of the new 64-bit variable.
+            TR::Node *ivLoad = getInductionVariableNode(indVarTree);
+            if (ivLoad != NULL && (ivLoad == indVarTree || indVarTree->cannotOverflow()))
+               _isInductionVariableMorphed = true;
+            }
+         }
+      }
+#endif /* J9_PROJECT_SPECIFIC */
    // collect uses of ind var
    // parent
    //   iload  <-- node

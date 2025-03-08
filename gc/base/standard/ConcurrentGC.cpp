@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -67,6 +67,7 @@
 #include "MemorySubSpaceFlat.hpp"
 #include "MemorySubSpaceSemiSpace.hpp"
 #include "ObjectModel.hpp"
+#include "OMRVMInterface.hpp"
 #include "ParallelDispatcher.hpp"
 #include "SpinLimiter.hpp"
 #include "SublistIterator.hpp"
@@ -2000,6 +2001,9 @@ MM_ConcurrentGC::internalPreCollect(MM_EnvironmentBase *env, MM_MemorySubSpace *
 		MM_ParallelGlobalGC::internalPreCollect(env, subSpace, allocDescription, gcCode);
 	} else if (CONCURRENT_TRACE_ONLY <= executionModeAtGC) {
 		/* We are going to complete the concurrent cycle to generate the GCStart/GCIncrement events */
+
+		GC_OMRVMInterface::flushCachesForGC(env);
+
 		reportGCStart(env);
 		reportGCIncrementStart(env);
 		reportGlobalGCIncrementStart(env);

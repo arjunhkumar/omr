@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*
@@ -990,6 +990,17 @@
    /* .properties  = */ PPCOpProp_DWord |
                         PPCOpProp_CompareOp |
                         PPCOpProp_SyncSideEffectFree,
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::cmpb,
+   /* .name        = */ "cmpb",
+   /* .description =    "Compare Bytes", */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0x7C0003F8,
+   /* .format      = */ FORMAT_RA_RS_RB,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_P6,
+   /* .properties  = */ PPCOpProp_SyncSideEffectFree,
    },
 
    {
@@ -2507,6 +2518,18 @@
    },
 
    {
+   /* .mnemonic    = */ OMR::InstOpCode::lbarx,
+   /* .name        = */ "lbarx",
+   /* .description =    "Load byte and reserve indexed", */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0x7C000068,
+   /* .format      = */ FORMAT_RT_RA_RB_MEM,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_P7,
+   /* .properties  = */ PPCOpProp_IsLoad |
+                        PPCOpProp_ExcludeR0ForRA,
+   },
+
+   {
    /* .mnemonic    = */ OMR::InstOpCode::lbzu,
    /* .name        = */ "lbzu",
    /* .description =    "Load byte and zero extend with update", */
@@ -2776,6 +2799,18 @@
    /* .opcode      = */ 0xA8000000,
    /* .format      = */ FORMAT_RT_D16_RA,
    /* .minimumALS  = */ OMR_PROCESSOR_PPC_RIOS1,
+   /* .properties  = */ PPCOpProp_IsLoad |
+                        PPCOpProp_ExcludeR0ForRA,
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::lharx,
+   /* .name        = */ "lharx",
+   /* .description =    "Load half word and reserve indexed", */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0x7C0000E8,
+   /* .format      = */ FORMAT_RT_RA_RB_MEM,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_P7,
    /* .properties  = */ PPCOpProp_IsLoad |
                         PPCOpProp_ExcludeR0ForRA,
    },
@@ -4461,6 +4496,19 @@
    },
 
    {
+   /* .mnemonic    = */ OMR::InstOpCode::stbcx_r,
+   /* .name        = */ "stbcx.",
+   /* .description =    "Store byte conditional indexed", */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0x7C00056D,
+   /* .format      = */ FORMAT_RS_RA_RB_MEM,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_P7,
+   /* .properties  = */ PPCOpProp_IsStore |
+                        PPCOpProp_ExcludeR0ForRA |
+                        PPCOpProp_IsRecordForm,
+   },
+
+   {
    /* .mnemonic    = */ OMR::InstOpCode::stbu,
    /* .name        = */ "stbu",
    /* .description =    "Store byte with update", */
@@ -4514,7 +4562,7 @@
    {
    /* .mnemonic    = */ OMR::InstOpCode::stdcx_r,
    /* .name        = */ "stdcx.",
-   /* .description =    "Store word conditional indexed", */
+   /* .description =    "Store dword conditional indexed", */
    /* .prefix      = */ 0x00000000,
    /* .opcode      = */ 0x7C0001AD,
    /* .format      = */ FORMAT_RS_RA_RB_MEM,
@@ -4731,6 +4779,19 @@
    /* .minimumALS  = */ OMR_PROCESSOR_PPC_RIOS1,
    /* .properties  = */ PPCOpProp_IsStore |
                         PPCOpProp_ExcludeR0ForRA,
+   },
+
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::sthcx_r,
+   /* .name        = */ "sthcx.",
+   /* .description =    "Store half word conditional indexed", */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0x7C0005AD,
+   /* .format      = */ FORMAT_RS_RA_RB_MEM,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_P7,
+   /* .properties  = */ PPCOpProp_IsStore |
+                        PPCOpProp_ExcludeR0ForRA |
+                        PPCOpProp_IsRecordForm,
    },
 
    {
@@ -6258,6 +6319,21 @@
    /* .properties  = */ PPCOpProp_SyncSideEffectFree,
    },
 
+   /*
+    * yield is effective on Power 7 and Power 8 but may not be supported elsewhere.
+    * It is interpreted as a regular nop on unsupported implementations.
+    */
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::yield,
+   /* .name        = */ "yield",
+   /* .description =    "Shared Resource Hint NoOp (or)", */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0x7F7BDB78,
+   /* .format      = */ FORMAT_DIRECT,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_UNKNOWN,
+   /* .properties  = */ PPCOpProp_SyncSideEffectFree,
+   },
+
    {
    /* .mnemonic    = */ OMR::InstOpCode::shdfence,
    /* .name        = */ "shdfence",
@@ -6763,15 +6839,15 @@
    },
 
    {
-   /* .mnemonic    = */   OMR::InstOpCode::vclzlsbb,
-   /* .name        = */   "vclzlsbb",
-   /* .description =    "vector count leading zero least-significant bits byte", */
-   /* .prefix      = */   0x00000000,
-   /* .opcode      = */   0x10000602,
-   /* .format      = */   FORMAT_RT_VRB,
+   /* .mnemonic    = */  OMR::InstOpCode::vclzlsbb,
+   /* .name        = */  "vclzlsbb",
+   /* .description =     "vector count leading zero least-significant bits byte", */
+   /* .prefix      = */  0x00000000,
+   /* .opcode      = */  0x10000602,
+   /* .format      = */  FORMAT_RT_VRB,
    /* .minimumALS  = */  OMR_PROCESSOR_PPC_P9,
-   /* .properties  = */   PPCOpProp_IsVMX |
-                          PPCOpProp_SyncSideEffectFree,
+   /* .properties  = */  PPCOpProp_IsVMX |
+                         PPCOpProp_SyncSideEffectFree,
    },
 
    {
@@ -6833,6 +6909,18 @@
    /* .properties  =    PPCOpProp_IsVMX | */
    /*                   PPCOpProp_SyncSideEffectFree, */
    /* }, */
+
+      {
+   /* .mnemonic    =  */  OMR::InstOpCode::vexpandbm,
+   /* .name        =  */  "vexpandbm",
+   /* .description =      "vector expand byte mask", */
+   /* .prefix      =  */  0x00000000,
+   /* .opcode      =  */  0x10000642,
+   /* .format      =  */  FORMAT_VRT_VRB,
+   /* .minimumALS  =  */  OMR_PROCESSOR_PPC_P10,
+   /* .properties  =  */  PPCOpProp_IsVMX |
+                          PPCOpProp_SyncSideEffectFree,
+      },
 
    /* { */
    /* .mnemonic    =    OMR::InstOpCode::vextractub, */
@@ -7412,17 +7500,17 @@
                         PPCOpProp_SyncSideEffectFree,
    },
 
-  /* { */
-   /* .mnemonic    =    OMR::InstOpCode::vextractbm, */
-   /* .name        =    "vextractbm", */
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::vextractbm,
+   /* .name        = */ "vextractbm",
    /* .description =    "Vector Extract Byte Mask", */
-   /* .prefix      =    0x00000000, */
-   /* .opcode      =    0x10080642, */
-   /* .format      =    FORMAT_RT_VRB, */
-   /* .minimumALS  =    OMR_PROCESSOR_PPC_P10, */
-   /* .properties  =    PPCOpProp_IsVMX |  */
-   /*                   PPCOpProp_SyncSideEffectFree, */
-   /* }, */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0x10080642,
+   /* .format      = */ FORMAT_RT_VRB,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_P10,
+   /* .properties  = */ PPCOpProp_IsVMX |
+                        PPCOpProp_SyncSideEffectFree,
+   },
 
    {
    /* .mnemonic    = */ OMR::InstOpCode::vrld,
@@ -8774,17 +8862,17 @@
    /*                   PPCOpProp_SyncSideEffectFree, */
    /* }, */
 
-   /* { */
-   /* .mnemonic    =    OMR::InstOpCode::vclzd, */
-   /* .name        =    "vclzd", */
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::vclzd,
+   /* .name        = */ "vclzd",
    /* .description =    "Vector Count Leading Zeros Dword", */
-   /* .prefix      =    0x00000000, */
-   /* .opcode      =    0x100007C2, */
-   /* .format      =    FORMAT_UNKNOWN, */
-   /* .minimumALS  =    OMR_PROCESSOR_PPC_P8, */
-   /* .properties  =    PPCOpProp_IsVMX | */
-   /*                   PPCOpProp_SyncSideEffectFree, */
-   /* }, */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0x100007C2,
+   /* .format      = */ FORMAT_VRT_VRB,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_P8,
+   /* .properties  = */ PPCOpProp_IsVMX |
+                        PPCOpProp_SyncSideEffectFree,
+   },
 
    /* { */
    /* .mnemonic    =    OMR::InstOpCode::vclzh, */
@@ -8798,17 +8886,17 @@
    /*                   PPCOpProp_SyncSideEffectFree, */
    /* }, */
 
-   /* { */
-   /* .mnemonic    =    OMR::InstOpCode::vclzw, */
-   /* .name        =    "vclzw", */
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::vclzw,
+   /* .name        = */ "vclzw",
    /* .description =    "Vector Count Leading Zeros Word", */
-   /* .prefix      =    0x00000000, */
-   /* .opcode      =    0x10000782, */
-   /* .format      =    FORMAT_UNKNOWN, */
-   /* .minimumALS  =    OMR_PROCESSOR_PPC_P8, */
-   /* .properties  =    PPCOpProp_IsVMX | */
-   /*                   PPCOpProp_SyncSideEffectFree, */
-   /* }, */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0x10000782,
+   /* .format      = */ FORMAT_VRT_VRB,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_P8,
+   /* .properties  = */ PPCOpProp_IsVMX |
+                        PPCOpProp_SyncSideEffectFree,
+   },
 
    /* { */
    /* .mnemonic    =    OMR::InstOpCode::vcmpbfp, */
@@ -9543,7 +9631,7 @@
    /* .description =    "vector merge high byte", */
    /* .prefix      = */ 0x00000000,
    /* .opcode      = */ 0x1000000C,
-   /* .format      = */ FORMAT_UNKNOWN,
+   /* .format      = */ FORMAT_VRT_VRA_VRB,
    /* .minimumALS  = */ OMR_PROCESSOR_PPC_P6,
    /* .properties  = */ PPCOpProp_IsVMX |
                         PPCOpProp_SyncSideEffectFree,
@@ -9579,7 +9667,7 @@
    /* .description =    "vector merge low byte", */
    /* .prefix      = */ 0x00000000,
    /* .opcode      = */ 0x1000010C,
-   /* .format      = */ FORMAT_UNKNOWN,
+   /* .format      = */ FORMAT_VRT_VRA_VRB,
    /* .minimumALS  = */ OMR_PROCESSOR_PPC_P6,
    /* .properties  = */ PPCOpProp_IsVMX |
                         PPCOpProp_SyncSideEffectFree,
@@ -10300,17 +10388,17 @@
    /*                   PPCOpProp_SyncSideEffectFree, */
    /* }, */
 
-   /* { */
-   /* .mnemonic    =    OMR::InstOpCode::xsmaxjdp, */
-   /* .name        =    "xsmaxjdp", */
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::xsmaxjdp,
+   /* .name        = */ "xsmaxjdp",
    /* .description =    "VSX Scalar Maximum Type-J Double-Precision", */
-   /* .prefix      =    0x00000000, */
-   /* .opcode      =    0xF0000480, */
-   /* .format      =    FORMAT_UNKNOWN, */
-   /* .minimumALS  =    OMR_PROCESSOR_PPC_P9, */
-   /* .properties  =    PPCOpProp_IsVSX | */
-   /*                   PPCOpProp_SyncSideEffectFree, */
-   /* }, */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0xF0000480,
+   /* .format      = */ FORMAT_FRT_FRA_FRB,
+   /* .minimumals  = */ OMR_PROCESSOR_PPC_P9,
+   /* .properties  = */ PPCOpProp_IsVSX |
+                        PPCOpProp_SyncSideEffectFree,
+   },
 
    {
    /* .mnemonic    = */ OMR::InstOpCode::xsmaddadp,
@@ -10350,17 +10438,17 @@
    /*                   PPCOpProp_SyncSideEffectFree, */
    /* }, */
 
-   /* { */
-   /* .mnemonic    =    OMR::InstOpCode::xsminjdp, */
-   /* .name        =    "xsminjdp", */
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::xsminjdp,
+   /* .name        = */ "xsminjdp",
    /* .description =    "VSX Scalar Minimum Type-J Double-Precision", */
-   /* .prefix      =    0x00000000, */
-   /* .opcode      =    0xF00004C0, */
-   /* .format      =    FORMAT_UNKNOWN, */
-   /* .minimumALS  =    OMR_PROCESSOR_PPC_P9, */
-   /* .properties  =    PPCOpProp_IsVSX | */
-   /*                   PPCOpProp_SyncSideEffectFree, */
-   /* }, */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0xF00004C0,
+   /* .format      = */ FORMAT_FRT_FRA_FRB,
+   /* .minimumals  = */ OMR_PROCESSOR_PPC_P9,
+   /* .properties  = */ PPCOpProp_IsVSX |
+                        PPCOpProp_SyncSideEffectFree,
+   },
 
    {
    /* .mnemonic    = */ OMR::InstOpCode::xsmsubadp,
@@ -11444,17 +11532,17 @@
    /*                   PPCOpProp_SyncSideEffectFree, */
    /* }, */
 
-   /* { */
-   /* .mnemonic    =    OMR::InstOpCode::xxbrq, */
-   /* .name        =    "xxbrq", */
+   {
+   /* .mnemonic    = */ OMR::InstOpCode::xxbrq,
+   /*  .name       = */ "xxbrq",
    /* .description =    "VSX Vector Byte-Reverse Qword", */
-   /* .prefix      =    0x00000000, */
-   /* .opcode      =    0xF01F076C, */
-   /* .format      =    FORMAT_UNKNOWN, */
-   /* .minimumALS  =    OMR_PROCESSOR_PPC_P9, */
-   /* .properties  =    PPCOpProp_IsVSX | */
-   /*                   PPCOpProp_SyncSideEffectFree, */
-   /* }, */
+   /* .prefix      = */ 0x00000000,
+   /* .opcode      = */ 0xF01F076C,
+   /* .format      = */ FORMAT_XT_XB,
+   /* .minimumALS  = */ OMR_PROCESSOR_PPC_P9,
+   /* .properties  = */ PPCOpProp_IsVSX |
+                        PPCOpProp_SyncSideEffectFree,
+   },
 
    {
    /* .mnemonic    = */ OMR::InstOpCode::fmrgew,
@@ -11703,7 +11791,7 @@
    /* .description =    "Scalar Maximum Double-Precision", */
    /* .prefix      = */ 0x00000000,
    /* .opcode      = */ 0xF0000500,
-   /* .format      = */ FORMAT_UNKNOWN,
+   /* .format      = */ FORMAT_FRT_FRA_FRB,
    /* .minimumALS  = */ OMR_PROCESSOR_PPC_P7,
    /* .properties  = */ PPCOpProp_IsVSX |
                         PPCOpProp_DoubleFP |
@@ -11716,7 +11804,7 @@
    /* .description =    "Scalar Minimum Double-Precision", */
    /* .prefix      = */ 0x00000000,
    /* .opcode      = */ 0xF0000540,
-   /* .format      = */ FORMAT_UNKNOWN,
+   /* .format      = */ FORMAT_FRT_FRA_FRB,
    /* .minimumALS  = */ OMR_PROCESSOR_PPC_P7,
    /* .properties  = */ PPCOpProp_IsVSX |
                         PPCOpProp_DoubleFP |
@@ -13087,8 +13175,8 @@
    /* .name        = */ "pdepd",
    /* .description =    "Parallel Bits Deposit Doubleword", */
    /* .prefix      = */ 0x00000000,
-   /* .opcode      = */ 0x00000000,
-   /* .format      = */ FORMAT_UNKNOWN,
+   /* .opcode      = */ 0x7C000138,
+   /* .format      = */ FORMAT_RA_RS_RB,
    /* .minimumALS  = */ OMR_PROCESSOR_PPC_P10,
    /* .properties  = */ PPCOpProp_DWord |
                         PPCOpProp_SyncSideEffectFree,
@@ -13099,8 +13187,8 @@
    /* .name        = */ "pextd",
    /* .description =    "Parallel Bits Extract Doubleword", */
    /* .prefix      = */ 0x00000000,
-   /* .opcode      = */ 0x00000000,
-   /* .format      = */ FORMAT_UNKNOWN,
+   /* .opcode      = */ 0x7C000178,
+   /* .format      = */ FORMAT_RA_RS_RB,
    /* .minimumALS  = */ OMR_PROCESSOR_PPC_P10,
    /* .properties  = */ PPCOpProp_DWord |
                         PPCOpProp_SyncSideEffectFree,

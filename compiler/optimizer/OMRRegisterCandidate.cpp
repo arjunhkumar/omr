@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifdef OMRZTPF
@@ -39,8 +39,6 @@
 #include "compile/SymbolReferenceTable.hpp"
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
-#include "cs2/bitvectr.h"
-#include "cs2/hashtab.h"
 #include "cs2/sparsrbit.h"
 #include "env/CompilerEnv.hpp"
 #include "env/TRMemory.hpp"
@@ -2137,7 +2135,7 @@ static void assign_candidate_loop_trace_increment(TR::Compilation *comp, TR::Reg
 bool
 OMR::RegisterCandidates::assign(TR::Block ** cfgBlocks, int32_t numberOfBlocks, int32_t & lowestNumber, int32_t & highestNumber)
    {
-#if (defined(__IBMCPP__) || defined(__IBMC__)) && !defined(__ibmxl__)
+#if (defined(__IBMCPP__) || defined(__IBMC__)) && !(defined(__ibmxl__) || defined(__open_xl__))
    // __func__ is not defined for this function on XLC compilers (Notably XLC on Linux PPC and ZOS)
    static const char __func__[] = "OMR::RegisterCandidates::assign";
 #endif

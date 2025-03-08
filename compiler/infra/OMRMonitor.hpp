@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_MONITOR_INCL
@@ -44,7 +44,7 @@ class Monitor
    ~Monitor();
 
    TR::Monitor *self();
-   static TR::Monitor *create(char *name);
+   static TR::Monitor *create(const char *name);
    static void destroy(TR::Monitor *monitor);
    void enter();
    int32_t try_enter() { TR_UNIMPLEMENTED(); return 0; }
@@ -56,7 +56,7 @@ class Monitor
    void notifyAll() { TR_UNIMPLEMENTED(); }
    int32_t num_waiting() { TR_UNIMPLEMENTED(); return 0; }
    char const *getName();
-   bool init(char *name);
+   bool init(const char *name);
 
 #if defined(J9ZOS390) || defined(AIXPPC)
    // xlc cannot handle private delete operator
@@ -68,7 +68,7 @@ class Monitor
    void *operator new(size_t size);
    void operator delete(void *p);
 
-   char const *_name;
+   const char *_name;
    MUTEX _monitor;
    };
 

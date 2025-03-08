@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "infra/Cfg.hpp"
@@ -66,6 +66,17 @@ TR::CFG *
 OMR::CFG::self() {
    return static_cast<TR::CFG*>(this);
 }
+
+const char*
+OMR::CFG::blockFrequencyNames[NUMBER_BLOCK_FREQUENCIES] =
+   {
+   "UNKNOWN_COLD_BLOCK_COUNT",
+   "VERSIONED_COLD_BLOCK_COUNT",
+   "UNRESOLVED_COLD_BLOCK_COUNT",
+   "CATCH_COLD_BLOCK_COUNT",
+   "INTERP_CALLEE_COLD_BLOCK_COUNT",
+   "REVERSE_ARRAYCOPY_COLD_BLOCK_COUNT"
+   };
 
 TR::CFGNode *
 OMR::CFG::addNode(TR::CFGNode *n, TR_RegionStructure *parent, bool isEntryInParent)
@@ -375,10 +386,14 @@ TR_OrderedExceptionHandlerIterator::TR_OrderedExceptionHandlerIterator(TR::Block
       for (auto e = tryBlock->getExceptionSuccessors().begin(); e != tryBlock->getExceptionSuccessors().end(); ++e)
          {
          TR::Block * b = toBlock((*e)->getTo());
-         if (b->getHandlerIndex() >= handlerDim)
-            handlerDim = b->getHandlerIndex() + 1;
-         if (b->getInlineDepth() >= inlineDim)
-            inlineDim = b->getInlineDepth() + 1;
+         if (!b->isOSRCatchBlock())
+            {
+            TR_ASSERT(b->getHandlerIndex()!=-1, "exception handler index is not defined" );
+            if (b->getHandlerIndex() >= handlerDim)
+               handlerDim = b->getHandlerIndex() + 1;
+            if (b->getInlineDepth() >= inlineDim)
+               inlineDim = b->getInlineDepth() + 1;
+            }
          }
 
       _dim = handlerDim * inlineDim;
@@ -388,8 +403,11 @@ TR_OrderedExceptionHandlerIterator::TR_OrderedExceptionHandlerIterator(TR::Block
       for (auto e = tryBlock->getExceptionSuccessors().begin(); e != tryBlock->getExceptionSuccessors().end(); ++e)
          {
          TR::Block * b = toBlock((*e)->getTo());
-         TR_ASSERT((_handlers[((inlineDim - b->getInlineDepth() - 1) * handlerDim) + b->getHandlerIndex()] == NULL), "handler entry is not NULL\n");
-         _handlers[((inlineDim - b->getInlineDepth() - 1) * handlerDim) + b->getHandlerIndex()] = b;
+         if (!b->isOSRCatchBlock())
+            {
+            TR_ASSERT((_handlers[((inlineDim - b->getInlineDepth() - 1) * handlerDim) + b->getHandlerIndex()] == NULL), "handler entry is not NULL\n");
+            _handlers[((inlineDim - b->getInlineDepth() - 1) * handlerDim) + b->getHandlerIndex()] = b;
+            }
          }
       }
    }

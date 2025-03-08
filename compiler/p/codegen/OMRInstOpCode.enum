@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*
@@ -100,6 +100,7 @@
    cmpl8,            // Compare dword logical
    cmpli4,           // Compare word immediate logical
    cmpli8,           // Compare dword immediate logical
+   cmpb,             // Compare Bytes
    cmprb,            // Compare Ranged Byte
    cmpeqb,           // Compare Equal Byte
    cntlzd,           // Count leading zeros dword
@@ -226,6 +227,7 @@
    fsubs,            // Floating subtract single
    isync,            // Instruction synchronize
    lbz,              // Load byte and zero extend
+   lbarx,            // Load byte and reserve indexed
    lbzu,             // Load byte and zero extend with update
    lbzux,            // Load byte and zero extend with update indexed
    lbzx,             // Load byte and zero extend indexed
@@ -247,6 +249,7 @@
    lfsux,            // Load floating short with update indexed
    lfsx,             // Load floating short indexed
    lha,              // Load half word algebraic
+   lharx,            // Load half word and reserve indexed
    lhau,             // Load half word algebraic
    lhaux,            // Load half word algebraic
    lhax,             // Load half word algebraic
@@ -390,11 +393,12 @@
    srw,              // Shift right word
    srw_r,            // Shift right word Rc=1
    stb,              // Store byte
+   stbcx_r,          // Store byte conditional indexed
    stbu,             // Store byte with update
    stbux,            // Store byte with update indexed
    stbx,             // Store byte indexed
    std,              // Store dword
-   stdcx_r,          // Store word conditional indexed
+   stdcx_r,          // Store dword conditional indexed
    stdu,             // Store dword with update
    stdux,            // Store dword with update indexed
    stdx,             // Store dword indexed
@@ -411,6 +415,7 @@
    stfsx,            // Store float single indexed
    sth,              // Store half word
    sthbrx,           // Store half word byte reversed indexed
+   sthcx_r,          // Store half word conditional indexed
    sthu,             // Store half word with update
    sthux,            // Store half word with update indexed
    sthx,             // Store half word indexed
@@ -538,6 +543,7 @@
    xoris,            // XOR immediate shifted
    nop,              // NoOp (ori)
    genop,            // Group Ending NoOp (ori)
+   yield,            // Shared Resource Hint NoOp (or) (only on certain implementations, normal nop elsewhere)
    shdfence,         // Scheduling Fence
 // rxor,             // Rotate & XOR
    wrtbar,           // Write barrier directive
@@ -585,6 +591,7 @@
 // vctzh,            // vector count trailing zeros Hword
 // vctzw,            // vector count trailing zeros Word
 // vctzd,            // vector count trailing zeros Dword
+   vexpandbm,        // vector expand byte mask
 // vextractub,       // vector extract unsigned Byte
 // vextractuh,       // vector extract unsigned Hword
 // vextractuw,       // vector extract unsigned Word
@@ -633,7 +640,7 @@
 // vpermr,           // vector permute right-indexed
 // vbpermd,          // vector bit permute DWord
    vbpermq,          // Vector Bit Permute Qword
-// vextractbm,       // Vector Extract Byte Mask
+   vextractbm,       // Vector Extract Byte Mask
    vrld,             // Vector Rotate Left Dword
 // vsbox,            // Vector AES SubBytes
    vsel,             // vector conditional select
@@ -746,9 +753,9 @@
 // vcipher,          // Vector AES Cipher
 // vcipherlast,      // Vector AES Cipher Last
 // vclzb,            // Vector Count Leading Zeros Byte
-// vclzd,            // Vector Count Leading Zeros Dword
+   vclzd,            // Vector Count Leading Zeros Dword
 // vclzh,            // Vector Count Leading Zeros Hword
-// vclzw,            // Vector Count Leading Zeros Word
+   vclzw,            // Vector Count Leading Zeros Word
 // vcmpbfp,          // Vector Compare Bounds Floating-Point
 // vcmpbfp_r,        // Vector Compare Bounds Floating-Point Rc=1
 // vcmpeqfp,         // Vector Compare Equal To Floating-Point
@@ -868,11 +875,11 @@
 // xsmsubqp,         // VSX Scalar Multiply-Subtract QP
 // xsmulqp,          // VSX Scalar Multiply QP
 // xsmaxcdp,         // VSX Scalar Maximum Type-C Double-Precision
-// xsmaxjdp,         // VSX Scalar Maximum Type-J Double-Precision
+   xsmaxjdp,         // VSX Scalar Maximum Type-J Double-Precision
    xsmaddadp,        // VSX Scalar Multiply-Add Type A Double-Precision
    xsmaddmdp,        // VSX Scalar Multiply-Add Type M Double-Precision
 // xsmincdp,         // VSX Scalar Minimum Type-C Double-Precision
-// xsminjdp,         // VSX Scalar Minimum Type-J Double-Precision
+   xsminjdp,         // VSX Scalar Minimum Type-J Double-Precision
    xsmsubadp,        // VSX Scalar Multiply-Subtract Type A Double-Precision
    xsmsubmdp,        // VSX Scalar Multiply-Subtract Type M Double-Precision
    xsmuldp,          // VSX Scalar Multiply Double-Precision
@@ -958,7 +965,7 @@
 // xxbrd,            // VSX Vector Byte-Reverse Dword
 // xxbrh,            // VSX Vector Byte-Reverse Hword
 // xxbrw,            // VSX Vector Byte-Reverse Word
-// xxbrq,            // VSX Vector Byte-Reverse Qword
+   xxbrq,            // VSX Vector Byte-Reverse Qword
    fmrgew,           // Merge Even Word
    fmrgow,           // Merge Odd Word
    lxsiwax,          // VSX Scalar as Integer Word Algebraic Indexed

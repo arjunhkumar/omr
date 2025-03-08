@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/CodeGenerator.hpp" // IWYU pragma: keep
@@ -453,27 +453,27 @@ OMR::CodeGenerator::addToAtlas(TR::Instruction * instr)
    }
 
 void
-TR_GCStackMap::addToAtlas(TR::Instruction * instruction, TR::CodeGenerator *codeGen)
+TR_GCStackMap::addToAtlas(TR::Instruction * instruction, TR::CodeGenerator *cg)
    {
    // Fill in the code range and add this map to the atlas.
    //
-   uint8_t * codeStart = codeGen->getCodeStart();
+   uint8_t * codeStart = cg->getCodeStart();
    setLowestCodeOffset(static_cast<uint32_t>(instruction->getBinaryEncoding() - codeStart));
-   codeGen->getStackAtlas()->addStackMap(this);
-   bool osrEnabled = codeGen->comp()->getOption(TR_EnableOSR);
+   cg->getStackAtlas()->addStackMap(this);
+   bool osrEnabled = cg->comp()->getOption(TR_EnableOSR);
    if (osrEnabled)
-      codeGen->addToOSRTable(instruction);
+      cg->addToOSRTable(instruction);
    }
 
 void
-TR_GCStackMap::addToAtlas(uint8_t * callSiteAddress, TR::CodeGenerator *codeGen)
+TR_GCStackMap::addToAtlas(uint8_t * callSiteAddress, TR::CodeGenerator *cg)
    {
    // Fill in the code range and add this map to the atlas.
    //
-   uint32_t callSiteOffset = static_cast<uint32_t>(callSiteAddress - codeGen->getCodeStart());
+   uint32_t callSiteOffset = static_cast<uint32_t>(callSiteAddress - cg->getCodeStart());
    setLowestCodeOffset(callSiteOffset - 1);
-   codeGen->getStackAtlas()->addStackMap(this);
-   bool osrEnabled = codeGen->comp()->getOption(TR_EnableOSR);
+   cg->getStackAtlas()->addStackMap(this);
+   bool osrEnabled = cg->comp()->getOption(TR_EnableOSR);
    if (osrEnabled)
-      codeGen->addToOSRTable(callSiteOffset, getByteCodeInfo());
+      cg->addToOSRTable(callSiteOffset, getByteCodeInfo());
    }

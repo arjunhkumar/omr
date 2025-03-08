@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_VALUEPROPAGATION_INCL
@@ -217,8 +217,6 @@ class ValuePropagation : public TR::Optimization
 
    TR_LinkHead<StoreRelationship> _storeRelationshipCache;
 
-   void addUnsafeArrayAccessNode(ncount_t index) { _unsafeArrayAccessNodes->set(index); }
-
    // Value constraint. This represents constraints applied to a particular
    // value number, and is represented by a linked list of relationships.
    //
@@ -369,14 +367,27 @@ class ValuePropagation : public TR::Optimization
    TR_YesNoMaybe isCastClassObject(TR::VPClassType *type);
 
    /**
-    * Determine whether the component type of an array is, or might be, a value
-    * type.
+    * Determine whether the array is, or might be, null-restricted
+    *
     * \param arrayConstraint The \ref TR::VPConstraint type constraint for the array reference
-    * \return \c TR_yes if the array's component type is definitely a value type;\n
-    *         \c TR_no if it is definitely not a value type; or\n
-    *         \c TR_maybe otherwise.
+    * \returns \c TR_yes if the array is definitely a null-restricted array;\n
+    *          \c TR_no if it is definitely not a null-restricted array; or\n
+    *          \c TR_maybe otherwise.
     */
-   virtual TR_YesNoMaybe isArrayCompTypeValueType(TR::VPConstraint *arrayConstraint);
+   virtual TR_YesNoMaybe isArrayNullRestricted(TR::VPConstraint *arrayConstraint);
+
+   /**
+    * \brief
+    *    Determines whether the array element is, or might be, flattened.
+    *
+    * \param arrayConstraint
+    *    The \ref TR::VPConstraint type constraint for the array reference.
+    *
+    * \returns \c TR_yes if the array element is flattened;\n
+    *          \c TR_no if it is definitely not flattened; or\n
+    *          \c TR_maybe otherwise.
+    */
+   virtual TR_YesNoMaybe isArrayElementFlattened(TR::VPConstraint *arrayConstraint);
 
    /**
     * Determine whether assignment of the supplied object reference to an element of the
@@ -601,6 +612,30 @@ class ValuePropagation : public TR::Optimization
       TR::SymbolReference *_arraycopySymRef;
       };
 
+   struct TR_NeedRuntimeTestNullRestrictedArrayCopy
+     {
+     TR_ALLOC(TR_Memory::ValuePropagation)
+
+     TR_NeedRuntimeTestNullRestrictedArrayCopy(TR::SymbolReference *dstArrRefSymRef, TR::SymbolReference *srcArrRefSymRef,
+                                               TR::TreeTop *ptt, TR::TreeTop *ntt,
+                                               TR::Block *originBlock, TR::Block *slowBlock,
+                                               bool testDstArray)
+        : _dstArrRefSymRef(dstArrRefSymRef), _srcArrRefSymRef(srcArrRefSymRef), _prevTT(ptt), _nextTT(ntt),
+          _originBlock(originBlock), _slowBlock(slowBlock), _needRuntimeTestDstArray(testDstArray)
+        {}
+
+     TR::SymbolReference * _dstArrRefSymRef;
+     TR::SymbolReference * _srcArrRefSymRef;
+
+     TR::TreeTop *_prevTT;
+     TR::TreeTop *_nextTT;
+
+     TR::Block *_originBlock;
+     TR::Block *_slowBlock;
+
+     bool _needRuntimeTestDstArray;
+     };
+
    TR::TreeTop *createPrimitiveOrReferenceCompareNode(TR::Node *);
    TR::TreeTop *createArrayStoreCompareNode(TR::Node *, TR::Node *);
 
@@ -626,6 +661,25 @@ class ValuePropagation : public TR::Optimization
     */
    virtual bool isUnreliableSignatureType(
       TR_OpaqueClassBlock *klass, TR_OpaqueClassBlock *&erased);
+
+   /**
+    * \brief Determine whether an \p arrayClass with the \p componentClass can be trusted as a fixed class
+    *
+    * \param arrayClass The array class.
+    * \param componentClass The component class of the array.
+    *
+    * \return true if an array with the component class can be trusted as a fixed class, and false otherwise.
+    */
+   virtual bool canArrayClassBeTrustedAsFixedClass(TR_OpaqueClassBlock *arrayClass, TR_OpaqueClassBlock *componentClass);
+   /**
+    * \brief Determine whether a class retrieved from signature can be trusted as a fixed class
+    *
+    * \param symRef The symbol reference of the class object.
+    * \param classObject The class object to be checked.
+    *
+    * \return true if a class can be trusted as a fixed class, and false otherwise.
+    */
+   virtual bool canClassBeTrustedAsFixedClass(TR::SymbolReference *symRef, TR_OpaqueClassBlock *classObject);
 
    struct ObjCloneInfo {
       TR_ALLOC(TR_Memory::ValuePropagation)
@@ -664,6 +718,8 @@ class ValuePropagation : public TR::Optimization
 
 #ifdef J9_PROJECT_SPECIFIC
    void transformRTMultiLeafArrayCopy(TR_RealTimeArrayCopy *rtArrayCopyTree);
+
+   void transformNullRestrictedArrayCopy(TR_NeedRuntimeTestNullRestrictedArrayCopy *nullRestrictedArrayCopyTree);
 #endif
 
    TR::TreeTop *buildSameLeafTest(TR::Node *offset,TR::Node *len,TR::Node *spineShiftNode);
@@ -879,8 +935,6 @@ class ValuePropagation : public TR::Optimization
    bool _disableVersionBlockForThisBlock;
    TR::Block *_startEBB;
 
-   TR_BitVector *_unsafeArrayAccessNodes;
-
    // Blocks that are unreachable and can be removed.
    //
    TR_Array<TR::CFGNode*> *_blocksToBeRemoved;
@@ -956,6 +1010,7 @@ class ValuePropagation : public TR::Optimization
    List<TR_TreeTopWrtBarFlag> _referenceArrayCopyTrees;
    List<TR_RealTimeArrayCopy> _needRunTimeCheckArrayCopy;
    List<TR_RealTimeArrayCopy> _needMultiLeafArrayCopy;
+   List<TR_NeedRuntimeTestNullRestrictedArrayCopy> _needRuntimeTestNullRestrictedArrayCopy;
    List<TR_ArrayCopySpineCheck> _arrayCopySpineCheck;
    List<TR::TreeTop> _multiLeafCallsToInline;
    List<TR_TreeTopNodePair> _scalarizedArrayCopies;

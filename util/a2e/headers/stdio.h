@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*
@@ -36,8 +36,7 @@
 #if __TARGET_LIB__ == 0X22080000                                   /*ibm@28725*/
 #include <//'PP.ADLE370.OS39028.SCEEH.H(stdio)'>                   /*ibm@28725*/
 #else                                                              /*ibm@28725*/
-#include "prefixpath.h"
-#include PREFIXPATH(stdio.h)                                    /*ibm@28725*/
+#include_next <stdio.h>                                            /*ibm@28725*/
 #endif                                                             /*ibm@28725*/
 
 #if defined(IBM_ATOE)
@@ -59,8 +58,8 @@
         int        atoe_printf    (const char*, ...);
         int        atoe_putchar   (int);
         int        atoe_rename    (const char*, const char*);
-        int        atoe_sprintf   (char*, char*, ...);
-        int        atoe_snprintf  (char *buf, size_t buflen, char *ascii_chars, ...);
+        int        atoe_sprintf   (char*, const char*, ...);
+        int        atoe_snprintf  (char *buf, size_t buflen, const char *ascii_chars, ...);
         int        std_sprintf    (const char*, char*, ...);
         int        atoe_sscanf    (const char*, const char*, ...); /*ibm@2609*/
         char *     atoe_tempnam   (const char *, char *);

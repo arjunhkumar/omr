@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stddef.h>
@@ -70,21 +70,26 @@ TR_Liveness::TR_Liveness(TR::Compilation           *comp,
      _liveVariableInfo(liveVariableInfo)
    {
    _traceLiveness = comp->getOption(TR_TraceLiveness);
-   if (traceLiveness())
-      traceMsg(comp, "Starting Liveness analysis\n");
 
    if (liveVariableInfo == NULL)
+      {
       // can be re-used by the caller because it's allocated in caller's stack
       _liveVariableInfo = new (trStackMemory()) TR_LiveVariableInformation(comp, optimizer, rootStructure, splitLongs, includeParms,
                                                                            ignoreOSRUses);
-   else
-      _liveVariableInfo = liveVariableInfo;
+      _liveVariableInfo->collectLiveVariableInformation();
+      }
+   }
+
+void TR_Liveness::perform(TR_Structure *rootStructure)
+   {
+   if (traceLiveness())
+      traceMsg(comp(), "Starting Liveness analysis\n");
 
    if (_liveVariableInfo->numLocals() == 0)
       return; // Nothing to do if there are no locals
 
-   if (comp->getVisitCount() > 8000)
-      comp->resetVisitCounts(1);
+   if (comp()->getVisitCount() > 8000)
+      comp()->resetVisitCounts(1);
 
    // Allocate the block info before setting the stack mark - it will be used by
    // the caller
@@ -102,11 +107,11 @@ TR_Liveness::TR_Liveness(TR::Compilation           *comp,
          {
          if (_blockAnalysisInfo[i])
             {
-            traceMsg(comp, "\nLive variables for block_%d: ",i);
-            _blockAnalysisInfo[i]->print(comp);
+            traceMsg(comp(), "\nLive variables for block_%d: ",i);
+            _blockAnalysisInfo[i]->print(comp());
             }
          }
-      traceMsg(comp, "\nEnding Liveness analysis\n");
+      traceMsg(comp(), "\nEnding Liveness analysis\n");
       }
    } // scope of the stack memory region
 

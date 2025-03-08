@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_SIMPLIFIERTABLE_ENUM_INCL
@@ -516,6 +516,32 @@
 #define vmxorSimplifierHandler dftSimplifier
 #define vmfirstNonZeroSimplifierHandler dftSimplifier
 
+#define vpopcntSimplifierHandler dftSimplifier
+#define vmpopcntSimplifierHandler dftSimplifier
+#define vcompressSimplifierHandler dftSimplifier
+#define vexpandSimplifierHandler dftSimplifier
+#define vshlSimplifierHandler dftSimplifier
+#define vmshlSimplifierHandler dftSimplifier
+#define vshrSimplifierHandler dftSimplifier
+#define vmshrSimplifierHandler dftSimplifier
+#define vushrSimplifierHandler dftSimplifier
+#define vmushrSimplifierHandler dftSimplifier
+#define vrolSimplifierHandler dftSimplifier
+#define vmrolSimplifierHandler dftSimplifier
+#define mcompressSimplifierHandler dftSimplifier
+#define vnotzSimplifierHandler dftSimplifier
+#define vmnotzSimplifierHandler dftSimplifier
+#define vnolzSimplifierHandler dftSimplifier
+#define vmnolzSimplifierHandler dftSimplifier
+#define vbitswapSimplifierHandler dftSimplifier
+#define vmbitswapSimplifierHandler dftSimplifier
+#define vbyteswapSimplifierHandler dftSimplifier
+#define vmbyteswapSimplifierHandler dftSimplifier
+#define vcompressbitsSimplifierHandler dftSimplifier
+#define vmcompressbitsSimplifierHandler dftSimplifier
+#define vexpandbitsSimplifierHandler dftSimplifier
+#define vmexpandbitsSimplifierHandler dftSimplifier
+
 #define f2iuSimplifierHandler f2iSimplifier
 #define f2luSimplifierHandler f2lSimplifier
 #define f2buSimplifierHandler f2bSimplifier
@@ -585,6 +611,7 @@
 #define long2StringSimplifierHandler dftSimplifier
 #define bitOpMemSimplifierHandler bitOpMemSimplifier
 #define arraycmpSimplifierHandler dftSimplifier
+#define arraycmplenSimplifierHandler dftSimplifier
 #define allocationFenceSimplifierHandler dftSimplifier
 #define loadFenceSimplifierHandler dftSimplifier
 #define storeFenceSimplifierHandler dftSimplifier
@@ -655,6 +682,14 @@
 #define sbitpermuteSimplifierHandler dftSimplifier
 #define ibitpermuteSimplifierHandler dftSimplifier
 #define lbitpermuteSimplifierHandler dftSimplifier
+#define lcompressbitsSimplifierHandler dftSimplifier
+#define icompressbitsSimplifierHandler dftSimplifier
+#define scompressbitsSimplifierHandler dftSimplifier
+#define bcompressbitsSimplifierHandler dftSimplifier
+#define lexpandbitsSimplifierHandler dftSimplifier
+#define iexpandbitsSimplifierHandler dftSimplifier
+#define sexpandbitsSimplifierHandler dftSimplifier
+#define bexpandbitsSimplifierHandler dftSimplifier
 #define PrefetchSimplifierHandler dftSimplifier
 
 #endif

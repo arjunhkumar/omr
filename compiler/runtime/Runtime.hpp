@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef RUNTIME_INCL
@@ -41,7 +41,7 @@ void s390zLinux64CodeCacheParameters(int32_t *, void **, int32_t *, int32_t*);
 
 uint32_t getPPCCacheLineSize();
 
-extern void setDllSlip(char* codeStart,char* codeEnd,char* dllName, TR::Compilation *);
+extern void setDllSlip(const char *codeStart, const char *codeEnd, const char *dllName, TR::Compilation *);
 
 void initializeJitRuntimeHelperTable(char jvmpi);
 
@@ -184,16 +184,24 @@ inline TR_LinkageConventions runtimeHelperLinkage(TR_RuntimeHelper h) { return r
 
 // -----------------------------------------------------------------------------
 
+// Relocation flags and masks
+typedef enum
+   {
+   RELOCATION_TYPE_EIP_OFFSET            = 0x1,
+   RELOCATION_TYPE_WIDE_OFFSET           = 0x2,
 
-#define RELOCATION_TYPE_DESCRIPTION_MASK  15
-#define RELOCATION_TYPE_ORDERED_PAIR  32
-#define RELOCATION_TYPE_EIP_OFFSET  0x40
-#define RELOCATION_TYPE_WIDE_OFFSET  0x80
-#define RELOCATION_CROSS_PLATFORM_FLAGS_MASK (RELOCATION_TYPE_EIP_OFFSET | RELOCATION_TYPE_WIDE_OFFSET)
-#define RELOCATION_RELOC_FLAGS_MASK (~RELOCATION_CROSS_PLATFORM_FLAGS_MASK)
+   ITERATED_RELOCATION_TYPE_ORDERED_PAIR = 0x4,
 
-#define RELOCATION_TYPE_ARRAY_COPY_SUBTYPE 32
-#define RELOCATION_TYPE_ARRAY_COPY_TOC     64
+   // ITERATED_RELOCATION_TYPE_ORDERED_PAIR is not stored in the binary template
+   // as the isOrderedPairRelocation API is used to determine whether a given
+   // relocation is an Orderd Pair Relocation or not.
+   RELOCATION_CROSS_PLATFORM_FLAGS_MASK  = (RELOCATION_TYPE_EIP_OFFSET | RELOCATION_TYPE_WIDE_OFFSET),
+
+   RELOCATION_RELOC_FLAGS_MASK           = (~RELOCATION_CROSS_PLATFORM_FLAGS_MASK),
+   RELOCATION_RELOC_FLAGS_SHIFT          = 4,
+
+   } TR_RelocationFlagUtilities;
+
 // These macros are intended for use when HI_VALUE and LO_VALUE will be recombined after LO_VALUE is sign-extended
 // (e.g. when LO_VALUE is used with an instruction that takes a signed 16-bit operand).
 // In this case we have to adjust HI_VALUE now so that the original value will be obtained once the two are recombined.
@@ -338,9 +346,17 @@ typedef enum
    TR_ValidateJ2IThunkFromMethod          = 110,
    TR_StaticDefaultValueInstance          = 111,
    TR_ValidateIsClassVisible              = 112,
-   TR_NumExternalRelocationKinds          = 113,
+   TR_CatchBlockCounter                   = 113,
+   TR_StartPC                             = 114,
+   TR_MethodEnterExitHookAddress          = 115,
+   TR_ValidateDynamicMethodFromCallsiteIndex = 116,
+   TR_ValidateHandleMethodFromCPIndex     = 117,
+   TR_CallsiteTableEntryAddress           = 118,
+   TR_MethodTypeTableEntryAddress         = 119,
+   TR_NumExternalRelocationKinds          = 120,
    TR_ExternalRelocationTargetKindMask    = 0xff,
    } TR_ExternalRelocationTargetKind;
+
 
 namespace TR {
 

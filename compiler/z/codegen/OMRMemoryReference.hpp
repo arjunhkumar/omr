@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_Z_MEMORY_REFERENCE_INCL
@@ -291,7 +291,7 @@ bool isAligned();
  *    A return value of `false` does not imply long displacement is not required. This is because the displacement of
  *    this memory reference is not fully known until binary encoding. Only after the binary encoding of this memory
  *    reference will a return value of `false` indicate that long displacement is not required. The offset may increase
- *    by some amount during code generation, however it will never decrease. This is why a return value of `true` 
+ *    by some amount during code generation, however it will never decrease. This is why a return value of `true`
  *    always implies long displacement will be required.
  */
 const bool isLongDisplacementRequired();
@@ -386,7 +386,7 @@ TR::S390ConstantDataSnippet* createLiteralPoolSnippet(TR::Node *rootNode, TR::Co
 void populateLoadAddrTree(TR::Node* subTree, TR::CodeGenerator* cg);
 void populateAloadTree(TR::Node* subTree, TR::CodeGenerator* cg, bool privateArea = false);
 void populateShiftLeftTree(TR::Node* subTree, TR::CodeGenerator* cg);
-void populateAddTree(TR::Node* subTree, TR::CodeGenerator* cg);
+void populateAddTree(TR::Node* subTree, TR::CodeGenerator* cg, TR::InstOpCode::Mnemonic *loadOp = NULL, bool allowLXA = false);
 
 void consolidateRegisters(TR::Node *subTree, TR::CodeGenerator *cg);
 
@@ -457,7 +457,7 @@ void tryForceFolding(TR::Node * rootLoadOrStore, TR::CodeGenerator * cg, TR_Stor
                      List<TR::Node>& nodesAlreadyEvaluatedBeforeFoldingList) {}
 
 TR::UnresolvedDataSnippet * createUnresolvedDataSnippet(TR::Node * node, TR::CodeGenerator * cg, TR::SymbolReference * symRef, TR::Register * tempReg, bool isStore) {return NULL;}
-TR::UnresolvedDataSnippet * createUnresolvedDataSnippetForiaload(TR::Node * node, TR::CodeGenerator * cg, TR::SymbolReference * symRef, TR::Register * tempReg, bool & isStore) {return NULL;}
+TR::UnresolvedDataSnippet * createUnresolvedDataSnippetForAloadi(TR::Node * node, TR::CodeGenerator * cg, TR::SymbolReference * symRef, TR::Register * tempReg, bool & isStore) {return NULL;}
 void createUnresolvedSnippetWithNodeRegister(TR::Node * node, TR::CodeGenerator * cg, TR::SymbolReference * symRef, TR::Register *& writableLiteralPoolRegister) {}
 void createUnresolvedDataSnippetForBaseNode(TR::CodeGenerator * cg, TR::Register * writableLiteralPoolRegister) {}
 
@@ -468,7 +468,7 @@ void setMemRefAndGetUnresolvedData(TR::Snippet *& snippet) {}
 
 /**
  * \brief
- *   Create a MemoryReference from a given node. 
+ *   Create a MemoryReference from a given node.
  *
  * \param[in] node
  *   The node which describes the memory reference.

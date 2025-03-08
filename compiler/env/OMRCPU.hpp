@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_CPU_INCL
@@ -107,6 +107,13 @@ public:
     */
    static TR::CPU detect(OMRPortLibrary * const omrPortLib);
 
+   /**
+    * @brief A factory method used to construct a CPU object based on user customized processorDescription
+    * @param[in] OMRProcessorDesc : the processor description
+    * @return TR::CPU
+    */
+   static TR::CPU customize(OMRProcessorDesc processorDescription);
+
   /**
     * @brief Returns the processor type and features that will be used by portable AOT compilations
     * @param[in] omrPortLib : the port library
@@ -130,6 +137,10 @@ public:
    bool getSupportsHardwareRound() { return false; }
    bool getSupportsHardwareCopySign() { return false; }
    bool hasPopulationCountInstruction() { return false; }
+   bool getSupportsHardware32bitCompress() { return false; }
+   bool getSupportsHardware64bitCompress() { return false; }
+   bool getSupportsHardware32bitExpand() { return false; }
+   bool getSupportsHardware64bitExpand() { return false; }
    bool supportsDecimalFloatingPoint() { return false; }
    bool hasFPU() { return true; }
 

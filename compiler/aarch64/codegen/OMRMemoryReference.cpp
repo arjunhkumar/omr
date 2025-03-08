@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/MemoryReference.hpp"
@@ -65,6 +65,7 @@ static void loadRelocatableConstant(TR::Node *node,
                                     TR::CodeGenerator *cg)
    {
    TR::Compilation *comp = cg->comp();
+   TR_ASSERT_FATAL(!ref->isUnresolved(), "Symbol Reference (%p) must be resolved", ref);
 
    TR::Symbol *symbol = ref->getSymbol();
    bool isStatic = symbol->isStatic();
@@ -85,37 +86,45 @@ static void loadRelocatableConstant(TR::Node *node,
       return;
       }
 
-   if (ref->isUnresolved() || comp->compileRelocatableCode())
-      {
-      TR::Node *GCRnode = node;
-      if (!GCRnode)
-         GCRnode = cg->getCurrentEvaluationTreeTop()->getNode();
+   TR::Node *GCRnode = node;
+   if (!GCRnode)
+      GCRnode = cg->getCurrentEvaluationTreeTop()->getNode();
 
-      if (symbol->isCountForRecompile())
-         {
-         loadAddressConstant(cg, GCRnode, TR_CountForRecompile, reg, NULL, false, TR_GlobalValue);
-         }
-      else if (symbol->isRecompilationCounter())
-         {
-         loadAddressConstant(cg, GCRnode, 1, reg, NULL, false, TR_BodyInfoAddressLoad);
-         }
-      else if (symbol->isCompiledMethod())
-         {
-         loadAddressConstant(cg, GCRnode, 1, reg, NULL, false, TR_RamMethodSequence);
-         }
-      else if (isStaticField && !ref->isUnresolved())
-         {
-         loadAddressConstant(cg, GCRnode, 1, reg, NULL, false, TR_DataAddress);
-         }
-      else if (isClass && !ref->isUnresolved())
-         {
-         loadAddressConstant(cg, GCRnode, (intptr_t)ref, reg, NULL, false, TR_ClassAddress);
-         }
-      else
-         {
-         mr->setUnresolvedSnippet(new (cg->trHeapMemory()) TR::UnresolvedDataSnippet(cg, node, ref, node->getOpCode().isStore(), false));
-         cg->addSnippet(mr->getUnresolvedSnippet());
-         }
+   if (symbol->isCountForRecompile() && cg->needRelocationsForPersistentInfoData())
+      {
+      loadAddressConstant(cg, true, GCRnode, TR_CountForRecompile, reg, NULL, TR_GlobalValue);
+      }
+   else if (symbol->isRecompilationCounter() && cg->needRelocationsForBodyInfoData())
+      {
+      loadAddressConstant(cg, true, GCRnode, 1, reg, NULL, TR_BodyInfoAddressLoad);
+      }
+   else if (symbol->isCatchBlockCounter() && cg->needRelocationsForBodyInfoData())
+      {
+      loadAddressConstant(cg, true, GCRnode, 1, reg, NULL, TR_CatchBlockCounter);
+      }
+   else if (symbol->isCompiledMethod() && cg->needRelocationsForCurrentMethodPC())
+      {
+      loadAddressConstant(cg, true, GCRnode, 1, reg, NULL, TR_RamMethodSequence);
+      }
+   else if (isStaticField && !ref->isUnresolved() && cg->needRelocationsForStatics())
+      {
+      loadAddressConstant(cg, true, GCRnode, 1, reg, NULL, TR_DataAddress);
+      }
+   else if (isClass && !ref->isUnresolved() && cg->needClassAndMethodPointerRelocations())
+      {
+      loadAddressConstant(cg, true, GCRnode, (intptr_t)ref, reg, NULL, TR_ClassAddress);
+      }
+   else if (symbol->isEnterEventHookAddress() || symbol->isExitEventHookAddress())
+      {
+      loadAddressConstant(cg, true, GCRnode, 1, reg, NULL, TR_MethodEnterExitHookAddress);
+      }
+   else if (symbol->isCallSiteTableEntry() && !ref->isUnresolved() && comp->compileRelocatableCode())
+      {
+      loadAddressConstant(cg, true, GCRnode, 1, reg, NULL, TR_CallsiteTableEntryAddress);
+      }
+   else if (symbol->isMethodTypeTableEntry() && !ref->isUnresolved() && comp->compileRelocatableCode())
+      {
+      loadAddressConstant(cg, true, GCRnode, 1, reg, NULL, TR_MethodTypeTableEntryAddress);
       }
    else
       {
@@ -344,6 +353,11 @@ void OMR::ARM64::MemoryReference::validateImmediateOffsetAlignment(TR::Node *nod
    intptr_t displacement = self()->getOffset();
    if ((displacement % alignment) != 0)
       {
+      TR::Compilation *comp = cg->comp();
+      if (comp->getOption(TR_TraceCG))
+         {
+         traceMsg(comp, "Validating immediate offset (%d) at node %p for alignment (%d)\n", displacement, node, alignment);
+         }
       TR::Register *newBase;
 
       self()->setOffset(0);
@@ -1126,7 +1140,11 @@ static bool isImm7OffsetGPRInstruction(uint32_t enc)
    {
    return ((enc & 0x3e000000) == 0x28000000);
    }
-
+/* stp/ldp FPR */
+static bool isImm7OffsetFPRInstruction(uint32_t enc)
+   {
+   return ((enc & 0x3e000000) == 0x2C000000);
+   }
 /* load/store exclusive */
 static bool isExclusiveMemAccessInstruction(uint32_t enc)
    {
@@ -1383,6 +1401,23 @@ uint8_t *OMR::ARM64::MemoryReference::generateBinaryEncoding(TR::Instruction *cu
                   TR_ASSERT_FATAL(false, "Offset is too large for specified instruction.");
                   }
                }
+            else if (isImm7OffsetFPRInstruction(enc))
+               {
+               uint32_t opc = ((enc >> 30) & 3); /* 32bit: 00, 64bit: 01, 128bit: 10 */
+               uint32_t size = opc + 2;
+               uint32_t shifted = displacement >> size;
+
+               TR_ASSERT_FATAL((displacement & ((1 << size) - 1)) == 0, "displacement must be 4/8/16-byte alligned");
+
+               if (constantIsImm7(shifted))
+                  {
+                  *wcursor |= (shifted & 0x7f) << 15; /* imm7 */
+                  }
+               else
+                  {
+                  TR_ASSERT_FATAL(false, "Offset is too large for specified instruction.");
+                  }
+               }
             else if (!(isExclusiveMemAccessInstruction(enc) || isAtomicOperationInstruction(enc)))
                {
                TR_ASSERT_FATAL(false, "enc = 0x%x", enc);
@@ -1594,6 +1629,23 @@ TR::Instruction *OMR::ARM64::MemoryReference::expandInstruction(TR::Instruction 
                uint32_t shifted = displacement >> size;
 
                TR_ASSERT((displacement & ((1 << size) - 1)) == 0, "displacement must be 4/8-byte alligned");
+
+               if (constantIsImm7(shifted))
+                  {
+                  return currentInstruction;
+                  }
+               else
+                  {
+                  TR_ASSERT_FATAL(false, "Offset is too large for specified instruction.");
+                  }
+               }
+            else if (isImm7OffsetFPRInstruction(enc))
+               {
+               uint32_t opc = ((enc >> 30) & 3); /* 32bit: 00, 64bit: 01, 128bit: 10 */
+               uint32_t size = opc + 2;
+               uint32_t shifted = displacement >> size;
+
+               TR_ASSERT_FATAL((displacement & ((1 << size) - 1)) == 0, "displacement must be 4/8/16-byte alligned");
 
                if (constantIsImm7(shifted))
                   {

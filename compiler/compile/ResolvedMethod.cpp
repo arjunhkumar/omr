@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "compile/ResolvedMethod.hpp"
@@ -40,258 +40,7 @@ class TR_PrexArgInfo;
 namespace TR { class IlGeneratorMethodDetails; }
 namespace TR { class LabelSymbol; }
 
-bool TR_ResolvedMethod::isDAAMarshallingWrapperMethod()
-   {
-#ifdef J9_PROJECT_SPECIFIC
-   if (getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeShort        ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeShortLength  ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeInt          ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeIntLength    ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeLong         ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeLongLength   ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeFloat        ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeDouble       ||
-
-       // ByteArray Unmarshalling methods
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readShort       ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readShortLength ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readInt         ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readIntLength   ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readLong        ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readLongLength  ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readFloat       ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readDouble)
-      {
-      return true;
-      }
-   return false;
-#else
-   return false;
-#endif
-   }
-
-bool TR_ResolvedMethod::isDAAPackedDecimalWrapperMethod()
-   {
-#ifdef J9_PROJECT_SPECIFIC
-   if (// DAA Packed Decimal arithmetic methods
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_addPackedDecimal        ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_subtractPackedDecimal   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_multiplyPackedDecimal   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_dividePackedDecimal     ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_remainderPackedDecimal  ||
-
-       // DAA Packed Decimal comparison methods
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_lessThanPackedDecimal            ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_lessThanOrEqualsPackedDecimal    ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_greaterThanPackedDecimal         ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_greaterThanOrEqualsPackedDecimal ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_equalsPackedDecimal     ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_notEqualsPackedDecimal  ||
-
-       // DAA Packed Decimal shift methods
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_shiftLeftPackedDecimal  ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_shiftRightPackedDecimal ||
-
-       // DAA Packed Decimal check methods
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_checkPackedDecimal            ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_checkPackedDecimal_2bInlined1 ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_checkPackedDecimal_2bInlined2 ||
-
-       // DAA Packed Decimal move method
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_movePackedDecimal             ||
-
-       // DAA Packed Decimal <-> Integer
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToInteger   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToInteger_ByteBuffer ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertIntegerToPackedDecimal   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertIntegerToPackedDecimal_ByteBuffer ||
-
-       // DAA Packed Decimal <-> Long
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToLong      ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToLong_ByteBuffer      ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertLongToPackedDecimal      ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertLongToPackedDecimal_ByteBuffer      ||
-
-       // DAA External Decimal <-> Integer
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertExternalDecimalToInteger ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertIntegerToExternalDecimal ||
-
-       // DAA External Decimal <-> Long
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertExternalDecimalToLong    ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertLongToExternalDecimal    ||
-
-       // DAA Packed Decimal <-> External Decimal
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToExternalDecimal ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertExternalDecimalToPackedDecimal ||
-
-       // DAA Packed Decimal <-> Unicode Decimal
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToUnicodeDecimal  ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertUnicodeDecimalToPackedDecimal  ||
-
-       // DAA Packed Decimal <-> BigInteger
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToBigInteger   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertBigIntegerToPackedDecimal   ||
-
-       // DAA Packed Decimal <-> BigDecimal
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToBigDecimal   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertBigDecimalToPackedDecimal   ||
-
-       // DAA External Decimal <-> BigInteger
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertExternalDecimalToBigInteger ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertBigIntegerToExternalDecimal ||
-
-       // DAA External Decimal <-> BigDecimal
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertExternalDecimalToBigDecimal ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertBigDecimalToExternalDecimal ||
-
-       // DAA Unicode Decimal <-> Integer
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertUnicodeDecimalToInteger ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertIntegerToUnicodeDecimal ||
-
-       // DAA Unicode Decimal <-> Long
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertUnicodeDecimalToLong        ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertLongToUnicodeDecimal        ||
-
-       // DAA Unicode Decimal <-> BigInteger
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertUnicodeDecimalToBigInteger  ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertBigIntegerToUnicodeDecimal  ||
-
-       // DAA Unicode Decimal <-> BigDecimal
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertUnicodeDecimalToBigDecimal  ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertBigDecimalToUnicodeDecimal  ||
-
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_slowSignedPackedToBigDecimal ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_slowBigDecimalToSignedPacked)
-      {
-      return true;
-      }
-   return false;
-#else
-   return false;
-#endif
-   }
-
-bool TR_ResolvedMethod::isDAAWrapperMethod()
-   {
-#ifdef J9_PROJECT_SPECIFIC
-   return isDAAMarshallingWrapperMethod() || isDAAPackedDecimalWrapperMethod();
-#else
-   return false;
-#endif
-   }
-
-
-bool TR_ResolvedMethod::isDAAMarshallingIntrinsicMethod()
-   {
-#ifdef J9_PROJECT_SPECIFIC
-   if (getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeShort_        ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeShortLength_  ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeInt_          ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeIntLength_    ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeLong_         ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeLongLength_   ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeFloat_        ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayMarshaller_writeDouble_       ||
-
-       // ByteArray Unmarshalling methods
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readShort_       ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readShortLength_ ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readInt_         ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readIntLength_   ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readLong_        ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readLongLength_  ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readFloat_       ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_ByteArrayUnmarshaller_readDouble_)
-      {
-      return true;
-      }
-   return false;
-#else
-   return false;
-#endif
-   }
-
-
-bool TR_ResolvedMethod::isDAAPackedDecimalIntrinsicMethod()
-   {
-#ifdef J9_PROJECT_SPECIFIC
-   if (// DAA Packed Decimal arithmetic methods
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_addPackedDecimal_        ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_subtractPackedDecimal_   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_multiplyPackedDecimal_   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_dividePackedDecimal_     ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_remainderPackedDecimal_  ||
-
-       // DAA Packed Decimal comparison methods
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_lessThanPackedDecimal_            ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_lessThanOrEqualsPackedDecimal_    ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_greaterThanPackedDecimal_         ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_greaterThanOrEqualsPackedDecimal_ ||
-
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_equalsPackedDecimal_     ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_notEqualsPackedDecimal_  ||
-
-       // DAA Packed Decimal shift methods
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_shiftLeftPackedDecimal_  ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_shiftRightPackedDecimal_ ||
-
-       // DAA Packed Decimal check method
-       getRecognizedMethod() == TR::com_ibm_dataaccess_PackedDecimal_checkPackedDecimal_ ||
-
-       // DAA Packed Decimal <-> Integer
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToInteger_   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToInteger_ByteBuffer_ ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertIntegerToPackedDecimal_   ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertIntegerToPackedDecimal_ByteBuffer_ ||
-
-       // DAA Packed Decimal <-> Long
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToLong_      ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToLong_ByteBuffer_      ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertLongToPackedDecimal_      ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertLongToPackedDecimal_ByteBuffer_      ||
-
-       // DAA Packed Decimal <-> External Decimal
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertExternalDecimalToPackedDecimal_ ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToExternalDecimal_ ||
-
-       // DAA Packed Decimal <-> Unicode Decimal
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertPackedDecimalToUnicodeDecimal_  ||
-       getRecognizedMethod() == TR::com_ibm_dataaccess_DecimalData_convertUnicodeDecimalToPackedDecimal_)
-      {
-      return true;
-      }
-   return false;
-#else
-   return false;
-#endif
-   }
-
-bool TR_ResolvedMethod::isDAAIntrinsicMethod()
-   {
-#ifdef J9_PROJECT_SPECIFIC
-   return isDAAMarshallingIntrinsicMethod() || isDAAPackedDecimalIntrinsicMethod();
-#else
-   return false;
-#endif
-   }
-
-TR::Method *TR_ResolvedMethod::convertToMethod()                          { TR_UNIMPLEMENTED(); return 0; }
+TR::Method *TR_ResolvedMethod::convertToMethod()                           { TR_UNIMPLEMENTED(); return 0; }
 uint32_t     TR_ResolvedMethod::numberOfParameters()                       { TR_UNIMPLEMENTED(); return 0; }
 uint32_t     TR_ResolvedMethod::numberOfExplicitParameters()               { TR_UNIMPLEMENTED(); return 0; }
 TR::DataType TR_ResolvedMethod::parmType(uint32_t)                         { TR_UNIMPLEMENTED(); return TR::NoType; }
@@ -330,7 +79,6 @@ bool         TR_ResolvedMethod::isSameMethod(TR_ResolvedMethod *)          { TR_
 bool         TR_ResolvedMethod::isNewInstanceImplThunk()                   { TR_UNIMPLEMENTED(); return false; }
 bool         TR_ResolvedMethod::isJNINative()                              { TR_UNIMPLEMENTED(); return false; }
 bool         TR_ResolvedMethod::isJITInternalNative()                      { TR_UNIMPLEMENTED(); return false; }
-//bool         TR_ResolvedMethod::isUnsafeWithObjectArg(TR::Compilation *)    { TR_UNIMPLEMENTED(); return false; }
 void *       TR_ResolvedMethod::resolvedMethodAddress()                    { TR_UNIMPLEMENTED(); return 0; }
 void *       TR_ResolvedMethod::startAddressForJittedMethod()              { TR_UNIMPLEMENTED(); return 0; }
 void *       TR_ResolvedMethod::startAddressForJNIMethod(TR::Compilation *) { TR_UNIMPLEMENTED(); return 0; }
@@ -374,6 +122,7 @@ bool         TR_ResolvedMethod::isUnresolvedCallSiteTableEntry(int32_t callSiteI
 void *       TR_ResolvedMethod::callSiteTableEntryAddress(int32_t callSiteIndex)      { TR_UNIMPLEMENTED(); return 0; }
 bool         TR_ResolvedMethod::isUnresolvedMethodTypeTableEntry(int32_t cpIndex) { TR_UNIMPLEMENTED(); return false; }
 void *       TR_ResolvedMethod::methodTypeTableEntryAddress(int32_t cpIndex)      { TR_UNIMPLEMENTED(); return 0; }
+bool         TR_ResolvedMethod::isStable(int32_t cpIndex, TR::Compilation *comp)  { TR_UNIMPLEMENTED(); return false; }
 uint32_t     TR_ResolvedMethod::romMethodArgCountAtCallSiteIndex(int32_t callSiteIndex) {TR_UNIMPLEMENTED(); return 0;}
 uint32_t     TR_ResolvedMethod::romMethodArgCountAtCPIndex(int32_t cpIndex) {TR_UNIMPLEMENTED(); return 0;}
 
@@ -391,11 +140,11 @@ char *       TR_ResolvedMethod::fieldNameChars(int32_t, int32_t &)         { TR_
 char *       TR_ResolvedMethod::fieldSignatureChars(int32_t, int32_t &)    { TR_UNIMPLEMENTED(); return 0; }
 char *       TR_ResolvedMethod::staticSignatureChars(int32_t, int32_t &)   { TR_UNIMPLEMENTED(); return 0; }
 void * &     TR_ResolvedMethod::addressOfClassOfMethod()                   { TR_UNIMPLEMENTED(); throw std::exception(); }
-uint32_t     TR_ResolvedMethod::vTableSlot(uint32_t)                       { TR_UNIMPLEMENTED(); return 0; }
+uint32_t     TR_ResolvedMethod::vTableSlot()                               { TR_UNIMPLEMENTED(); return 0; }
 bool         TR_ResolvedMethod::virtualMethodIsOverridden()                { TR_UNIMPLEMENTED(); return false; }
 void         TR_ResolvedMethod::setVirtualMethodIsOverridden()             { TR_UNIMPLEMENTED(); }
 void *       TR_ResolvedMethod::addressContainingIsOverriddenBit()         { TR_UNIMPLEMENTED(); return 0; }
-int32_t     TR_ResolvedMethod::virtualCallSelector(uint32_t)               { TR_UNIMPLEMENTED(); return 0; }
+int32_t     TR_ResolvedMethod::virtualCallSelector()                       { TR_UNIMPLEMENTED(); return 0; }
 uint32_t     TR_ResolvedMethod::numberOfExceptionHandlers()                { TR_UNIMPLEMENTED(); return 0; }
 uint8_t *    TR_ResolvedMethod::allocateException(uint32_t,TR::Compilation*){ TR_UNIMPLEMENTED(); return 0; }
 

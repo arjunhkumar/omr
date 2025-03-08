@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/LocalOpts.hpp"
@@ -42,9 +42,6 @@
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
 #include "control/Recompilation.hpp"
-#include "cs2/bitvectr.h"
-#include "cs2/hashtab.h"
-#include "cs2/llistof.h"
 #include "cs2/sparsrbit.h"
 #include "env/CompilerEnv.hpp"
 #include "env/HeuristicRegion.hpp"
@@ -110,8 +107,6 @@
 #include "env/VMJ9.h"
 #include "runtime/RuntimeAssumptions.hpp"
 #endif
-
-extern void createGuardSiteForRemovedGuard(TR::Compilation *comp, TR::Node* ifNode);
 
 // basic blocks peephole optimization.
 // Return "true" if any basic block peephole optimization was done
@@ -2147,6 +2142,9 @@ bool TR_CompactNullChecks::replacePassThroughIfPossible(TR::Node *currentNode, T
    if (currentNode->getVisitCount() == initialVisitCount)
       return false;
 
+   if (currentNode->isDataAddrPointer())
+      return false;
+
    currentNode->setVisitCount(visitCount);
 
    if (currentNode->isNopableInlineGuard())
@@ -2314,11 +2312,11 @@ bool TR_CompactNullChecks::replaceNullCheckIfPossible(TR::Node *cursorNode, TR::
             //    loadaddr
             // ...
             // NULLCHK #1
-            //    iaload
+            //    aloadi
             //      aload #1
             // ..
             // NULLCHK #2
-            //    iiload
+            //    iloadi
             //      aload #1
             if (!compactionDone)
                {
@@ -3086,9 +3084,6 @@ int32_t TR_SimplifyAnds::process(TR::TreeTop *startTree, TR::TreeTop *endTree)
             TR::TreeTop *previousTree = block->getLastRealTreeTop()->getPrevTreeTop();
             TR::CFGEdge* currentSucc = block->getSuccessors().front();
             TR::CFGNode *succBlock = currentSucc->getTo();
-#ifdef J9_PROJECT_SPECIFIC
-            createGuardSiteForRemovedGuard(comp(), lastRealNode);
-#endif
             if (newOrOpcode != TR::BadILOp)
                {
                // Modify first ificmpeq
@@ -5123,7 +5118,7 @@ bool TR_Rematerialization::examineNode(TR::TreeTop *treeTop, TR::Node *parent, T
         state->_currentlyCommonedLoads.getListHead()->getData()->isBigDecimalLoad()))
        considerRegPressure = false;
 
-    // rematerialize to generate TM's. ibload's are not evaluated
+    // rematerialize to generate TM's. bloadi's are not evaluated
     if (NULL != regPress)
         {
         considerRegPressure = false;
@@ -6642,9 +6637,24 @@ TR::Block *TR_BlockSplitter::splitBlock(TR::Block *pred, TR_LinkHeadAndTail<Bloc
             {
             if (lastRealNode->getBranchDestination()->getNode()->getBlock()->getNumber() == candidate->getNumber())
                {
-               lastRealNode->reverseBranch(cloneEnd->getExit()->getNextTreeTop());
+               TR::TreeTop *newBranchDestinationTT = cloneEnd->getExit()->getNextTreeTop();
+
+               lastRealNode->reverseBranch(newBranchDestinationTT);
+
+               // There is a case where the candidate block was the original fall-through block of the pred block
+               // and the candidate block was also the pred block's branch destination. In this case, there is
+               // only one edge from the pred block to the candidate block: pred-->candidate.
+               // After branch reverse in this case, the new branch destination is the same as the old branch
+               // destination, but the edge pred-->candidate has been removed previously. We need to check whether
+               // the edge for the new branch destination exists or not. If not, the edge should be added.
+               if (!pred->hasSuccessor(newBranchDestinationTT->getNode()->getBlock()))
+                  {
+                  cfg->addEdge(pred, newBranchDestinationTT->getNode()->getBlock());
+                  }
+
                if (trace())
-                  traceMsg(comp(), "  Reversing branch, node %d now jumps to block_%d\n", pred->getNumber(), lastRealNode->getBranchDestination()->getNode()->getBlock()->getNumber());
+                  traceMsg(comp(), "  Reversing branch, node n%dn in block_%d now jumps to block_%d\n", lastRealNode->getGlobalIndex(), pred->getNumber(), lastRealNode->getBranchDestination()->getNode()->getBlock()->getNumber());
+
                //this check handles splitting through a loop header in a region where we have not detected a valid loop header
                if (bMap->getLast()->_from->getNumber() == pred->getNumber())
                   {
@@ -6700,6 +6710,15 @@ TR::Block *TR_BlockSplitter::splitBlock(TR::Block *pred, TR_LinkHeadAndTail<Bloc
           newBlock->append(TR::TreeTop::create(comp(), TR::Node::create(lastRealNode, TR::Goto, 0, nextTree)));
           cfg->addEdge(cloneEnd, newBlock);
           cfg->addEdge(newBlock, nextTree->getNode()->getBlock());
+          // The branch target may be the fall-through path. If so, since we're redirecting the fall-through path to a goto block
+          // and removing the single edge that represents both the fall-through and branch paths, we should also redirect the branch
+          // to the goto block.
+          if (lastRealNode->getBranchDestination()->getNode()->getBlock()->getNumber() == nextTree->getNode()->getBlock()->getNumber())
+             {
+             if (trace())
+                traceMsg(comp(), "   Redirecting branch %d->%d to %d\n", cloneEnd->getNumber(), nextTree->getNode()->getBlock()->getNumber(), newBlock->getNumber());
+             lastRealNode->setBranchDestination(newBlock->getEntry());
+             }
           cfg->removeEdge(cloneEnd, nextTree->getNode()->getBlock());
 
           if (trace())
@@ -7459,7 +7478,7 @@ void TR_InvariantArgumentPreexistence::processIndirectCall(TR::Node *node, TR::T
             // been invalidated once
             //
             TR::Recompilation *recompInfo = comp()->getRecompilationInfo();
-            if (recompInfo && recompInfo->getMethodInfo()->getNumberOfInvalidations() >= 1 && !chTable->findSingleConcreteSubClass(receiverInfo->getClass(), comp()))
+            if (recompInfo && recompInfo->getMethodInfo()->getNumberOfPreexistenceInvalidations() >= 1 && !chTable->findSingleConcreteSubClass(receiverInfo->getClass(), comp()))
                {
                // will exit without performing any transformation
                //fprintf(stderr, "will not perform devirt\n");
@@ -8680,7 +8699,7 @@ TR_ColdBlockMarker::hasNotYetRun(TR::Node *node)
           node->getOpCodeValue() == TR::loadaddr)
          {
          int32_t len;
-         char *name = TR::Compiler->cls.classNameChars(comp(), node->getSymbolReference(), len);
+         const char *name = TR::Compiler->cls.classNameChars(comp(), node->getSymbolReference(), len);
          if (name)
             {
             TR::HeuristicRegion heuristicRegion(comp());
@@ -8970,7 +8989,7 @@ TR_BlockManipulator::breakFallThrough(TR::Block *faller, TR::Block *fallee, bool
 
 // used by trivialDeadTreeRemoval opt pass and during CodeGenPrep to remove nodes treetops that have no intervening def
 void
-TR_TrivialDeadTreeRemoval::preProcessTreetop(TR::TreeTop *treeTop, List<TR::TreeTop> &commonedTreeTopList, char *optDetails, TR::Compilation *comp)
+TR_TrivialDeadTreeRemoval::preProcessTreetop(TR::TreeTop *treeTop, List<TR::TreeTop> &commonedTreeTopList, const char *optDetails, TR::Compilation *comp)
    {
    TR::Node *ttNode = treeTop->getNode();
    if (ttNode->getOpCodeValue() == TR::treetop &&
@@ -9017,7 +9036,7 @@ TR_TrivialDeadTreeRemoval::preProcessTreetop(TR::TreeTop *treeTop, List<TR::Tree
    }
 
 void
-TR_TrivialDeadTreeRemoval::postProcessTreetop(TR::TreeTop *treeTop, List<TR::TreeTop> &commonedTreeTopList, char *optDetails, TR::Compilation *comp)
+TR_TrivialDeadTreeRemoval::postProcessTreetop(TR::TreeTop *treeTop, List<TR::TreeTop> &commonedTreeTopList, const char *optDetails, TR::Compilation *comp)
    {
    if (treeTop->isPossibleDef())
       {
@@ -9028,7 +9047,7 @@ TR_TrivialDeadTreeRemoval::postProcessTreetop(TR::TreeTop *treeTop, List<TR::Tre
    }
 
 void
-TR_TrivialDeadTreeRemoval::processCommonedChild(TR::Node *child, TR::TreeTop *treeTop, List<TR::TreeTop> &commonedTreeTopList, char *optDetails, TR::Compilation *comp)
+TR_TrivialDeadTreeRemoval::processCommonedChild(TR::Node *child, TR::TreeTop *treeTop, List<TR::TreeTop> &commonedTreeTopList, const char *optDetails, TR::Compilation *comp)
    {
    if (child->getReferenceCount() > 1)
       {

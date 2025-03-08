@@ -3,7 +3,7 @@
 #
 # This program and the accompanying materials are made available under
 # the terms of the Eclipse Public License 2.0 which accompanies this
-# distribution and is available at http://eclipse.org/legal/epl-2.0
+# distribution and is available at https://www.eclipse.org/legal/epl-2.0/
 # or the Apache License, Version 2.0 which accompanies this distribution
 # and is available at https://www.apache.org/licenses/LICENSE-2.0.
 #
@@ -16,21 +16,25 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 #############################################################################
 
 list(APPEND OMR_PLATFORM_DEFINITIONS
 	-D_ALL_SOURCE
-	-D_OPEN_THREADS=2
-	-D_POSIX_SOURCE
-	-D_XOPEN_SOURCE_EXTENDED
-	-D_ISOC99_SOURCE
-	-D__STDC_LIMIT_MACROS
-	-DLONGLONG
 	-DJ9ZOS390
+	-DLONGLONG
+	-D_OPEN_THREADS=3
+	-D__STDC_LIMIT_MACROS
 	-DSUPPORTS_THREAD_LOCAL
+	-D_XOPEN_SOURCE=600
 	-DZOS
 )
+
+if(OMR_ENV_DATA64)
+	list(APPEND OMR_PLATFORM_DEFINITIONS
+		-DJ9ZOS39064
+	)
+endif()
 
 # CMake ignores any include directories which appear in IMPLICIT_INCLUDE_DIRECTORIES.
 # This causes an issue with a2e since we need to re-specify them after clearing default search path.
@@ -43,7 +47,11 @@ list(APPEND CMAKE_INCLUDE_PATH "/usr/lpp/cbclib/include")
 # Create helper targets for specifying ascii/ebcdic options
 add_library(omr_ascii INTERFACE)
 target_compile_definitions(omr_ascii INTERFACE -DIBM_ATOE)
-target_compile_options(omr_ascii INTERFACE "-Wc,convlit(ISO8859-1),nose,se(${CMAKE_CURRENT_LIST_DIR}/../../../../util/a2e/headers)")
+if(CMAKE_C_COMPILER_IS_OPENXL)
+	target_compile_options(omr_ascii INTERFACE -fexec-charset=ISO8859-1 -isystem ${CMAKE_CURRENT_LIST_DIR}/../../../../util/a2e/headers)
+else()
+	target_compile_options(omr_ascii INTERFACE "-Wc,convlit(ISO8859-1),nose,se(${CMAKE_CURRENT_LIST_DIR}/../../../../util/a2e/headers)")
+endif()
 target_link_libraries(omr_ascii INTERFACE j9a2e)
 
 add_library(omr_ebcdic INTERFACE)

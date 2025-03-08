@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/OMRSimplifierHelpers.hpp"
@@ -98,48 +98,12 @@ static bool swapChildren(TR::Node * node, TR::Simplifier * s)
    return true;
    }
 
-
-/*
- * Helper functions needed by simplifier handlers across projects
- */
-
-// Simplify the children of a node.
-//
-void simplifyChildren(TR::Node * node, TR::Block * block, TR::Simplifier * s)
-   {
-   int32_t i = node->getNumChildren();
-   if (i == 0)
-      return;
-
-   vcount_t visitCount = s->comp()->getVisitCount();
-   for (--i; i >= 0; --i)
-      {
-      TR::Node * child = node->getChild(i);
-      child->decFutureUseCount();
-      if (child->getVisitCount() != visitCount)
-         {
-         child = s->simplify(child, block);
-         node->setChild(i, child);
-         }
-      // if simplification produced a PassThrough attach the child of the PassThrough here
-      // to keep the trees clean unless we are dealing with a node where a PassThrough is
-      // important - a null check or GlRegtDeps
-      if (!node->getOpCode().isNullCheck()
-          && node->getOpCodeValue() != TR::GlRegDeps
-          && child->getOpCodeValue() == TR::PassThrough)
-         {
-         node->setAndIncChild(i, child->getFirstChild());
-         child->recursivelyDecReferenceCount();
-         }
-      }
-   }
-
 //**************************************
 // Constant folding perform
 //
 bool performTransformationSimplifier(TR::Node * node, TR::Simplifier * s)
    {
-   return performTransformation(s->comp(), "%sConstant folding node [%s] %s", s->optDetailString(), node->getName(s->getDebug()), node->getOpCode().getName());
+   return performTransformation(s->comp(), "%sConstant folding node [%s] %s\n", s->optDetailString(), node->getName(s->getDebug()), node->getOpCode().getName());
    }
 
 void setIsHighWordZero(TR::Node * node, TR::Simplifier * s)
@@ -264,7 +228,6 @@ void foldByteConstant(TR::Node * node, int8_t value, TR::Simplifier * s, bool an
    s->prepareToReplaceNode(node, TR::bconst);
    node->setByte(value);
    dumpOptDetails(s->comp(), " to %s %d\n", node->getOpCode().getName(), node->getByte());
-
    }
 
 void foldShortIntConstant(TR::Node * node, int16_t value, TR::Simplifier * s, bool anchorChildrenP)
@@ -277,6 +240,28 @@ void foldShortIntConstant(TR::Node * node, int16_t value, TR::Simplifier * s, bo
    s->prepareToReplaceNode(node, TR::sconst);
    node->setShortInt(value);
    dumpOptDetails(s->comp(), " to %s %d\n", node->getOpCode().getName(), node->getShortInt());
+   }
+
+void foldUByteConstant(TR::Node * node, uint8_t value, TR::Simplifier * s, bool anchorChildrenP)
+   {
+   if (!performTransformationSimplifier(node, s)) return;
+
+   if (anchorChildrenP) s->anchorChildren(node, s->_curTree);
+
+   s->prepareToReplaceNode(node, TR::bconst);
+   node->setUnsignedByte(value);
+   dumpOptDetails(s->comp(), " to %s %d\n", node->getOpCode().getName(), node->getUnsignedByte());
+   }
+
+void foldCharConstant(TR::Node * node, uint16_t value, TR::Simplifier * s, bool anchorChildrenP)
+   {
+   if (!performTransformationSimplifier(node, s)) return;
+
+   if (anchorChildrenP) s->anchorChildren(node, s->_curTree);
+
+   s->prepareToReplaceNode(node, TR::sconst);
+   node->setConst<uint16_t>(value);
+   dumpOptDetails(s->comp(), " to %s %d\n", node->getOpCode().getName(), node->getConst<uint16_t>());
    }
 
 bool swapChildren(TR::Node * node, TR::Node * & firstChild, TR::Node * & secondChild, TR::Simplifier * s)
@@ -452,6 +437,26 @@ bool branchToFollowingBlock(TR::Node * node, TR::Block * block, TR::Compilation 
    TR::TreeTop * treeTop = block->getLastRealTreeTop();
    if (treeTop->getNode() != node)
       return false;
+   return true;
+   }
+
+bool fallthroughGoesToBranchBlock(TR::Node *node, TR::Block *block, TR::Compilation *comp)
+   {
+   TR::Block *fallthroughBlock = block->getNextBlock();
+   if (fallthroughBlock == NULL ||
+       !fallthroughBlock->isGotoBlock(comp) ||
+       fallthroughBlock->getPredecessors().size() > 1 ||
+       fallthroughBlock->getExceptionPredecessors().size() > 0 ||
+       fallthroughBlock->getFirstRealTreeTop()->getNode()->getBranchDestination() != node->getBranchDestination())
+      return false;
+
+   // If this is an extended basic block there may be real nodes after the
+   // conditional branch. In this case the conditional branch must remain.
+   //
+   TR::TreeTop * treeTop = block->getLastRealTreeTop();
+   if (treeTop->getNode() != node)
+      return false;
+
    return true;
    }
 
@@ -710,5 +715,53 @@ TR::Node *removeIfToFollowingBlock(TR::Node * node, TR::Block * block, TR::Simpl
          return NULL;
          }
       }
+   if (fallthroughGoesToBranchBlock(node, block, s->comp()))
+      {
+      // Immediately following block goes to branch block. The branch can (later) be removed
+      //
+      static bool disable = feGetEnv("TR_disableSimplifyIfFallthroughGoto") != NULL;
+      if (!disable)
+         {
+         if (performTransformation(s->comp(), "%sMaking %s [" POINTER_PRINTF_FORMAT "] unconditional to following block\n", s->optDetailString(), node->getOpCode().getName(), node))
+            {
+            s->conditionalToUnconditional(node, block, false);
+            s->requestOpt(OMR::redundantGotoElimination, true, block);
+            }
+         }
+      }
    return node;
+   }
+
+void normalizeShiftAmount(TR::Node * node, int32_t normalizationConstant, TR::Simplifier * s)
+   {
+   if (s->comp()->cg()->needsNormalizationBeforeShifts() &&
+       !node->isNormalizedShift())
+      {
+      TR::Node * secondChild = node->getSecondChild();
+      //
+      // Some platforms like IA32 obey Java semantics for shifts even if the
+      // shift amount is greater than 31. However other platforms like PPC need
+      // to normalize the shift amount to range (0, 31) before shifting in order
+      // to obey Java semantics. This can be captured in the IL and commoning/hoisting
+      // can be done (look at Compressor.compress).
+      //
+      if ((secondChild->getOpCodeValue() != TR::iconst) &&
+          ((secondChild->getOpCodeValue() != TR::iand) ||
+           (secondChild->getSecondChild()->getOpCodeValue() != TR::iconst) ||
+           (secondChild->getSecondChild()->getInt() != normalizationConstant)))
+         {
+         if (performTransformation(s->comp(), "%sPlatform specific normalization of shift node [%s]\n", s->optDetailString(), node->getName(s->getDebug())))
+            {
+            //
+            // Not normalized yet
+            //
+            TR::Node * secondChild = node->getSecondChild();
+            TR::Node * normalizedNode = TR::Node::create(TR::iand, 2, secondChild, TR::Node::create(secondChild, TR::iconst, 0, normalizationConstant));
+            secondChild->recursivelyDecReferenceCount();
+            node->setAndIncChild(1, normalizedNode);
+            node->setNormalizedShift(true);
+            s->_alteredBlock = true;
+            }
+         }
+      }
    }

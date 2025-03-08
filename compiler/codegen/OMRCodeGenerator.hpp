@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_CODEGENERATOR_INCL
@@ -245,7 +245,7 @@ namespace TR
 namespace OMR
 {
 
-typedef TR::Register *(* TreeEvaluatorFunctionPointer)(TR::Node *node, TR::CodeGenerator *codeGen);
+typedef TR::Register *(* TreeEvaluatorFunctionPointer)(TR::Node *node, TR::CodeGenerator *cg);
 
 class TreeEvaluatorFunctionPointerTable
    {
@@ -328,7 +328,7 @@ public:
    void uncommonCallConstNodes();
 
    void preLowerTrees();
-   void postLowerTrees() {}
+   void postLowerTrees();
 
    TR::TreeTop *lowerTree(TR::Node *root, TR::TreeTop *tt);
    void lowerTrees();
@@ -343,6 +343,17 @@ public:
    void lowerTreesPostChildrenVisit(TR::Node * parent, TR::TreeTop * treeTop, vcount_t visitCount);
 
    void lowerTreesPropagateBlockToNode(TR::Node *node);
+
+   /**
+    * @brief Inserts goto into the last block if necessary
+    */
+   void insertGotoIntoLastBlock(TR::Block *lastBlock);
+
+   /**
+    * @brief Finds last warm block and inserts necessary gotos
+    *        for splitting code into warm and cold
+    */
+   void prepareLastWarmBlockForCodeSplitting();
 
    void setUpForInstructionSelection();
    void doInstructionSelection();
@@ -398,6 +409,9 @@ public:
     * @return The instruction being set.
     */
    TR::Instruction *setAppendInstruction(TR::Instruction *ai) {return (_appendInstruction = ai);}
+
+   TR::Instruction *getLastWarmInstruction() {return _lastWarmInstruction;}
+   TR::Instruction *setLastWarmInstruction(TR::Instruction *instr) {return (_lastWarmInstruction = instr);}
 
    TR::TreeTop *getCurrentEvaluationTreeTop() {return _currentEvaluationTreeTop;}
    TR::TreeTop *setCurrentEvaluationTreeTop(TR::TreeTop *tt) {return (_currentEvaluationTreeTop = tt);}
@@ -778,8 +792,11 @@ public:
    // --------------------------------------------------------------------------
    // Binary encoding code cache
    //
-   uint32_t getEstimatedWarmLength()           {return _estimatedCodeLength;} // DEPRECATED
-   uint32_t setEstimatedWarmLength(uint32_t l) {return (_estimatedCodeLength = l);} // DEPRECATED
+   uint32_t getEstimatedWarmLength()           {return _estimatedWarmCodeLength;}
+   uint32_t setEstimatedWarmLength(uint32_t l) {return (_estimatedWarmCodeLength = l);}
+
+   uint32_t getEstimatedColdLength()           {return _estimatedColdCodeLength;}
+   uint32_t setEstimatedColdLength(uint32_t l) {return (_estimatedColdCodeLength = l);}
 
    uint32_t getEstimatedCodeLength()           {return _estimatedCodeLength;}
    uint32_t setEstimatedCodeLength(uint32_t l) {return (_estimatedCodeLength = l);}
@@ -790,6 +807,14 @@ public:
    uint8_t *getCodeStart();
    uint8_t *getCodeEnd()                  {return _binaryBufferCursor;}
    uint32_t getCodeLength();
+
+   uint8_t *getWarmCodeEnd()              {return _coldCodeStart ? _warmCodeEnd : _binaryBufferCursor;}
+   uint8_t *setWarmCodeEnd(uint8_t *c)    {return (_warmCodeEnd = c);}
+   uint8_t *getColdCodeStart()            {return _coldCodeStart;}
+   uint8_t *setColdCodeStart(uint8_t *c)  {return (_coldCodeStart = c);}
+
+   uint32_t getWarmCodeLength() {return (uint32_t)(getWarmCodeEnd() - getCodeStart());} // cast explicitly
+   uint32_t getColdCodeLength() {return (uint32_t)(_coldCodeStart ? getCodeEnd() - getColdCodeStart() : 0);} // cast explicitly
 
    uint8_t *getBinaryBufferCursor() {return _binaryBufferCursor;}
    uint8_t *setBinaryBufferCursor(uint8_t *b) { return (_binaryBufferCursor = b); }
@@ -1192,21 +1217,21 @@ public:
                                           uint8_t *target,
                                           uint8_t *target2,
                                           TR_ExternalRelocationTargetKind kind,
-                                          char *generatingFileName,
+                                          const char *generatingFileName,
                                           uintptr_t generatingLineNumber,
                                           TR::Node *node) {}
    void addProjectSpecializedPairRelocation(uint8_t *location1,
                                           uint8_t *location2,
                                           uint8_t *target,
                                           TR_ExternalRelocationTargetKind kind,
-                                          char *generatingFileName,
+                                          const char *generatingFileName,
                                           uintptr_t generatingLineNumber,
                                           TR::Node *node) {}
    void addProjectSpecializedRelocation(TR::Instruction *instr,
                                           uint8_t *target,
                                           uint8_t *target2,
                                           TR_ExternalRelocationTargetKind kind,
-                                          char *generatingFileName,
+                                          const char *generatingFileName,
                                           uintptr_t generatingLineNumber,
                                           TR::Node *node) {}
 
@@ -1255,6 +1280,45 @@ public:
    TR::list<TR::Snippet*> *getMethodSnippetsToBePatchedOnClassUnload() { return &_methodSnippetsToBePatchedOnClassUnload; }
 
    TR::list<TR::Snippet*> *getSnippetsToBePatchedOnClassRedefinition() { return &_snippetsToBePatchedOnClassRedefinition; }
+
+   /**
+   * \brief Calculates total size of all code snippets
+   *
+   * \return total size of all code snippets
+   */
+   uint32_t getCodeSnippetsSize();
+
+   /**
+   * \brief Calculates total size of all data snippets
+   *
+   * \return total size of all data snippets
+   */
+   uint32_t getDataSnippetsSize() { return 0; }
+
+   /**
+   * \brief Calculates total size of all out of line code
+   *
+   * \return total size of all out of line code
+   */
+   uint32_t getOutOfLineCodeSize() { return 0; }
+
+   struct MethodStats
+      {
+      uint32_t codeSize;
+      uint32_t warmBlocks;
+      uint32_t coldBlocks;
+      uint32_t prologue;
+      uint32_t snippets;
+      uint32_t outOfLine;
+      uint32_t unaccounted;
+      uint32_t blocksInColdCache;
+      uint32_t overestimateInColdCache;
+      };
+
+   /**
+   * \brief Fills in MethodStats structure with footprint data
+   */
+   void getMethodStats(MethodStats &methodStats);
 
    // --------------------------------------------------------------------------
    // Register pressure
@@ -1524,7 +1588,6 @@ public:
 
    bool constantAddressesCanChangeSize(TR::Node *node);
    bool profiledPointersRequireRelocation();
-   bool needGuardSitesEvenWhenGuardRemoved();
 
    // will a BCD left shift always leave the sign code unchanged and thus allow it to be propagated through and upwards
    bool propagateSignThroughBCDLeftShift(TR::DataType type) { return false; }
@@ -1630,6 +1693,9 @@ public:
 
    bool getSupportsArrayCmp() {return _flags1.testAny(SupportsArrayCmp);}
    void setSupportsArrayCmp() {_flags1.set(SupportsArrayCmp);}
+
+   bool getSupportsArrayCmpLen() {return _flags1.testAny(SupportsArrayCmpLen);}
+   void setSupportsArrayCmpLen() {_flags1.set(SupportsArrayCmpLen);}
 
    bool getSupportsArrayCmpSign() {return _flags3.testAny(SupportsArrayCmpSign);}
    void setSupportsArrayCmpSign() {_flags3.set(SupportsArrayCmpSign);}
@@ -1739,11 +1805,15 @@ public:
    bool getSupportsLDivAndLRemWithThreeChildren() {return _flags2.testAny(SupportsLDivAndLRemWithThreeChildren);}
    void setSupportsLDivAndLRemWithThreeChildren() {_flags2.set(SupportsLDivAndLRemWithThreeChildren);}
 
-   bool getSupportsLoweringConstIDiv() {return _flags2.testAny(SupportsLoweringConstIDiv);}
-   void setSupportsLoweringConstIDiv() {_flags2.set(SupportsLoweringConstIDiv);}
+   bool getSupportsLoweringConstIDiv() {return getSupportsIMulHigh();}
 
-   bool getSupportsLoweringConstLDiv() {return _flags2.testAny(SupportsLoweringConstLDiv);}
-   void setSupportsLoweringConstLDiv() {_flags2.set(SupportsLoweringConstLDiv);}
+   bool getSupportsLoweringConstLDiv() {return getSupportsLMulHigh();}
+
+   bool getSupportsIMulHigh() {return _flags2.testAny(SupportsIMulHigh);}
+   void setSupportsIMulHigh() {_flags2.set(SupportsIMulHigh);}
+
+   bool getSupportsLMulHigh() {return _flags2.testAny(SupportsLMulHigh);}
+   void setSupportsLMulHigh() {_flags2.set(SupportsLMulHigh);}
 
    bool getSupportsLoweringConstLDivPower2() {return _flags2.testAny(SupportsLoweringConstLDivPower2);}
    void setSupportsLoweringConstLDivPower2() {_flags2.set(SupportsLoweringConstLDivPower2);}
@@ -1763,9 +1833,6 @@ public:
    bool getSupportsPostProcessArrayCopy() {return _flags2.testAny(SupportsPostProcessArrayCopy);}
    void setSupportsPostProcessArrayCopy() {_flags2.set(SupportsPostProcessArrayCopy);}
 
-   bool getOptimizationPhaseIsComplete() {return _flags4.testAny(OptimizationPhaseIsComplete);}
-   void setOptimizationPhaseIsComplete() {_flags4.set(OptimizationPhaseIsComplete);}
-
    bool getSupportsTestUnderMask() {return _flags4.testAny(SupportsTestUnderMask);}
    void setSupportsTestUnderMask() {_flags4.set(SupportsTestUnderMask);}
 
@@ -1775,6 +1842,27 @@ public:
    bool isOutOfLineColdPath() {return (_outOfLineColdPathNestedDepth > 0) ? true : false;}
    void incOutOfLineColdPathNestedDepth(){_outOfLineColdPathNestedDepth++;}
    void decOutOfLineColdPathNestedDepth(){_outOfLineColdPathNestedDepth--;}
+
+   /**
+    * @brief checks if instruction selection is in the state of generating
+    *        instrucions for warm blocks in the case of warm and cold block splitting
+    *
+    * @return true if instruction selection is in the state of generating
+    *         instrucions for warm blocks and false otherwise
+    */
+   bool getInstructionSelectionInWarmCodeCache() {return _flags2.testAny(InstructionSelectionInWarmCodeCache);}
+
+   /**
+    * @brief sets the state of the instruction selection to generating warm blocks
+    *        in the case of warm and cold block splitting
+    */
+   void setInstructionSelectionInWarmCodeCache() {_flags2.set(InstructionSelectionInWarmCodeCache);}
+
+   /**
+    * @brief sets the state of the instruction selection to generating cold blocks
+    *        in the case of warm and cold block splitting
+    */
+   void resetInstructionSelectionInWarmCodeCache() {_flags2.reset(InstructionSelectionInWarmCodeCache);}
 
    bool getMethodModifiedByRA() {return _flags2.testAny(MethodModifiedByRA);}
    void setMethodModifiedByRA() {_flags2.set(MethodModifiedByRA);}
@@ -1831,7 +1919,7 @@ public:
       // AVAILABLE                                       = 0x02000000,
       UsesRegisterPairsForLongs                          = 0x04000000,
       SupportsArraySet                                   = 0x08000000,
-      // AVAILABLE                                       = 0x10000000,
+      SupportsArrayCmpLen                                = 0x10000000,
       SupportsArrayCmp                                   = 0x20000000,
       DisableLongGRA                                     = 0x40000000,
       DummyLastEnum1
@@ -1845,8 +1933,8 @@ public:
       SupportsVirtualGuardNOPing                          = 0x00000008,
       SupportsEfficientNarrowIntComputation               = 0x00000010,
       SupportsNewInstanceImplOpt                          = 0x00000020,
-      SupportsLoweringConstIDiv                           = 0x00000040,
-      SupportsLoweringConstLDiv                           = 0x00000080,
+      SupportsIMulHigh                                    = 0x00000040,
+      SupportsLMulHigh                                    = 0x00000080,
       SupportsArrayTranslate                              = 0x00000100,
       HasDoubleWordAlignedStack                           = 0x00000200,
       SupportsReadOnlyLocks                               = 0x00000400,
@@ -1864,7 +1952,7 @@ public:
       // AVAILABLE                                        = 0x00400000,
       SupportsLoweringConstLDivPower2                     = 0x00800000,
       DisableFloatingPointGRA                             = 0x01000000,
-      // AVAILABLE                                        = 0x02000000,
+      InstructionSelectionInWarmCodeCache                = 0x02000000,
       MethodModifiedByRA                                  = 0x04000000,
       // AVAILABLE                                        = 0x08000000,
       // AVAILABLE                                        = 0x10000000,
@@ -1915,7 +2003,7 @@ public:
       // AVAILABLE                                        = 0x00000001,
       // AVAILABLE                                        = 0x00000002,
       // AVAILABLE                                        = 0x00000004,
-      OptimizationPhaseIsComplete                         = 0x00000008,
+      // AVAILABLE                                        = 0x00000008,
       // AVAILABLE                                        = 0x00000010,
       IsInOOLSection                                      = 0x00000020,
       // AVAILABLE                                        = 0x00000040,
@@ -2019,6 +2107,8 @@ public:
 
    uint32_t _largestOutgoingArgSize;
 
+   uint32_t _estimatedWarmCodeLength;
+   uint32_t _estimatedColdCodeLength;
    uint32_t _estimatedCodeLength;
    int32_t _estimatedSnippetStart;
    int32_t _accumulatedInstructionLengthError;
@@ -2038,6 +2128,7 @@ public:
 
    TR::Instruction *_firstInstruction;
    TR::Instruction *_appendInstruction;
+   TR::Instruction *_lastWarmInstruction;
 
    TR_RegisterMask _liveRealRegisters[NumRegisterKinds];
    TR_GlobalRegisterNumber _lastGlobalGPR;
@@ -2055,6 +2146,9 @@ public:
    uint8_t _globalGPRPartitionLimit;
    uint8_t _globalFPRPartitionLimit;
    flags16_t _enabledFlags;
+
+   uint8_t *_warmCodeEnd;
+   uint8_t *_coldCodeStart;
 
    public:
 
@@ -2110,5 +2204,7 @@ public:
    };
 
 }
+
+#define SPLIT_WARM_COLD_STRING  "SPLIT WARM AND COLD BLOCKS:"
 
 #endif

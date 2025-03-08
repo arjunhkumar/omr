@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMRFORMATCONSTANTS_H_
@@ -33,7 +33,7 @@
 /* OMR_PRId8: int8_t */
 #if defined(PRId8)
 #define OMR_PRId8 PRId8
-#elif defined(__GNUC__) || defined(__clang__) || defined(__xlC__)
+#elif defined(__GNUC__) || defined(__clang__) || defined(__xlC__) || defined(__open_xl__)
 #define OMR_PRId8 "hhd"
 #else
 #define OMR_PRId8 "d" /* promote to int */
@@ -42,7 +42,7 @@
 /* OMR_PRIu8: uint8_t */
 #if defined(PRIu8)
 #define OMR_PRIu8 PRIu8
-#elif defined(__GNUC__) || defined(__clang__) || defined(__xlC__)
+#elif defined(__GNUC__) || defined(__clang__) || defined(__xlC__) || defined(__open_xl__)
 #define OMR_PRIu8 "hhu"
 #else
 #define OMR_PRIu8 "u" /* promote to unsigned int */
@@ -51,7 +51,7 @@
 /* OMR_PRIx8: uint8_t (hex) */
 #if defined(PRIx8)
 #define OMR_PRIx8 PRIx8
-#elif defined(__GNUC__) || defined(__clang__) || defined(__xlC__)
+#elif defined(__GNUC__) || defined(__clang__) || defined(__xlC__) || defined(__open_xl__)
 #define OMR_PRIx8 "hhx"
 #else
 #define OMR_PRIx8 "x" /* promote to unsigned int */
@@ -60,7 +60,7 @@
 /* OMR_PRIX8: uint8_t (uppercase hex) */
 #if defined(PRIX8)
 #define OMR_PRIX8 PRIX8
-#elif defined(__GNUC__) || defined(__clang__) || defined(__xlC__)
+#elif defined(__GNUC__) || defined(__clang__) || defined(__xlC__) || defined(__open_xl__) 
 #define OMR_PRIX8 "hhX"
 #else
 #define OMR_PRIX8 "X" /* promote to unsigned int */

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,53 +16,23 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
-#ifndef JITCONFIG_HPP_BThFwv
-#define JITCONFIG_HPP_BThFwv
+#ifndef TR_JITCONFIG_INCL
+#define TR_JITCONFIG_INCL
 
-#include <stddef.h>
-#include <stdint.h>
-#include "env/IO.hpp"
+#include "env/OMRJitConfig.hpp"
 
 namespace TR
 {
-
-class JitConfig
+class OMR_EXTENSIBLE JitConfig : public OMR::JitConfigConnector
    {
-   protected:
-   JitConfig();
+public:
 
-   public:
+   JitConfig() : OMR::JitConfigConnector() {}
 
-   static JitConfig *instance();
-
-   // possibly temporary place for options to be stored?
-   struct
-      {
-      int32_t       codeCacheKB;
-      char        * vLogFileName;
-      TR::FILE    * vLogFile;
-      uint64_t      verboseFlags;
-      } options;
-
-   void setInterpreterTOC(size_t interpreterTOC) { _interpreterTOC = interpreterTOC; }
-   size_t getInterpreterTOC()                    { return _interpreterTOC; }
-
-   void *getPseudoTOC()               { return _pseudoTOC; }
-   void setPseudoTOC(void *pseudoTOC) { _pseudoTOC = pseudoTOC; }
-
-   private:
-   char                        _eyecatcher[8];
-
-   void                      * _processorInfo;
-
-   size_t                      _interpreterTOC;
-
-   void                      * _pseudoTOC; // only used on POWER, otherwise should be NULL
    };
+}
 
-} /* namespace TR */
-
-#endif /* JITCONFIG_HPP_BThFwv */
+#endif

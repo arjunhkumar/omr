@@ -16,7 +16,7 @@
 // [1] https://www.gnu.org/software/classpath/license.html
 // [2] https://openjdk.org/legal/assembly-exception.html
 //
-// SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+// SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 
 Executable=omrport
 Submodules=j9utilcore
@@ -944,55 +944,55 @@ TraceExit=Trc_PRT_sysinfo_get_open_file_count_Exit Group=sysinfo Overhead=1 Leve
 // OMRfilestream trace points
 
 TraceEntry=Trc_PRT_filestream_open_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_open filename = %s, flags = %d, perm = %d"
-TraceExit=Trc_PRT_filestream_open_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_open returns fileStream %p"
+TraceExit=Trc_PRT_filestream_open_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_open returns fileStream %p"
 TraceException=Trc_PRT_filestream_open_invalidOpenFlags Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_open flags invalid filename = %s, flags = %d, perm = %d"
 TraceException=Trc_PRT_filestream_open_failedToOpen Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_open Failed to open file. filename = %s, flags = %d, perm = %d, errorCode = %d"
 TraceException=Trc_PRT_filestream_open_fdopenFailed Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_open flags invalid filename = %s, flags = %d, perm = %d, errorCode = %d"
 TraceException=Trc_PRT_filestream_open_invalidPath Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_open flags invalid filename = %s, flags = %d, perm = %d"
 
 TraceEntry=Trc_PRT_filestream_close_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_close fileStream = %p"
-TraceExit=Trc_PRT_filestream_close_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_close returns code = %d"
+TraceExit=Trc_PRT_filestream_close_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_close returns code = %d"
 TraceException=Trc_PRT_filestream_close_invalidFileStream Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_close Invalid fileStream. fileStream = %p"
-TraceException=Trc_PRT_filestream_close_failedToClose Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_close Failed to close fileStream. fileStream = %p errorCode = %d"
+TraceException=Trc_PRT_filestream_close_failedToClose Obsolete Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_close Failed to close fileStream. fileStream = %p errorCode = %d"
 
 TraceEntry=Trc_PRT_filestream_sync_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_sync fileStream = %p"
-TraceExit=Trc_PRT_filestream_sync_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_sync returns code = %d"
+TraceExit=Trc_PRT_filestream_sync_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_sync returns code = %d"
 TraceException=Trc_PRT_filestream_sync_invalidFileStream Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_sync Invalid fileStream. fileStream = %p"
 TraceException=Trc_PRT_filestream_sync_failedToFlush Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_sync Failed to flush stream. fileStream = %p returnCode = %d"
 
 TraceEntry=Trc_PRT_filestream_write_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write fileStream = %p, buf = %p, nbytes = %zd"
-TraceExit=Trc_PRT_filestream_write_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_write returns code = %zd"
+TraceExit=Trc_PRT_filestream_write_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write returns code = %zd"
 TraceException=Trc_PRT_filestream_write_invalidArgs Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write invalid arguments fileStream = %p, buf = %p, nbytes = %zd"
 TraceException=Trc_PRT_filestream_write_failedToWrite Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write Failed to write to fileStream. fileStream = %p, buf = %p, nbytes = %zd, errorCode = %d"
 
 TraceEntry=Trc_PRT_filestream_write_text_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write_text fileStream = %p, buf = %p, nbytes = %zd, toEncoding = %d"
-TraceExit=Trc_PRT_filestream_write_text_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_write_text returns code = %zd"
+TraceExit=Trc_PRT_filestream_write_text_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write_text returns code = %zd"
 TraceException=Trc_PRT_filestream_write_text_invalidArgs Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write_text invalid arguments fileStream = %p, buf = %p, nbytes = %zd, toEncoding = %d"
 TraceException=Trc_PRT_filestream_write_text_failedMalloc Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write_text Failed to malloc. fileStream = %p, buf = %p, nbytes = %zd, requiredBufferSize = %zu"
 TraceException=Trc_PRT_filestream_write_text_failedToWrite Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write_text Failed to write to fileStream. fileStream = %p, writingFrom = %p, byteCount = %zd, errorCode = %zd"
 TraceException=Trc_PRT_filestream_write_text_failedStringTransliteration Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_write_text failed to transliterate the string to platform encoding. fileStream = %p, buf = %p, nbytes = %zd, toEncoding = %d, errorCode = %d"
 
 TraceEntry=Trc_PRT_filestream_vprintf_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_vpritnf fileStream = %p, format = %s"
-TraceExit=Trc_PRT_filestream_vprintf_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_vprintf exit"
+TraceExit=Trc_PRT_filestream_vprintf_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_vprintf exit"
 TraceEvent=Trc_PRT_filestream_vprintf_stackBufferNotBigEnough Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_vprintf Stack buffer not large enough. fileStream = %p, format = %s, requiredBufferSize = %zu"
 TraceException=Trc_PRT_filestream_vprintf_invalidArgs Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_vprintf Invalid arguments. fileStream = %p, format = %s"
 TraceException=Trc_PRT_filestream_vprintf_failedMalloc Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_vprintf Failed to malloc. fileStream = %p, format = %s, requiredBufferSize = %zu"
 
 TraceEntry=Trc_PRT_filestream_printf_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_printf fileStream = %p, format = %s"
-TraceExit=Trc_PRT_filestream_printf_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_printf exit"
+TraceExit=Trc_PRT_filestream_printf_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_printf exit"
 
 TraceEntry=Trc_PRT_filestream_setbuffer_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_setbuffer fileStream = %p, buffer = %p, mode = %d, size = %zu"
-TraceExit=Trc_PRT_filestream_setbuffer_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_setbuffer returns code = %d"
+TraceExit=Trc_PRT_filestream_setbuffer_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_setbuffer returns code = %d"
 TraceException=Trc_PRT_filestream_setbuffer_invalidArgs Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_setbuffer Invalid arguments. fileStream = %p, buffer = %p, mode = %d, size = %zu"
 TraceException=Trc_PRT_filestream_setbuffer_failed Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_setbuffer Failed. fileStream = %p, buffer = %p, mode = %d, size = %zu"
 
 TraceEntry=Trc_PRT_filestream_fdopen_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_fdopen fd = %zd, flags = %d"
-TraceExit=Trc_PRT_filestream_fdopen_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_fdopen Returns stream = %p"
+TraceExit=Trc_PRT_filestream_fdopen_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_fdopen Returns stream = %p"
 TraceException=Trc_PRT_filestream_fdopen_invalidArgs Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_fdopen Invalid arguments. fd = %zd, flags = %d"
 TraceException=Trc_PRT_filestream_fdopen_failed Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_fdopen Failed. fd = %zd, flags = %d, errorCode = %d"
 
 TraceEntry=Trc_PRT_filestream_fileno_Entry Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_fileno fileStream = %p"
-TraceExit=Trc_PRT_filestream_fileno_Exit Group=j9filestrean Overhead=1 Level=5 NoEnv Template="omrfilestream_fileno Returns filedescriptor = %zd"
+TraceExit=Trc_PRT_filestream_fileno_Exit Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_fileno Returns filedescriptor = %zd"
 TraceException=Trc_PRT_filestream_fileno_invalidArgs Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_fileno Invalid arguments. fileStream = %p"
 TraceException=Trc_PRT_filestream_fileno_failed Group=omrfilestream Overhead=1 Level=5 NoEnv Template="omrfilestream_fileno Failed. fileStream = %p, errorCode = %d"
 
@@ -1621,3 +1621,17 @@ TraceException=Trc_PRT_scanCgroupIntOrMax_scan_failed Group=sysinfo Overhead=1 L
 TraceException=Trc_PRT_scanCgroupIntOrMax_null_param Group=sysinfo Overhead=1 Level=1 NoEnv Template="scanCgroupIntOrMax: a parameter is null: metricString=%s val=%p"
 
 TraceException=Trc_PRT_sysinfo_get_number_CPUs_by_type_read_failed Group=sysinfo Overhead=1 Level=1 NoEnv Template="sysinfo_get_number_CPUs_by_type: failed to read cpu quota and period from %s with portable error code=%d"
+
+TraceExit-Exception=Trc_PRT_mmap_map_file_unix_filestatfailed_exit Group=mmap Overhead=1 Level=1 NoEnv Template="omrmmap_map_file: Could not get stats about the file"
+TraceExit-Exception=Trc_PRT_mmap_map_file_cannotallocatehandle_exit Group=mmap Overhead=1 Level=1 NoEnv Template="omrmmap_map_file: Could not allocate memory for handle"
+
+TraceEvent=Trc_PRT_sl_open_shared_library_noload Group=sl Overhead=1 Level=3 NoEnv Template="omrsl_open_shared_library tests if a library is already loaded, returns handle=%p"
+
+TraceException=Trc_PRT_retrieveLinuxMemoryStats_failedOpeningSwappinessFs Group=sysinfo Overhead=1 Level=1 NoEnv Template="retrieveLinuxMemoryStats: Failed to open /proc/sys/vm/swappiness. Error code = %d."
+TraceException=Trc_PRT_retrieveLinuxMemoryStats_failedReadingSwappiness Group=sysinfo Overhead=1 Level=1 NoEnv Template="retrieveLinuxMemoryStats: Failed to read /proc/sys/vm/swappiness. Error code = %d."
+TraceException=Trc_PRT_retrieveLinuxMemoryStats_unexpectedSwappinessFormat Group=sysinfo Overhead=1 Level=1 NoEnv Template="retrieveLinuxMemoryStats: Expected %d items to read, but read %d items."
+
+TraceEntry=Trc_PRT_sysinfo_get_process_start_time_enter Group=sysinfo Overhead=1 Level=1 NoEnv Template="Enter omrsysinfo_get_process_start_time, pid=%zu."
+TraceExit=Trc_PRT_sysinfo_get_process_start_time_exit Group=sysinfo Overhead=1 Level=1 NoEnv Template="Exit omrsysinfo_get_process_start_time, pid=%zu, processStartTimeInNanoseconds=%llu, rc=%d."
+
+TraceEvent=Trc_PRT_vmem_reserve_tempfile_not_created Group=mem Overhead=1 Level=5 NoEnv Template="reserve_memory cannot create temporary file %s of size %zu"

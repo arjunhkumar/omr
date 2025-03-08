@@ -3,7 +3,7 @@
 #
 # This program and the accompanying materials are made available under
 # the terms of the Eclipse Public License 2.0 which accompanies this
-# distribution and is available at http://eclipse.org/legal/epl-2.0
+# distribution and is available at https://www.eclipse.org/legal/epl-2.0/
 # or the Apache License, Version 2.0 which accompanies this distribution
 # and is available at https://www.apache.org/licenses/LICENSE-2.0.
 #
@@ -16,7 +16,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 #############################################################################
 
 # Inputs:
@@ -37,7 +37,7 @@ if(NOT ARCHIVE_DIR)
 	set(ARCHIVE_DIR ${RUNTIME_DIR})
 endif()
 
-if(NOT EXISTS "${ARCHVIVE_DIR}")
+if(NOT EXISTS "${ARCHIVE_DIR}")
 	file(MAKE_DIRECTORY "${ARCHIVE_DIR}")
 endif()
 string(FIND "${LIBRARY_FILE_NAME}" "." dot_pos REVERSE)
@@ -45,11 +45,12 @@ string(SUBSTRING "${LIBRARY_FILE_NAME}" 0 ${dot_pos} base_name)
 
 set(SRC_FILE "${CMAKE_BINARY_DIR}/${base_name}.x")
 set(DEST_FILE "${ARCHIVE_DIR}/${base_name}.x")
-if(NOT "${SRC_FILE}" STREQUAL "${DEST_FILE}")
+
+if(EXISTS ${SRC_FILE} AND NOT "${SRC_FILE}" STREQUAL "${DEST_FILE}")
 	file(RENAME "${SRC_FILE}" "${DEST_FILE}")
 endif()
 
 # Work around a bug in CMake where it looks for .x files in the runime dir rather than the archive dir.
-if(NOT "${ARCHIVE_DIR}" STREQUAL "${RUNTIME_DIR}")
+if(EXISTS ${DEST_FILE} AND NOT "${ARCHIVE_DIR}" STREQUAL "${RUNTIME_DIR}")
 	file(COPY "${DEST_FILE}" DESTINATION "${RUNTIME_DIR}")
 endif()

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/SinkStores.hpp"
@@ -32,7 +32,6 @@
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
 #include "cs2/allocator.h"
-#include "cs2/sparsrbit.h"
 #include "env/IO.hpp"
 #include "env/StackMemoryRegion.hpp"
 #include "env/TRMemory.hpp"
@@ -63,6 +62,7 @@
 #include "optimizer/Optimizations.hpp"
 #include "optimizer/Optimizer.hpp"
 #include "optimizer/Structure.hpp"
+#include "optimizer/UnsafeSubexpressionRemover.hpp"
 
 #define OPT_DETAILS "O^O SINK STORES: "
 
@@ -279,6 +279,7 @@ TR_MovableStore::TR_MovableStore(TR_SinkStores *s, TR_UseOrKillInfo *useOrKillIn
                    _commonedLoadsAfter(commonedLoadsAfter),
                    _depth(depth),
                    _needTempForCommonedLoads(needTempForCommonedLoads),
+                   _unsafeLoads(NULL),
                    _movable(true),
                    _isLoadStatic(false)
    {
@@ -404,7 +405,7 @@ void TR_SinkStores::recordPlacementForDefAlongEdge(TR_EdgeStorePlacement *edgePl
          (*edgeInfo->_symbolsUsedOrKilled) |= (*_usedSymbolsToMove);
          (*edgeInfo->_symbolsUsedOrKilled) |= (*_killedSymbolsToMove);
          _allEdgePlacements.add(edgePlacement);
-	 optimizer()->setRequestOptimization(OMR::basicBlockOrdering, true);
+         optimizer()->setRequestOptimization(OMR::basicBlockOrdering, true);
 
          if (_placementsForEdgesToBlock[toBlockNumber] == NULL)
             _placementsForEdgesToBlock[toBlockNumber] = new (trStackMemory()) TR_EdgeStorePlacementList(trMemory());
@@ -516,7 +517,7 @@ int32_t TR_GeneralSinkStores::perform()
 
 int32_t TR_SinkStores::performStoreSinking()
    {
-   if (0 && trace())
+   if (trace())
       {
       comp()->dumpMethodTrees("Before Store Sinking");
       }
@@ -563,6 +564,8 @@ int32_t TR_SinkStores::performStoreSinking()
                                                                    true,  /* includeParms */
                                                                    false);
 
+   _liveVarInfo->collectLiveVariableInformation();
+
    if (_liveVarInfo->numLocals() == 0)
       {
       return 1;
@@ -574,6 +577,8 @@ int32_t TR_SinkStores::performStoreSinking()
    if (usesDataFlowAnalysis())
       {
       _liveOnSomePaths     = new (comp()->allocator()) TR_Liveness(comp(), optimizer(), rootStructure, false, _liveVarInfo, false, true);
+      _liveOnSomePaths->perform(rootStructure);
+
       _liveOnAllPaths      = new (comp()->allocator()) TR_LiveOnAllPaths(comp(), optimizer(), rootStructure, _liveVarInfo, false, true);
       _liveOnNotAllPaths   = new (comp()->allocator()) TR_LiveOnNotAllPaths(comp(), _liveOnSomePaths, _liveOnAllPaths);
 
@@ -655,12 +660,12 @@ int32_t TR_SinkStores::performStoreSinking()
    // if we found any, transform the code now
    doSinking();
 
-   if (0 && trace())
+   if (trace())
       {
       comp()->dumpMethodTrees("After Store Sinking");
       }
 
-    } // scope of the stack memory region
+   } // scope of the stack memory region
 
    optimizer()->enableAllLocalOpts();
 
@@ -865,10 +870,10 @@ void TR_SinkStores::lookForSinkableStores()
                }
 
                // check to see if we can find a store to a local that is used later in the EBB via a commoned reference
-               TR_BitVectorIterator bvi(*killedLiveCommonedLoads);
-               while (bvi.hasMoreElements())
+               TR_BitVectorIterator bviKilledLiveCommoned(*killedLiveCommonedLoads);
+               while (bviKilledLiveCommoned.hasMoreElements())
                   {
-                  int32_t killedSymIdx = bvi.getNextElement();
+                  int32_t killedSymIdx = bviKilledLiveCommoned.getNextElement();
                   if (trace())
                      traceMsg(comp(), "      symbol stores to a live commoned reference, searching stores below that load this symbol via commoned reference ...\n");
                   _killMarkWalks++;
@@ -910,9 +915,48 @@ void TR_SinkStores::lookForSinkableStores()
                               traceMsg(comp(), "         marking store [" POINTER_PRINTF_FORMAT "] as movable with temp because it has commoned reference used sym %d\n", store->_useOrKillInfo->_tt->getNode(), killedSymIdx);
                            }
                         }
-                        storeElement = storeElement->getNextElement();
+
+                     storeElement = storeElement->getNextElement();
                      }
                   }
+
+            static const bool ignoreUnsafeLoads = (feGetEnv("TR_SinkStoresIgnoreUnsafeLoads") != NULL);
+
+            if (!ignoreUnsafeLoads)
+               {
+               TR_BitVectorIterator bviKilledSymbols(*killedSymbols);
+
+               while (bviKilledSymbols.hasMoreElements())
+                  {
+                  int32_t killedSymIdx = bviKilledSymbols.getNextElement();
+
+                  // find any stores that use this symbol (via a commoned reference) and mark them unmovable
+                  ListElement<TR_MovableStore> *storeElement=potentiallyMovableStores.getListHead();
+
+                  while (storeElement != NULL)
+                     {
+                     TR_MovableStore *store = storeElement->getData();
+
+                     if (store->_movable &&
+                         store->_useOrKillInfo->_usedSymbols &&
+                         store->_useOrKillInfo->_usedSymbols->get(killedSymIdx))
+                        {
+                        if (store->_unsafeLoads == NULL)
+                           {
+                           store->_unsafeLoads = new (trStackMemory()) TR_BitVector(numLocals, trMemory());
+                           }
+
+                        store->_unsafeLoads->set(killedSymIdx);
+                        if (trace())
+                           {
+                           traceMsg(comp(), "         marking store [" POINTER_PRINTF_FORMAT "] as having potentially unsafe load of sym %d\n", store->_useOrKillInfo->_tt->getNode(), killedSymIdx);
+                           }
+                        }
+
+                     storeElement = storeElement->getNextElement();
+                     }
+                  }
+               }
 
             // When the commoned symbols are tracked precisely it is enough to run the above code that intersects used
             // with savedLiveCommonedLoads to find the first uses of symbols
@@ -1138,7 +1182,6 @@ void TR_SinkStores::lookForSinkableStores()
 
          // now go through the list of potentially movable stores in this extended basic
          // block (a subset of the useOrKillInfoList) and try to sink the ones that are still movable
-         bool movedPreviousStore = false;
          while (!useOrKillInfoList.isEmpty())
             {
             TR_UseOrKillInfo *useOrKill = useOrKillInfoList.popHead();
@@ -1198,17 +1241,15 @@ void TR_SinkStores::lookForSinkableStores()
                   {
                   int32_t symIdx = store->_symIdx;
                   TR_ASSERT(_killedSymbolsToMove->isSet(symIdx), "_killedSymbolsToMove is inconsistent with potentiallyMovableStores entry for this store (symIdx=%d)!", symIdx);
-                  if (sinkStorePlacement(store,
-                                         movedPreviousStore))
+                  if (sinkStorePlacement(store))
                      {
                      if (trace())
                         traceMsg(comp(), "        Successfully sunk past a non-live path\n");
-                     movedStore = movedPreviousStore = true;
+                     movedStore = true;
                      _numRemovedStores++;
                      }
                   else
                      {
-                     movedPreviousStore = false;
                      if (trace())
                         traceMsg(comp(), "        Didn't sink this store\n");
                      }
@@ -1220,7 +1261,6 @@ void TR_SinkStores::lookForSinkableStores()
                }
             else
                {
-               movedPreviousStore = false;
                if (trace())
                   traceMsg(comp(), " is not movable (isStore = %s)\n", isStore ? "true" : "false");
                // if a once movable store was later marked as unmovable must remove it from the list now
@@ -1611,7 +1651,7 @@ void TR_SinkStores::placeStoresAlongEdges(List<TR_StoreInformation> & stores, Li
                 from->getLastRealTreeTop()->getNode()->getOpCode().isIf())
                {
                TR::TreeTop *prevExit = placementBlock->getEntry()->getPrevTreeTop();
-	       TR::TreeTop *nextEntry = placementBlock->getExit()->getNextTreeTop();
+               TR::TreeTop *nextEntry = placementBlock->getExit()->getNextTreeTop();
                TR::TreeTop *newExit = from->getExit();
                TR::TreeTop *newEntry = newExit->getNextTreeTop();
                prevExit->join(nextEntry);
@@ -1648,7 +1688,8 @@ void TR_SinkStores::doSinking()
    coalesceSimilarEdgePlacements();
 
    // collect the original stores here
-   List<TR::TreeTop> storesToRemove(trMemory());
+   List<TR_StoreInformation> storesToRemove(trMemory());
+   List<TR_StoreInformation> unsafeStores(trMemory());
    List<TR::TreeTop> movedStores(trMemory());
 
    // do all the edge placements
@@ -1664,14 +1705,21 @@ void TR_SinkStores::doSinking()
          while (!placement->_stores.isEmpty())
             {
             TR_StoreInformation *storeInfo=placement->_stores.popHead();
-            TR::TreeTop *store=storeInfo->_store;
             if (storeInfo->_copy)
                {
-               if (!storesToRemove.find(store))
-                  storesToRemove.add(store);
+               if (!storesToRemove.find(storeInfo))
+                  {
+                  storesToRemove.add(storeInfo);
+
+                  if (storeInfo->_unsafeLoads != NULL)
+                     {
+                     unsafeStores.add(storeInfo);
+                     }
+                  }
                }
             else
                {
+               TR::TreeTop *store=storeInfo->_store;
 //               if (trace())
   //                traceMsg(comp(), "    adding store [" POINTER_PRINTF_FORMAT "] to movedStores (edge placement)\n", store);
                TR_ASSERT(!movedStores.find(store), "shouldn't find a moved store more than once");
@@ -1691,14 +1739,21 @@ void TR_SinkStores::doSinking()
          while (!placement->_stores.isEmpty())
             {
             TR_StoreInformation *storeInfo=placement->_stores.popHead();
-            TR::TreeTop *store=storeInfo->_store;
             if (storeInfo->_copy)
                {
-               if (!storesToRemove.find(store))
-                  storesToRemove.add(store);
+               if (!storesToRemove.find(storeInfo))
+                  {
+                  storesToRemove.add(storeInfo);
+
+                  if (storeInfo->_unsafeLoads != NULL)
+                     {
+                     unsafeStores.add(storeInfo);
+                     }
+                  }
                }
             else
                {
+               TR::TreeTop *store=storeInfo->_store;
                if (trace())
                   traceMsg(comp(), "    adding store [" POINTER_PRINTF_FORMAT "] to movedStores (block placement)\n", store);
                TR_ASSERT(!movedStores.find(store), "shouldn't find a moved store more than once");
@@ -1708,10 +1763,45 @@ void TR_SinkStores::doSinking()
          }
       }
 
+   OMR::UnsafeSubexpressionRemover usr(this);
+
+   // Any stores that remain will be left in place, and its store operation
+   // will be replaced with a TR::treetop below.  If it contains any load
+   // of an unsafe symbol (i.e., a symbol whose store has been sunk past
+   // this store) use an UnsafeSubexpressionRemover to walk through the tree
+   // marking any unsafe loads, as such a load must not be left in place.
+   //
+   while (!unsafeStores.isEmpty())
+      {
+      TR_StoreInformation *originalStoreInfo = unsafeStores.popHead();
+      TR::TreeTop *originalStore = originalStoreInfo->_store;
+
+      if (trace())
+         {
+         traceMsg(comp(), "Looking for unsafe loads of ");
+         originalStoreInfo->_unsafeLoads->print(comp());
+         traceMsg(comp(), " in original tree for store [" POINTER_PRINTF_FORMAT "]\n", originalStore->getNode());
+         }
+
+      // Not sure whether a store that contains unsafe loads
+      // could already have been moved, but just in case. . . .
+      if (movedStores.find(originalStore))
+         {
+         if (trace())
+            traceMsg(comp(), "  this store has been moved already, so no need to remove it\n");
+         }
+      else
+         {
+         findUnsafeLoads(usr, originalStoreInfo->_unsafeLoads, originalStore->getNode());
+         }
+      }
+
    // now remove the original stores
    while (!storesToRemove.isEmpty())
       {
-      TR::TreeTop *originalStore = storesToRemove.popHead();
+      TR_StoreInformation *originalStoreInfo = storesToRemove.popHead();
+      TR::TreeTop *originalStore = originalStoreInfo->_store;
+
       if (trace())
          traceMsg(comp(), "Removing original store [" POINTER_PRINTF_FORMAT "]\n", originalStore->getNode());
 
@@ -1722,18 +1812,46 @@ void TR_SinkStores::doSinking()
          }
       else
          {
-         // unlink tt since we've now sunk it to other places
-         //TR::TreeTop *originalPrev = originalStore->getPrevTreeTop();
-         //TR::TreeTop *originalNext = originalStore->getNextTreeTop();
-
-         //originalStore->getPrevTreeTop()->setNextTreeTop(originalNext);
-         //originalStore->getNextTreeTop()->setPrevTreeTop(originalPrev);
-         //originalStore->getNode()->recursivelyDecReferenceCount();
-         TR::Node::recreate(originalStore->getNode(), TR::treetop);
-         //requestOpt(deadTreesElimination, true, originalStore->getEnclosingBlock()->startOfExtendedBlock());
+         if (originalStoreInfo->_unsafeLoads != NULL)
+            {
+            usr.eliminateStore(originalStore, originalStore->getNode());
+            }
+         else
+            {
+            TR::Node::recreate(originalStore->getNode(), TR::treetop);
+            }
          }
       }
 
+   }
+
+void
+TR_SinkStores::findUnsafeLoads(OMR::UnsafeSubexpressionRemover &usr, TR_BitVector *unsafeLoads, TR::Node *node)
+   {
+   if (node->getOpCode().isLoadVarDirect())
+      {
+      TR::RegisterMappedSymbol *local = getSinkableSymbol(node);
+      if (local != NULL)
+         {
+         int32_t symIdx = local->getLiveLocalIndex();
+
+         if (symIdx != INVALID_LIVENESS_INDEX && unsafeLoads->get(symIdx))
+            {
+            usr.recordDeadUse(node);
+            if (trace())
+               {
+               traceMsg(comp(), "Found unsafe load of local %d in node [" POINTER_PRINTF_FORMAT "] n%dn\n", symIdx, node, node->getGlobalIndex());
+               }
+            }
+         }
+      }
+   else
+      {
+      for (int i = 0; i < node->getNumChildren(); i++)
+         {
+         findUnsafeLoads(usr, unsafeLoads, node->getChild(i));
+         }
+      }
    }
 
 TR::RegisterMappedSymbol *
@@ -1819,6 +1937,8 @@ bool TR_SinkStores::treeIsSinkableStore(TR::Node *node, bool sinkIndirectLoads, 
             {
             if (node->getOpCodeValue() == TR::arraycmp)
                traceMsg(comp(),"      *arraycmp is a call %d, raises exceptions %d*\n",node->getOpCode().isCall(),node->exceptionsRaised());
+            else if (node->getOpCodeValue() == TR::arraycmplen)
+               traceMsg(comp(),"      *arraycmplen is a call %d, raises exceptions %d*\n",node->getOpCode().isCall(),node->exceptionsRaised());
             else if (node->getOpCodeValue() == TR::arraycopy)
                traceMsg(comp(),"      *arraycopy is a call %d, raises exceptions %d*\n",node->getOpCode().isCall(),node->exceptionsRaised());
             traceMsg(comp(), "      *store is a call or an excepting node*\n");
@@ -1867,11 +1987,11 @@ bool TR_SinkStores::treeIsSinkableStore(TR::Node *node, bool sinkIndirectLoads, 
        node->getOpCode().isLoadVarDirect() &&
        node->getSymbolReference()->getSymbol()->isStatic() &&
        (underCommonedNode || node->getReferenceCount() > 1))
-       {
-       if (trace())
+      {
+      if (trace())
          traceMsg(comp(), "         commoned static load store failure: %p\n", node);
-       return false;
-       }
+      return false;
+      }
 
    int32_t currentDepth = ++depth;
    bool    previouslyCommoned = underCommonedNode;
@@ -2280,8 +2400,7 @@ bool TR_SinkStores::storeCanMoveThroughBlock(TR_BitVector *blockKilledSet, TR_Bi
    }
 
 
-bool TR_GeneralSinkStores::sinkStorePlacement(TR_MovableStore *movableStore,
-                                              bool nextStoreWasMoved)
+bool TR_GeneralSinkStores::sinkStorePlacement(TR_MovableStore *movableStore)
    {
    TR::Block *sourceBlock = movableStore->_useOrKillInfo->_block;
    TR::TreeTop *tt = movableStore->_useOrKillInfo->_tt;
@@ -2290,6 +2409,7 @@ bool TR_GeneralSinkStores::sinkStorePlacement(TR_MovableStore *movableStore,
    uint32_t indirectLoadCount = movableStore->_useOrKillInfo->_indirectLoadCount;
    TR_BitVector *commonedSymbols = movableStore->_commonedLoadsUnderTree;
    TR_BitVector *needTempForCommonedLoads = movableStore->_needTempForCommonedLoads;
+   TR_BitVector *unsafeLoads = movableStore->_unsafeLoads;
 
    int32_t sourceBlockNumber=sourceBlock->getNumber();
    int32_t sourceBlockFrequency = sourceBlock->getFrequency();
@@ -2415,7 +2535,7 @@ bool TR_GeneralSinkStores::sinkStorePlacement(TR_MovableStore *movableStore,
             {
             bool copyStore=!isSuccBlockInEBB;
             //recordPlacementForDefAlongEdge(tt, succEdge, true); //copyStore);
-            TR_StoreInformation *storeInfo = new (trStackMemory()) TR_StoreInformation(tt, copyStore);
+            TR_StoreInformation *storeInfo = new (trStackMemory()) TR_StoreInformation(tt, unsafeLoads, copyStore);
             // init _storeTemp field
             if (!needTempForCommonedLoads)
                storeInfo->_storeTemp = tt;
@@ -2498,7 +2618,7 @@ bool TR_GeneralSinkStores::sinkStorePlacement(TR_MovableStore *movableStore,
             bool copyStore= !areAllBlocksInEBB;
 
             //recordPlacementForDefAlongEdge(tt, predEdgeLONAP, true); // block can't be an extension of source block so copy
-            TR_StoreInformation *storeInfo = new (trStackMemory()) TR_StoreInformation(tt, copyStore);
+            TR_StoreInformation *storeInfo = new (trStackMemory()) TR_StoreInformation(tt, unsafeLoads, copyStore);
             // init _storeTemp field
             if (!needTempForCommonedLoads)
                storeInfo->_storeTemp = tt;
@@ -2537,7 +2657,7 @@ bool TR_GeneralSinkStores::sinkStorePlacement(TR_MovableStore *movableStore,
                traceMsg(comp(), "              intersection of used with symbolsKilled[%d] is %s\n", blockNumber, _symbolsKilledInBlock[blockNumber]->intersects(*_usedSymbolsToMove) ? "true" : "false");
                traceMsg(comp(), "              symbol %d in symbolsKilled is %s\n", symIdx, _symbolsKilledInBlock[blockNumber]->get(symIdx) ? "true" : "false");
                }
-            traceMsg(comp(), "              symbolUseds == NULL? %s\n", (_symbolsUsedInBlock[blockNumber] == NULL) ? "true" : "false");
+            traceMsg(comp(), "              symbolsUsed == NULL? %s\n", (_symbolsUsedInBlock[blockNumber] == NULL) ? "true" : "false");
             if (_symbolsUsedInBlock[blockNumber])
                {
                // remove 0 for more detail tracing
@@ -2655,7 +2775,7 @@ bool TR_GeneralSinkStores::sinkStorePlacement(TR_MovableStore *movableStore,
                      {
                      bool copyStore=!isSuccBlockInEBB;
                      //recordPlacementForDefAlongEdge(tt, succEdge, true);   //copyStore);
-                     TR_StoreInformation *storeInfo = new (trStackMemory()) TR_StoreInformation(tt, copyStore);
+                     TR_StoreInformation *storeInfo = new (trStackMemory()) TR_StoreInformation(tt, unsafeLoads, copyStore);
                      // init _storeTemp field
                      if (!needTempForCommonedLoads)
                         storeInfo->_storeTemp = tt;
@@ -2714,7 +2834,7 @@ bool TR_GeneralSinkStores::sinkStorePlacement(TR_MovableStore *movableStore,
             //   tree
             bool copyStore=!isCurrentBlockInEBB;
             //recordPlacementForDefInBlock(tt, block, copyStore);
-            TR_StoreInformation *storeInfo = new (trStackMemory()) TR_StoreInformation(tt, copyStore);
+            TR_StoreInformation *storeInfo = new (trStackMemory()) TR_StoreInformation(tt, unsafeLoads, copyStore);
             // init _storeTemp field
             if (!needTempForCommonedLoads)
                 storeInfo->_storeTemp = tt;

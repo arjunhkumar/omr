@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdint.h>
@@ -218,35 +218,48 @@ OMR::Power::CodeGenerator::initialize()
     cg->setSupportsSelect();
     cg->setSupportsByteswap();
 
-    // disabled for now
-    //
-    if (comp->getOption(TR_AggressiveOpts) &&
-        !comp->getOption(TR_DisableArraySetOpts))
-       {
-       cg->setSupportsArraySet();
-       }
-    cg->setSupportsArrayCmp();
+   if (!TR::Compiler->om.canGenerateArraylets())
+      {
+      // disabled for now
+      //
+      if (comp->getOption(TR_AggressiveOpts) &&
+          !comp->getOption(TR_DisableArraySetOpts))
+         {
+         cg->setSupportsArraySet();
+         }
 
-    if (comp->target().cpu.supportsFeature(OMR_FEATURE_PPC_HAS_VSX))
-       {
-       static bool disablePPCTRTO = (feGetEnv("TR_disablePPCTRTO") != NULL);
-       static bool disablePPCTRTO255 = (feGetEnv("TR_disablePPCTRTO255") != NULL);
-       static bool disablePPCTROT = (feGetEnv("TR_disablePPCTROT") != NULL);
-       static bool disablePPCTROTNoBreak = (feGetEnv("TR_disablePPCTROTNoBreak") != NULL);
+      static const bool disableArrayCmp = feGetEnv("TR_DisableArrayCmp") != NULL;
+      if (!disableArrayCmp)
+         {
+         cg->setSupportsArrayCmp();
+         }
+      static const bool disableArrayCmpLen = feGetEnv("TR_DisableArrayCmpLen") != NULL;
+      if (!disableArrayCmpLen)
+         {
+         cg->setSupportsArrayCmpLen();
+         }
 
-       if (!disablePPCTRTO)
-          cg->setSupportsArrayTranslateTRTO();
+      if (comp->target().cpu.supportsFeature(OMR_FEATURE_PPC_HAS_VSX))
+         {
+         static bool disablePPCTRTO = (feGetEnv("TR_disablePPCTRTO") != NULL);
+         static bool disablePPCTRTO255 = (feGetEnv("TR_disablePPCTRTO255") != NULL);
+         static bool disablePPCTROT = (feGetEnv("TR_disablePPCTROT") != NULL);
+         static bool disablePPCTROTNoBreak = (feGetEnv("TR_disablePPCTROTNoBreak") != NULL);
+
+         if (!disablePPCTRTO)
+            cg->setSupportsArrayTranslateTRTO();
 #ifndef __LITTLE_ENDIAN__
-       else if (!disablePPCTRTO255)
-          setSupportsArrayTranslateTRTO255();
+         else if (!disablePPCTRTO255)
+            setSupportsArrayTranslateTRTO255();
 #endif
 
-       if (!disablePPCTROT)
-          cg->setSupportsArrayTranslateTROT();
+         if (!disablePPCTROT)
+            cg->setSupportsArrayTranslateTROT();
 
-       if (!disablePPCTROTNoBreak)
-          cg->setSupportsArrayTranslateTROTNoBreak();
-       }
+         if (!disablePPCTROTNoBreak)
+            cg->setSupportsArrayTranslateTROTNoBreak();
+         }
+      }
 
    _numberBytesReadInaccessible = 0;
    _numberBytesWriteInaccessible = 4096;
@@ -256,9 +269,9 @@ OMR::Power::CodeGenerator::initialize()
    cg->setSupportsJavaFloatSemantics();
 
    cg->setSupportsDivCheck();
-   cg->setSupportsLoweringConstIDiv();
+   cg->setSupportsIMulHigh();
    if (comp->target().is64Bit())
-      cg->setSupportsLoweringConstLDiv();
+      cg->setSupportsLMulHigh();
    cg->setSupportsLoweringConstLDivPower2();
 
    static bool disableDCAS = (feGetEnv("TR_DisablePPCDCAS") != NULL);
@@ -1837,6 +1850,16 @@ bool OMR::Power::CodeGenerator::getSupportsOpCodeForAutoSIMD(TR::CPU *cpu, TR::I
             return false;
       case TR::vreductionAdd:
          return true;
+      case TR::mToLongBits:
+        if (et == TR::Int8 && cpu->isAtLeast(OMR_PROCESSOR_PPC_P10))
+            return true;
+         else
+            return false;
+      case TR::mFirstTrue:
+         if (et == TR::Int8 && cpu->isAtLeast(OMR_PROCESSOR_PPC_P9))
+            return true;
+         else
+            return false;
       case TR::vload:
       case TR::vloadi:
       case TR::vstore:
@@ -1925,7 +1948,6 @@ OMR::Power::CodeGenerator::getSupportsEncodeUtf16BigWithSurrogateTest()
           !self()->comp()->getOption(TR_DisableSIMDUTF16BEEncoder);
    }
 
-
 void
 OMR::Power::CodeGenerator::addMetaDataForLoadAddressConstantFixed(
       TR::Node *node,
@@ -1985,6 +2007,36 @@ OMR::Power::CodeGenerator::addMetaDataForLoadAddressConstantFixed(
       case TR_AbsoluteHelperAddress:
          {
          value = (uintptr_t)node->getSymbolReference();
+         break;
+         }
+
+      case TR_MethodEnterExitHookAddress:
+         {
+         relo = new (self()->trHeapMemory()) TR::BeforeBinaryEncodingExternalRelocation(
+            firstInstruction,
+            (uint8_t *)node->getSymbolReference(),
+            (uint8_t *)seqKind,
+            TR_MethodEnterExitHookAddress, self());
+         break;
+         }
+
+      case TR_CallsiteTableEntryAddress:
+         {
+         relo = new (self()->trHeapMemory()) TR::BeforeBinaryEncodingExternalRelocation(
+            firstInstruction,
+            (uint8_t *)node->getSymbolReference(),
+            (uint8_t *)seqKind,
+            TR_CallsiteTableEntryAddress, self());
+         break;
+         }
+
+      case TR_MethodTypeTableEntryAddress:
+         {
+         relo = new (self()->trHeapMemory()) TR::BeforeBinaryEncodingExternalRelocation(
+            firstInstruction,
+            (uint8_t *)node->getSymbolReference(),
+            (uint8_t *)seqKind,
+            TR_MethodTypeTableEntryAddress, self());
          break;
          }
       }
@@ -2152,6 +2204,33 @@ OMR::Power::CodeGenerator::addMetaDataForLoadIntConstantFixed(
                                                                                           (uint8_t *)recordInfo,
                                                                                           (TR_ExternalRelocationTargetKind)typeAddress, self()),
                                                                                           __FILE__, __LINE__, node);
+      }
+   else if (typeAddress == TR_MethodEnterExitHookAddress)
+      {
+      self()->addExternalRelocation(new (self()->trHeapMemory()) TR::ExternalOrderedPair32BitRelocation((uint8_t *)firstInstruction,
+                                                                                          (uint8_t *)secondInstruction,
+                                                                                          (uint8_t *)node->getSymbolReference(),
+                                                                                          (uint8_t *)orderedPairSequence2,
+                                                                                          (TR_ExternalRelocationTargetKind)TR_MethodEnterExitHookAddress, self()),
+                           __FILE__, __LINE__, node);
+      }
+   else if (typeAddress == TR_CallsiteTableEntryAddress)
+      {
+      self()->addExternalRelocation(new (self()->trHeapMemory()) TR::ExternalOrderedPair32BitRelocation((uint8_t *)firstInstruction,
+                                                                                          (uint8_t *)secondInstruction,
+                                                                                          (uint8_t *)node->getSymbolReference(),
+                                                                                          (uint8_t *)orderedPairSequence2,
+                                                                                          (TR_ExternalRelocationTargetKind)TR_CallsiteTableEntryAddress, self()),
+                           __FILE__, __LINE__, node);
+      }
+   else if (typeAddress == TR_MethodTypeTableEntryAddress)
+      {
+      self()->addExternalRelocation(new (self()->trHeapMemory()) TR::ExternalOrderedPair32BitRelocation((uint8_t *)firstInstruction,
+                                                                                          (uint8_t *)secondInstruction,
+                                                                                          (uint8_t *)node->getSymbolReference(),
+                                                                                          (uint8_t *)orderedPairSequence2,
+                                                                                          (TR_ExternalRelocationTargetKind)TR_MethodTypeTableEntryAddress, self()),
+                           __FILE__, __LINE__, node);
       }
    else if (typeAddress != -1)
       {
@@ -2416,6 +2495,8 @@ OMR::Power::CodeGenerator::supportsNonHelper(TR::SymbolReferenceTable::CommonNon
          result = self()->comp()->target().is64Bit();
          break;
          }
+      default:
+         break;
       }
 
    return result;

@@ -19,8 +19,8 @@
 * [2] https://openjdk.org/legal/assembly-exception.html
 *
 * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR
-* GPL-2.0 WITH Classpath-exception-2.0 OR
-* LicenseRef-GPL-2.0 WITH Assembly-exception
+* GPL-2.0-only WITH Classpath-exception-2.0 OR
+* GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ***********************************************************************
 
          TITLE 'omrgenerate_ieat_dump.s'
@@ -44,7 +44,7 @@ _TDUMP   EDCXPRLG BASEREG=8
 .JMP1    ANOP
 _TDUMP   CELQPRLG BASEREG=8
 * IEATDUMP macro will toast R1, so keep it in R3
-         LR    3,1
+         LGR   3,1
          USING IOPARMS,3
          CALL  BPX4ENV,                                                +
                (=A(ENV_TOGGLE_SEC),                                    +

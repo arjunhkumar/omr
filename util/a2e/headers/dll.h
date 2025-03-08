@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*
@@ -35,12 +35,11 @@
  * The compiler will find this header file in preference to the system one.
  * ===========================================================================
  */
-
+#include <dlfcn.h>
 #if __TARGET_LIB__ == 0X22080000                                   /*ibm@28725*/
 #include <//'PP.ADLE370.OS39028.SCEEH.H(dll)'>                     /*ibm@28725*/
 #else                                                              /*ibm@28725*/
-#include "prefixpath.h"
-#include PREFIXPATH(dll.h)                                      /*ibm@28725*/
+#include_next <dll.h>                                              /*ibm@28725*/
 #endif                                                             /*ibm@28725*/
 
 #if defined(IBM_ATOE)
@@ -51,7 +50,7 @@
 		#ifdef __cplusplus
                   extern "C" {
 		#endif
-	        dllhandle* atoe_dllload(char *);
+	        dllhandle* atoe_dllload(const char *);
 		#ifdef __cplusplus
                   }
 		#endif
@@ -67,7 +66,7 @@
                 #ifdef __cplusplus
                   extern "C" {
                 #endif 
-                void (*atoe_dllqueryfn(dllhandle* dllHandle, char* funcName)) ();
+                void (*atoe_dllqueryfn(dllhandle* dllHandle, const char* funcName)) ();
                 #ifdef __cplusplus
                   }
                 #endif

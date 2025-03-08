@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_CFG_INCL
@@ -35,7 +35,6 @@ namespace OMR { typedef OMR::CFG CFGConnector; }
 #include <stdint.h>
 #include <vector>
 #include "compile/Compilation.hpp"
-#include "cs2/listof.h"
 #include "env/TRMemory.hpp"
 #include "il/Node.hpp"
 #include "infra/Assert.hpp"
@@ -73,6 +72,7 @@ template <class T> class TR_Array;
 #define INTERP_CALLEE_COLD_BLOCK_COUNT 4
 #define REVERSE_ARRAYCOPY_COLD_BLOCK_COUNT 5
 #define MAX_COLD_BLOCK_COUNT 5
+#define NUMBER_BLOCK_FREQUENCIES 6
 
 #define MAX_WARM_BLOCK_COUNT ((MAX_BLOCK_COUNT + MAX_COLD_BLOCK_COUNT)/10)
 #define MAX_HOT_BLOCK_COUNT (2*MAX_WARM_BLOCK_COUNT)
@@ -356,6 +356,8 @@ class CFG
       IsOrphanedNode,
       IsOrphanedRegion
       };
+
+   static const char *blockFrequencyNames[];
 
 protected:
    TR::Compilation *_compilation;

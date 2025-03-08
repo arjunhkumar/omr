@@ -10,14 +10,14 @@ is available at https://www.apache.org/licenses/LICENSE-2.0.
 This Source Code may also be made available under the following
 Secondary Licenses when the conditions for such availability set
 forth in the Eclipse Public License, v. 2.0 are satisfied: GNU
-General Public License, version 2 with the GNU Classpath 
+General Public License, version 2 with the GNU Classpath
 Exception [1] and GNU General Public License, version 2 with the
 OpenJDK Assembly Exception [2].
 
 [1] https://www.gnu.org/software/classpath/license.html
 [2] https://openjdk.org/legal/assembly-exception.html
 
-SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 -->
 
 # Extensible Classes {#ExtensibleClasses}
@@ -323,4 +323,4 @@ ancestor, it can extend that class using its direct parent's namespace. This
 can lead to some hard-to-debug issues.
 
 More details about namespace aliases and the debate about their usage is
-tracked in [issue #527 on Github](https://github.com/eclipse/omr/issues/527).
+tracked in [issue #527 on Github](https://github.com/eclipse-omr/omr/issues/527).

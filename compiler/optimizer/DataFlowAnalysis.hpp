@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef DFA_INCL
@@ -749,6 +749,8 @@ class TR_LiveVariableInformation
                               bool includeParms = false,
                               bool ignoreOSRUses = false);
 
+   virtual void collectLiveVariableInformation();
+
    bool traceLiveVarInfo()           { return _traceLiveVariableInfo; }
 
    TR::Compilation *comp()            { return _compilation; }
@@ -778,14 +780,16 @@ class TR_LiveVariableInformation
                                          TR_BitVector *genSetInfo, TR_BitVector *killSetInfo,
                                          TR_BitVector *commonedLoads, vcount_t visitCount);
 
-   protected:
-   virtual void findUseOfLocal(TR::Node *node, int32_t blockNum,
-                       TR_BitVector **genSetInfo, TR_BitVector **killSetInfo,
-                       TR_BitVector *commonedLoads, bool movingForwardThroughTrees, vcount_t visitCount);
    private:
    void visitTreeForLocals(TR::Node *node, TR_BitVector **blockGenSetInfo, TR_BitVector *blockKillSetInfo,
                            bool movingForwardThroughTrees, bool visitEntireTree, vcount_t visitCount,
                            TR_BitVector *commonedLoads, bool belowCommonedNode);
+
+   protected:
+   virtual void findUseOfLocal(TR::Node *node, int32_t blockNum,
+                       TR_BitVector **genSetInfo, TR_BitVector **killSetInfo,
+                       TR_BitVector *commonedLoads, bool movingForwardThroughTrees, vcount_t visitCount);
+
 
    TR::Compilation *_compilation;
    TR_Memory *     _trMemory;
@@ -863,7 +867,7 @@ class TR_Liveness : public TR_BackwardUnionBitVectorAnalysis
    *
    * @return none
    */
-   virtual void perform(TR_Structure *rootStructure) {}
+   virtual void perform(TR_Structure *rootStructure);
 
    bool traceLiveness() { return _traceLiveness; }
 
@@ -875,7 +879,7 @@ class TR_Liveness : public TR_BackwardUnionBitVectorAnalysis
    virtual void analyzeTreeTopsInBlockStructure(TR_BlockStructure *);
    virtual bool postInitializationProcessing();
 
-   private:
+   protected:
 
    TR_LiveVariableInformation *_liveVariableInfo;
 

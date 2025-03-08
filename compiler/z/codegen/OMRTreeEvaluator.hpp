@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_Z_TREE_EVALUATOR_INCL
@@ -254,6 +254,42 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *MethodExitHookEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *PassThroughEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
+   /** \brief
+    *    This is a helper function used for floating point max/min operations
+    *    when SIMD instructions are available. +0.0 compares as strictly
+    *    greater than -0.0, and NaNs are returned unchanged if given
+    *    (the quiet bit is not set for Signalling NaNs).
+    *    Generates vector instructions.
+    *
+    *    \param node
+    *        The node to evaluate
+    *
+    *    \param cg
+    *       The code generator used to generate the instructions
+    *
+    *    \return
+    *        The register containing the result of the evaluation
+    *
+    */
+   static TR::Register *fpMinMaxVectorHelper(TR::Node *node, TR::CodeGenerator *cg);
+
+   /** \brief
+    *    This is a helper function used for integral and floating point max/min operations.
+    *    For floating points, +0.0 compares as strictly greater than -0.0, and NaNs are
+    *    returned unchanged if given (the quiet bit is not set for Signalling NaNs).
+    *
+    *    \param node
+    *        The node to evaluate
+    *
+    *    \param cg
+    *       The code generator used to generate the instructions
+    *
+    *    \return
+    *        The register containing the result of the evaluation
+    *
+    */
+   static TR::Register *xmaxxminHelper(TR::Node *node, TR::CodeGenerator *cg);
+
    // mask evaluators
    static TR::Register *mAnyTrueEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *mAllTrueEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -366,6 +402,32 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *vmxorEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vmfirstNonZeroEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
+   static TR::Register *vpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vexpandEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vshlEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmshlEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vshrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmshrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vushrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmushrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vrolEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmrolEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *mcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+
    static TR::Register *vDivOrRemHelper(TR::Node *node, TR::CodeGenerator *cg, bool isDivision);
    static TR::Register *vectorElementShiftHelper(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *inlineVectorUnaryOp(TR::Node * node, TR::CodeGenerator *cg, TR::InstOpCode::Mnemonic op);
@@ -472,6 +534,14 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *sbitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *ibitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *lbitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *bcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *scompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *icompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *lcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *bexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *sexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *iexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *lexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
    /**
     * Used when inlining Integer|Long.highestOneBit()
@@ -489,6 +559,16 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
     * or builtin_ctz/builtin_ctzll
     */
    static TR::Register *inlineNumberOfTrailingZeros(TR::Node *node, TR::CodeGenerator *cg, int32_t subfconst);
+
+   /**
+    * Used when inlining Integer|Long.compress
+    */
+   static TR::Register *inlineBitCompress(TR::Node *node, TR::CodeGenerator * cg, bool isLong);
+
+   /**
+    * Used when inlining Integer|Long.expand
+    */
+   static TR::Register *inlineBitExpand(TR::Node *node, TR::CodeGenerator * cg, bool isLong);
 
    static TR::Register *aconstEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *iconstEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -518,8 +598,6 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *dstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *bstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *sstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *ifstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *idstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *gotoEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *igotoEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *returnEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -1020,7 +1098,8 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
                                       TR::LabelSymbol *compareTarget = NULL,
                                       TR::Node *ificmpNode = NULL,
                                       bool needResultReg = true,
-                                      bool return102 = false);
+                                      bool return102 = false,
+                                      bool isArrayCmpLen = false);
 
    static TR::Register *arraytranslateEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *arraytranslateEncodeSIMDEvaluator(TR::Node *node, TR::CodeGenerator *cg, ArrayTranslateFlavor convType);
@@ -1029,6 +1108,7 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *long2StringEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *bitOpMemEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *arraycmpEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *arraycmplenEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *BBStartEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *BBEndEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
@@ -1053,6 +1133,10 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *lmaxEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *fmaxEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *dmaxEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *fmaxHelper(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *fminHelper(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *dmaxHelper(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *dminHelper(TR::Node *node, TR::CodeGenerator *cg);
 
    static TR::Register *evaluateNULLCHKWithPossibleResolve(TR::Node * node, bool needsResolve, TR::CodeGenerator * cg);
 

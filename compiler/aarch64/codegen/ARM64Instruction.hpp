@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef ARM64INSTRUCTION_INCL
@@ -2325,7 +2325,7 @@ class ARM64Trg1Src1ImmInstruction : public ARM64Trg1Src1Instruction
     * @brief Sets the N bit (bit 22)
     * @param[in] n : N bit value
     * @return N bit value
-    */ 
+    */
    bool setNbit(bool n) { return (_Nbit = n);}
 
    /**
@@ -4696,8 +4696,8 @@ class ARM64SynchronizationInstruction : public ARM64ImmInstruction
     * @param[in] cg : CodeGenerator
     */
    ARM64SynchronizationInstruction(TR::InstOpCode::Mnemonic op, TR::Node *node,
-                                    uint32_t imm, TR::CodeGenerator *cg)
-      : ARM64ImmInstruction(op, node, imm, cg)
+                                    TR::InstOpCode::AArch64BarrierLimitation lim, TR::CodeGenerator *cg)
+      : ARM64ImmInstruction(op, node, static_cast<uint32_t>(lim), cg)
       {
       }
 
@@ -4710,9 +4710,9 @@ class ARM64SynchronizationInstruction : public ARM64ImmInstruction
     * @param[in] cg : CodeGenerator
     */
    ARM64SynchronizationInstruction(TR::InstOpCode::Mnemonic op, TR::Node *node,
-                                    uint32_t imm, TR::Instruction *precedingInstruction,
-                                    TR::CodeGenerator *cg)
-      : ARM64ImmInstruction(op, node, imm, precedingInstruction, cg)
+                                    TR::InstOpCode::AArch64BarrierLimitation lim,
+                                    TR::Instruction *precedingInstruction, TR::CodeGenerator *cg)
+      : ARM64ImmInstruction(op, node, static_cast<uint32_t>(lim), precedingInstruction, cg)
       {
       }
 

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef SIMPLEREGEX_INCL
@@ -50,7 +50,7 @@ class SimpleRegex
 
    // Create a new regular expression
    //
-   static SimpleRegex *create(char *&s);
+   static SimpleRegex *create(const char *& s);
 
    // Check whether a string matches this regular expression
    //
@@ -139,15 +139,15 @@ class SimpleRegex
 
    private:
 
-   static Regex  *processRegex(char *&s, bool &foundError);
-   static Simple *processSimple(char *&s, TR_YesNoMaybe allowAlternates, bool &foundError);
+   static Regex  *processRegex(const char *&s, bool &foundError);
+   static Simple *processSimple(const char *&s, TR_YesNoMaybe allowAlternates, bool &foundError);
 
    Regex *_regex;
    bool   _negate;
 
    // Length and pointer to the original string that the regex was parsed from
    size_t _regexStrLen;
-   char *_regexStr;
+   const char *_regexStr;
    };
 
 }

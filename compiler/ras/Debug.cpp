@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "ras/Debug.hpp"
@@ -83,9 +83,10 @@
 #include "infra/Array.hpp"
 #include "infra/Assert.hpp"
 #include "infra/BitVector.hpp"
+#include "infra/CfgNode.hpp"
 #include "infra/List.hpp"
 #include "infra/SimpleRegex.hpp"
-#include "infra/CfgNode.hpp"
+#include "infra/String.hpp"
 #include "optimizer/Optimizations.hpp"
 #include "optimizer/Optimizer.hpp"
 #include "optimizer/PreExistence.hpp"
@@ -400,70 +401,6 @@ TR_Debug::addInstructionComment(TR::Instruction *instr, char * comment, ...)
       }
    }
 
-const char *
-TR_Debug::getDiagnosticFormat(const char *format, char *buffer, int32_t length)
-   {
-   if (!_comp->getOption(TR_MaskAddresses))
-      return format;
-
-   bool allowedToWrite = true;
-   bool sawPercentP = false;
-
-   int32_t j = 0;
-   const char *c = format;
-   for (; *c; c++, j++)
-      {
-      if (j >= length)
-         allowedToWrite = false;
-      if (allowedToWrite)
-         buffer[j] = *c;
-
-      if (*c == '%')
-         {
-         ++c; ++j;
-         const char *base = c;
-         while (*c == '*' || (*c >= '0' && *c <= '9'))
-            c++;
-
-         if (*c == 'p')
-            {
-            char s[] = ".0s*Masked*";
-            int32_t slen = sizeof(s)/sizeof(char);
-            if (j+slen >= length)
-               allowedToWrite = false;
-            if (allowedToWrite)
-               memcpy(&buffer[j], s, slen);
-            j+=slen-2;
-            sawPercentP = true;
-            }
-         else
-            {
-            if (j+c-base+1 >= length)
-               allowedToWrite = false;
-            if (allowedToWrite)
-               memcpy(&buffer[j], base, c-base+1);
-            j+=static_cast<int32_t>(c-base);
-            }
-         }
-      }
-
-   if (j >= length)
-      allowedToWrite = false;
-   if (allowedToWrite)
-      buffer[j] = 0; // null terminate
-   j++;
-
-
-   if (!sawPercentP)
-      return format;
-   if (allowedToWrite)
-      return buffer;
-
-   // allocate a jitMalloc buffer of the correct size
-   buffer = (char *) _comp->trMemory()->allocateHeapMemory(j);
-   return getDiagnosticFormat(format, buffer, j);
-   }
-
 bool
 TR_Debug::performTransformationImpl(bool canOmitTransformation, const char * format, ...)
    {
@@ -563,13 +500,10 @@ TR_Debug::performTransformationImpl(bool canOmitTransformation, const char * for
    else
       trfprintf(_file, "         ");
 
-
-   char buffer[200];
-
    va_list args;
    va_start(args,format);
 
-   TR::IO::vfprintf(_file, getDiagnosticFormat(format, buffer, sizeof(buffer)/sizeof(char)), args);
+   TR::IO::vfprintf(_file, format, args);
    va_end(args);
    trfflush(_file);
 
@@ -595,14 +529,13 @@ TR_Debug::vtrace(const char * format, va_list args)
    {
    if (_file != NULL)
       {
-      char buffer[256];
       if ((0 != TR::Options::_traceFileLength) &&
           (static_cast<int64_t>(TR::IO::ftell(_file)) > (static_cast<int64_t>(TR::Options::_traceFileLength) << 20)))
          {
          TR::IO::fseek(_file, 0, SEEK_SET); // rewind the trace file
          TR::IO::fprintf(_file, "Rewind trace file ...\n\n\n");
          }
-      TR::IO::vfprintf(_file, getDiagnosticFormat(format, buffer, sizeof(buffer)), args);
+      TR::IO::vfprintf(_file, format, args);
       trfflush(_file);
       }
    }
@@ -717,20 +650,10 @@ TR_Debug::printPrefix(TR::FILE *pOutFile, TR::Instruction *instr, uint8_t *curso
       int codeByteColumnWidth = TR::Compiler->debug.codeByteColumnWidth();
       int prefixWidth         = addressFieldWidth * 2 + codeByteColumnWidth + 12; // 8 bytes of offsets, 2 spaces, and opening and closing brackets
 
-      if (_comp->getOption(TR_MaskAddresses))
-         {
-         if (instr)
-            sprintf(prefix, "%*s %08x [%s]", addressFieldWidth, "*Masked*", offset, getName(instr));
-         else
-            sprintf(prefix, "%*s %08x %*s", addressFieldWidth, "*Masked*", offset, addressFieldWidth + 2, " ");
-         }
+      if (instr)
+         sprintf(prefix, POINTER_PRINTF_FORMAT " %08x [%s]", cursor, offset, getName(instr));
       else
-         {
-         if (instr)
-            sprintf(prefix, POINTER_PRINTF_FORMAT " %08x [%s]", cursor, offset, getName(instr));
-         else
-            sprintf(prefix, POINTER_PRINTF_FORMAT " %08x %*s", cursor, offset, addressFieldWidth + 2, " ");
-         }
+         sprintf(prefix, POINTER_PRINTF_FORMAT " %08x %*s", cursor, offset, addressFieldWidth + 2, " ");
 
       char *p0 = prefix;
       char *p1 = prefix + strlen(prefix);
@@ -764,7 +687,7 @@ TR_Debug::printPrefix(TR::FILE *pOutFile, TR::Instruction *instr, uint8_t *curso
       }
    else if (_registerAssignmentTraceFlags & TRACERA_IN_PROGRESS)
       {
-      char *spaces = "                                        ";
+      const char *spaces = "                                        ";
       int16_t padding = 30 - _registerAssignmentTraceCursor;
 
       if (padding < 0)
@@ -796,14 +719,8 @@ TR_Debug::printSnippetLabel(TR::FILE *pOutFile, TR::LabelSymbol *label, uint8_t 
 
    uint32_t offset = static_cast<uint32_t>(cursor - _comp->cg()->getCodeStart());
 
-   if (_comp->getOption(TR_MaskAddresses))
-      {
-      trfprintf(pOutFile, "\n\n%*s %08x %*s", TR::Compiler->debug.hexAddressFieldWidthInChars(), "*Masked*", offset, addressFieldWidth + codeByteColumnWidth + 2, " ");
-      }
-   else
-      {
-      trfprintf(pOutFile, "\n\n" POINTER_PRINTF_FORMAT " %08x %*s", cursor, offset, addressFieldWidth + codeByteColumnWidth + 2, " ");
-      }
+   trfprintf(pOutFile, "\n\n" POINTER_PRINTF_FORMAT " %08x %*s", cursor, offset, addressFieldWidth + codeByteColumnWidth + 2, " ");
+
    print(pOutFile, label);
    trfprintf(pOutFile, ":");
    if (comment1)
@@ -1053,7 +970,6 @@ TR_Debug::nodePrintAllFlags(TR::Node *node, TR_PrettyPrinterString &output)
    FLAG(chkSkipZeroInitialization, "skipZeroInit");
    FLAG(chkDontMoveUnderBranch, "dontMoveUnderBranch");
    FLAG(chkIsPrivatizedInlinerArg, "privatizedInlinerArg");
-   FLAG(chkArrayCmpLen, "arrayCmpLen");
    FLAG(chkArrayCmpSign, "arrayCmpSign");
    FLAG(chkXorBitOpMem, "SubOp=XOR");
    FLAG(chkOrBitOpMem, "SubOp=OR");
@@ -1237,7 +1153,7 @@ TR_Debug::print(TR::SymbolReference * symRef, TR_PrettyPrinterString& output, bo
          case TR::Symbol::IsShadow:
             if (sym->isNamedShadowSymbol() && sym->getNamedShadowSymbol()->getName() != NULL)
                {
-               symRefKind.appendf(" %s", sym->getNamedShadowSymbol()->getName());
+               symRefKind.appendf(" Named Shadow");
                symRefName.appendf(" %s", getName(symRef));
                }
             else
@@ -1279,7 +1195,20 @@ TR_Debug::print(TR::SymbolReference * symRef, TR_PrettyPrinterString& output, bo
 
        if(sym)
           {
-          output.appendf(" (%s)",TR::DataType::getName(sym->getDataType()));
+          output.appendf(" (%s",TR::DataType::getName(sym->getDataType()));
+
+          TR_OpaqueClassBlock *klass = sym->getDeclaredClass();
+          if (klass != NULL)
+             {
+             int32_t len = 0;
+             const char *className =
+                TR::Compiler->cls.classNameChars(_comp, klass, len);
+
+             output.appendf(": %p %.*s", klass, len, className);
+             }
+
+          output.appendf(")");
+
           if (sym->isVolatile())
              {
              output.appends(" [volatile]");
@@ -1314,6 +1243,12 @@ TR_Debug::print(TR::LabelSymbol * labelSymbol, TR_PrettyPrinterString& output)
    }
 
 const char *
+TR_Debug::getName(TR_YesNoMaybe value)
+   {
+   return (value == TR_yes) ? "TR_yes" : ((value == TR_no) ?  "TR_no" : "TR_maybe");
+   }
+
+const char *
 TR_Debug::getName(void * address, const char * prefix, uint32_t nextNumber, bool enumerate)
    {
    TR_ASSERT(_comp, "Required compilation object is NULL.\n");
@@ -1345,19 +1280,13 @@ TR_Debug::getName(void * address, const char * prefix, uint32_t nextNumber, bool
       }
 
    char *buf = (char *)_comp->trMemory()->allocateHeapMemory(20 + TR::Compiler->debug.pointerPrintfMaxLenInChars());
-   if (_comp->getOption(TR_MaskAddresses))
-      {
-      sprintf(buf, "%*s", TR::Compiler->debug.hexAddressFieldWidthInChars(), "*Masked*");
-      return buf;
-      }
+
+   if (address)
+      sprintf(buf, POINTER_PRINTF_FORMAT, address);
    else
-      {
-      if (address)
-         sprintf(buf, POINTER_PRINTF_FORMAT, address);
-      else
-         sprintf(buf, "%0*d", TR::Compiler->debug.hexAddressWidthInChars(), 0);
-      return buf;
-      }
+      sprintf(buf, "%0*d", TR::Compiler->debug.hexAddressWidthInChars(), 0);
+   return buf;
+
    }
 
 const char *
@@ -1435,10 +1364,6 @@ TR_Debug::getName(TR::CFGNode * node)
       {
       sprintf(buf, "block_%d", node->getNumber());
       }
-   else if (_comp->getOption(TR_MaskAddresses))
-      {
-      sprintf(buf, "%*s", TR::Compiler->debug.hexAddressWidthInChars(), "*Masked*");
-      }
    else
       {
       sprintf(buf, POINTER_PRINTF_FORMAT, node);
@@ -1490,15 +1415,9 @@ TR_Debug::getName(TR::LabelSymbol *labelSymbol)
       char *buf = (char *)_comp->trMemory()->allocateHeapMemory(20+TR::Compiler->debug.pointerPrintfMaxLenInChars());
 
       if (labelSymbol->getSnippet())
-         if (_comp->getOption(TR_MaskAddresses))
-            sprintf(buf, "Snippet Label [*Masked*]");
-         else
-            sprintf(buf, "Snippet Label [" POINTER_PRINTF_FORMAT "]", labelSymbol);
+         sprintf(buf, "Snippet Label [" POINTER_PRINTF_FORMAT "]", labelSymbol);
       else
-         if (_comp->getOption(TR_MaskAddresses))
-            sprintf(buf, "Label [*Masked*]");
-         else
-            sprintf(buf, "Label [" POINTER_PRINTF_FORMAT "]", labelSymbol);
+         sprintf(buf, "Label [" POINTER_PRINTF_FORMAT "]", labelSymbol);
 
       _comp->getToStringMap().Add((void *)labelSymbol, buf);
       return buf;
@@ -1599,6 +1518,8 @@ TR_Debug::getName(TR::SymbolReference * symRef)
             return "<reverse-store>";
          case TR::SymbolReferenceTable::arrayCmpSymbol:
             return "<arraycmp>";
+         case TR::SymbolReferenceTable::arrayCmpLenSymbol:
+            return "<arraycmplen>";
          case TR::SymbolReferenceTable::currentTimeMaxPrecisionSymbol:
             return "<currentTimeMaxPrecision>";
          case TR::SymbolReferenceTable::encodeASCIISymbol:
@@ -1612,45 +1533,59 @@ TR_Debug::getName(TR::SymbolReference * symRef)
          case TR::SymbolReferenceTable::synchronizedFieldLoadSymbol:
             return "<synchronizedFieldLoad>";
          case TR::SymbolReferenceTable::atomicAddSymbol:
-             return "<atomicAdd>";
+            return "<atomicAdd>";
          case TR::SymbolReferenceTable::atomicFetchAndAddSymbol:
-             return "<atomicFetchAndAdd>";
+            return "<atomicFetchAndAdd>";
          case TR::SymbolReferenceTable::atomicFetchAndAdd32BitSymbol:
-             return "<atomicFetchAndAdd32Bit>";
+            return "<atomicFetchAndAdd32Bit>";
          case TR::SymbolReferenceTable::atomicFetchAndAdd64BitSymbol:
-             return "<atomicFetchAndAdd64Bit>";
+            return "<atomicFetchAndAdd64Bit>";
          case TR::SymbolReferenceTable::atomicSwapSymbol:
-             return "<atomicSwap>";
+            return "<atomicSwap>";
          case TR::SymbolReferenceTable::atomicSwap32BitSymbol:
-             return "<atomicSwap32Bit>";
+            return "<atomicSwap32Bit>";
          case TR::SymbolReferenceTable::atomicSwap64BitSymbol:
-             return "<atomicSwap64Bit>";
+            return "<atomicSwap64Bit>";
          case TR::SymbolReferenceTable::atomicCompareAndSwapReturnStatusSymbol:
-             return "<atomicCompareAndSwapReturnStatus>";
+            return "<atomicCompareAndSwapReturnStatus>";
          case TR::SymbolReferenceTable::atomicCompareAndSwapReturnValueSymbol:
-             return "<atomicCompareAndSwapReturnValue>";
+            return "<atomicCompareAndSwapReturnValue>";
          case TR::SymbolReferenceTable::potentialOSRPointHelperSymbol:
-             return "<potentialOSRPointHelper>";
+            return "<potentialOSRPointHelper>";
          case TR::SymbolReferenceTable::osrFearPointHelperSymbol:
-             return "<osrFearPointHelper>";
+            return "<osrFearPointHelper>";
          case TR::SymbolReferenceTable::eaEscapeHelperSymbol:
-             return "<eaEscapeHelper>";
+            return "<eaEscapeHelper>";
          case TR::SymbolReferenceTable::j9VMThreadTempSlotFieldSymbol:
-             return "<j9VMThreadTempSlotFieldSymbol>";
+            return "<j9VMThreadTempSlotFieldSymbol>";
          case TR::SymbolReferenceTable::computedStaticCallSymbol:
-             return "<computedStaticCallSymbol>";
+            return "<computedStaticCall>";
          case TR::SymbolReferenceTable::j9VMThreadFloatTemp1Symbol:
-             return "<j9VMThreadFloatTemp1Symbol>";
+            return "<j9VMThreadFloatTemp1>";
          case TR::SymbolReferenceTable::objectEqualityComparisonSymbol:
-             return "<objectEqualityComparison>";
+            return "<objectEqualityComparison>";
          case TR::SymbolReferenceTable::objectInequalityComparisonSymbol:
-             return "<objectInequalityComparison>";
+            return "<objectInequalityComparison>";
          case TR::SymbolReferenceTable::nonNullableArrayNullStoreCheckSymbol:
-             return "<nonNullableArrayNullStoreCheck>";
+            return "<nonNullableArrayNullStoreCheck>";
+         case TR::SymbolReferenceTable::loadFlattenableArrayElementNonHelperSymbol:
+            return "<loadFlattenableArrayElementNonHelper>";
+         case TR::SymbolReferenceTable::storeFlattenableArrayElementNonHelperSymbol:
+            return "<storeFlattenableArrayElementNonHelper>";
+         case TR::SymbolReferenceTable::isIdentityObjectNonHelperSymbol:
+            return "<isIdentityObject>";
          case TR::SymbolReferenceTable::J9JNIMethodIDvTableIndexFieldSymbol:
-             return "<J9JNIMethodIDvTableIndexFieldSymbol>";
+            return "<J9JNIMethodIDvTableIndexField>";
+         case TR::SymbolReferenceTable::contiguousArrayDataAddrFieldSymbol:
+            return "<contiguousArrayDataAddrField>";
          case TR::SymbolReferenceTable::defaultValueSymbol:
-             return "<defaultValue>";
+            return "<defaultValue>";
+         case TR::SymbolReferenceTable::jitDispatchJ9MethodSymbol:
+            return "<jitDispatchJ9Method>";
+         case TR::SymbolReferenceTable::jProfileValueSymbol:
+            return "<jProfileValue>";
+         case TR::SymbolReferenceTable::jProfileValueWithNullCHKSymbol:
+            return "<jProfileValueWithNullCHK>";
          }
       }
 
@@ -1765,10 +1700,7 @@ TR_Debug::getAutoName(TR::SymbolReference * symRef)
       else
          sprintf(symName, "#SPILL%zu_%d", symRef->getSymbol()->getSize(), symRef->getReferenceNumber());
 
-      if (_comp->getOption(TR_MaskAddresses))
-         sprintf(name, "<%s *Masked*>", symName);
-      else
-         sprintf(name, "<%s " POINTER_PRINTF_FORMAT ">", symName, symRef->getSymbol());
+      sprintf(name, "<%s " POINTER_PRINTF_FORMAT ">", symName, symRef->getSymbol());
       }
    else if (symRef->isTempVariableSizeSymRef())
       {
@@ -1783,7 +1715,7 @@ TR_Debug::getAutoName(TR::SymbolReference * symRef)
    else if (slot < getOwningMethodSymbol(symRef)->getFirstJitTempIndex())
       {
       int debugNameLen;
-      char *debugName = getOwningMethod(symRef)->localName(slot, 0, debugNameLen, comp()->trMemory()); // TODO: Proper bcIndex somehow; TODO: proper length
+      const char *debugName = getOwningMethod(symRef)->localName(slot, 0, debugNameLen, comp()->trMemory()); // TODO: Proper bcIndex somehow; TODO: proper length
       if (!debugName)
          {
          debugName = "";
@@ -1830,8 +1762,8 @@ TR_Debug::getParmName(TR::SymbolReference * symRef)
    int32_t debugNameLen, signatureLen;
    int32_t slot = symRef->getCPIndex();
    const char * s = symRef->getSymbol()->castToParmSymbol()->getTypeSignature(signatureLen);
-   char *debugName = getOwningMethod(symRef)->localName(slot, 0, debugNameLen, comp()->trMemory()); // TODO: Proper bcIndex somehow; TODO: proper length
-   char * buf;
+   const char *debugName = getOwningMethod(symRef)->localName(slot, 0, debugNameLen, comp()->trMemory()); // TODO: Proper bcIndex somehow; TODO: proper length
+   char *buf;
 
    if (!debugName)
       {
@@ -1895,7 +1827,7 @@ TR_Debug::getStaticName(TR::SymbolReference * symRef)
       if (!sym->addressIsCPIndexOfStatic() && staticAddress)
          {
          int32_t len;
-         char * name = TR::Compiler->cls.classNameChars(comp(), symRef, len);
+         const char *name = TR::Compiler->cls.classNameChars(comp(), symRef, len);
          if (name)
             {
             char * s = (char *)_comp->trMemory()->allocateHeapMemory(len+1);
@@ -1907,103 +1839,114 @@ TR_Debug::getStaticName(TR::SymbolReference * symRef)
       }
    else if (sym->isConstantPoolAddress())
       return "<constant pool address>";
-   else if (symRef->getCPIndex() >= 0)
+
+   if (sym->isAddressOfClassObject())
+      return "<address of class object>";
+
+   if (sym->isConstString())
       {
-      if (sym->isAddressOfClassObject())
-         return "<address of class object>";
-
-      if (sym->isConstString())
-         {
-         TR::StackMemoryRegion stackMemoryRegion(*comp()->trMemory());
-         char *contents = NULL;
-         intptr_t length = 0, prefixLength = 0, suffixOffset = 0;
-         char *etc = "";
-         const intptr_t LENGTH_LIMIT=80;
-         const intptr_t PIECE_LIMIT=20;
-
 #ifdef J9_PROJECT_SPECIFIC
-         TR::VMAccessCriticalSection getStaticNameCriticalSection(comp(),
-                                                                   TR::VMAccessCriticalSection::tryToAcquireVMAccess);
-         if (!symRef->isUnresolved() && getStaticNameCriticalSection.acquiredVMAccess())
+      TR::VMAccessCriticalSection getStaticNameCriticalSection(comp(),
+                                                                TR::VMAccessCriticalSection::tryToAcquireVMAccess);
+      if (!symRef->isUnresolved() && getStaticNameCriticalSection.acquiredVMAccess())
+         {
+         uintptr_t stringLocation = (uintptr_t)sym->castToStaticSymbol()->getStaticAddress();
+         if (stringLocation)
             {
-            uintptr_t stringLocation = (uintptr_t)sym->castToStaticSymbol()->getStaticAddress();
-            if (stringLocation)
+            uintptr_t string = comp()->fej9()->getStaticReferenceFieldAtAddress(stringLocation);
+            uint64_t length64 = comp()->fej9()->getStringUTF8UnabbreviatedLength(string);
+            if (length64 >= 1024)
                {
-               uintptr_t string = comp()->fej9()->getStaticReferenceFieldAtAddress(stringLocation);
-               length = comp()->fej9()->getStringUTF8Length(string);
-               contents = (char*)comp()->trMemory()->allocateMemory(length+1, stackAlloc, TR_MemoryBase::UnknownType);
-               comp()->fej9()->getStringUTF8(string, contents, length+1);
-
-               //
-               // We don't want to mess up the logs too much.  Make sure the
-               // strings aren't too ugly.
-               //
-
-               // Use ellipsis if the string is too long
-               //
-               if (length <= LENGTH_LIMIT)
-                  {
-                  prefixLength = suffixOffset = length;
-                  }
-               else
-                  {
-                  prefixLength = PIECE_LIMIT;
-                  suffixOffset = length - PIECE_LIMIT;
-                  etc = "\"...\"";
-                  }
-
-               // Stop before any non-printable characters (like newlines or UTF8 weirdness)
-               //
-               intptr_t i;
-               for (i=0; i < prefixLength; i++)
-                  if (!isprint(contents[i]))
-                     {
-                     prefixLength = i;
-                     etc = "\"...\"";
-                     break;
-                     }
-               for (i = length-1; i > suffixOffset; i--)
-                  if (!isprint(contents[i]))
-                     {
-                     suffixOffset = i;
-                     etc = "\"...\"";
-                     break;
-                     }
+               // Don't bother converting very long strings to UTF8 just to
+               // trace the first few and last few characters.
+               return "<string (long text omitted)>";
                }
-            char *result = (char*)_comp->trMemory()->allocateHeapMemory(length+20);
-            sprintf(result, "<string \"%.*s%s%s\">", (int)prefixLength, contents, etc, contents+suffixOffset);
+
+            TR::StackMemoryRegion stackMemoryRegion(*comp()->trMemory());
+            size_t length = (size_t)length64;
+            char *contents = (char*)comp()->trMemory()->allocateMemory(
+               length+1, stackAlloc, TR_MemoryBase::UnknownType);
+
+            comp()->fej9()->getStringUTF8(string, contents, length+1);
+
+            //
+            // We don't want to mess up the logs too much.  Make sure the
+            // strings aren't too ugly.
+            //
+
+            // Use ellipsis if the string is too long
+            const size_t LENGTH_LIMIT = 80;
+            size_t prefixLength = length;
+            size_t suffixLength = 0;
+            const char *etc = "";
+            size_t etcLength = 0;
+            if (length > LENGTH_LIMIT)
+               {
+               etc = "\"...\"";
+               etcLength = 5;
+               suffixLength = (LENGTH_LIMIT - etcLength) / 2;
+               prefixLength = LENGTH_LIMIT - etcLength - suffixLength;
+               }
+
+            // Replace unprintable characters with ?
+            for (size_t i = 0; i < prefixLength; i++)
+               {
+               if (!isprint(contents[i]))
+                  {
+                  contents[i] = '?';
+                  }
+               }
+
+            for (size_t i = length - suffixLength; i < length; i++)
+               {
+               if (!isprint(contents[i]))
+                  {
+                  contents[i] = '?';
+                  }
+               }
+
+            // 11 for '<string "">', 1 for terminating NUL.
+            size_t resultSize = prefixLength + etcLength + suffixLength + 11 + 1;
+            char *result = (char*)_comp->trMemory()->allocateHeapMemory(resultSize);
+            TR::snprintfNoTrunc(
+               result,
+               resultSize,
+               "<string \"%.*s%s%s\">",
+               (int)prefixLength,
+               contents,
+               etc,
+               contents + (length - suffixLength));
+
             return result;
             }
+         }
 #endif
-         return "<string>";
-         }
-
-      if (sym->isConstMethodType())
-         return "<method type>"; // TODO: Print the signature
-
-      if (sym->isConstMethodHandle())
-         return "<method handle>"; // TODO: Print some kind of identification
-
-      if (sym->isConstObjectRef())
-         return "<constant object ref>";
-
-      if (sym->isConst())
-         return "<constant>";
-
-      // Value Type default value instance slot address
-      if (sym->isStaticDefaultValueInstance() && staticAddress)
-         {
-         if (_comp->getOption(TR_MaskAddresses))
-            return "*Masked*";
-
-         const uint8_t EXTRA_SPACE = 5;
-         char * name = (char *)_comp->trMemory()->allocateHeapMemory(TR::Compiler->debug.pointerPrintfMaxLenInChars()+EXTRA_SPACE);
-         sprintf(name, POINTER_PRINTF_FORMAT, staticAddress);
-         return name;
-         }
-
-      return getOwningMethod(symRef)->staticName(symRef->getCPIndex(), comp()->trMemory());
+      return "<string>";
       }
+
+   if (sym->isConstMethodType())
+      return "<method type>"; // TODO: Print the signature
+
+   if (sym->isConstMethodHandle())
+      return "<method handle>"; // TODO: Print some kind of identification
+
+   if (sym->isConstObjectRef())
+      return "<constant object ref>";
+
+   if (sym->isConst())
+      return "<constant>";
+
+   // Value Type default value instance slot address
+   if (sym->isStaticDefaultValueInstance() && staticAddress)
+      {
+      const uint8_t EXTRA_SPACE = 5;
+      char * name = (char *)_comp->trMemory()->allocateHeapMemory(TR::Compiler->debug.pointerPrintfMaxLenInChars()+EXTRA_SPACE);
+      sprintf(name, POINTER_PRINTF_FORMAT, staticAddress);
+      return name;
+      }
+
+   if (symRef->getCPIndex() >= 0)
+      return getOwningMethod(symRef)->staticName(symRef->getCPIndex(), comp()->trMemory());
 
    if (_comp->getSymRefTab()->isVtableEntrySymbolRef(symRef))
       return "<class_loader>";
@@ -2032,10 +1975,7 @@ TR_Debug::getStaticName(TR::SymbolReference * symRef)
    if (staticAddress)
       {
       char * name = (char *)_comp->trMemory()->allocateHeapMemory(TR::Compiler->debug.pointerPrintfMaxLenInChars()+5);
-      if (_comp->getOption(TR_MaskAddresses))
-         sprintf(name, "*Masked*");
-      else
-         sprintf(name, POINTER_PRINTF_FORMAT, staticAddress);
+      sprintf(name, POINTER_PRINTF_FORMAT, staticAddress);
       return name;
       }
 
@@ -2056,7 +1996,7 @@ static const char *commonNonhelperSymbolNames[] =
    "<componentClass>",
    "<componentClassAsPrimitive>",
    "<isArray>",
-   "<isClassAndDepthFlags>",
+   "<isClassDepthAndFlags>",
    "<initializeStatusFromClass>",
    "<isClassFlags>",
    "<vft>",
@@ -2091,6 +2031,7 @@ static const char *commonNonhelperSymbolNames[] =
    "<osrScratchBuffer>",
    "<osrFrameIndex>",
    "<osrReturnAddress>",
+   "<contiguousArrayDataAddrField>",
    "<potentialOSRPointHelper>",
    "<osrFearPointHelper>",
    "<eaEscapeHelper>",
@@ -2112,6 +2053,9 @@ static const char *commonNonhelperSymbolNames[] =
    "<objectEqualityComparison>",
    "<objectInequalityComparison>",
    "<nonNullableArrayNullStoreCheck>",
+   "<loadFlattenableArrayElementNonHelper>",
+   "<storeFlattenableArrayElementNonHelper>",
+   "<isIdentityObject>",
    "<synchronizedFieldLoad>",
    "<atomicAdd>",
    "<atomicFetchAndAdd>",
@@ -2128,7 +2072,8 @@ static const char *commonNonhelperSymbolNames[] =
    "<computedStaticCallSymbol>",
    "<j9VMThreadFloatTemp1>",
    "<J9JNIMethodIDvTableIndexFieldSymbol>",
-   "<defaultValue>"
+   "<defaultValue>",
+   "<jitDispatchJ9Method>"
    };
 
 const char *
@@ -2647,8 +2592,8 @@ TR_Debug::dumpMixedModeDisassembly()
          n = inst->getNode();
 
          trfprintf(pOutFile, "\n\n");
-         char * indent = (char *)_comp->trMemory()->allocateHeapMemory(6 + 3*(_comp->getMaxInlineDepth()+1));
-         printByteCodeStack(n->getInlinedSiteIndex(), n->getByteCodeIndex(), indent);
+         size_t indentLen = 0;
+         printByteCodeStack(n->getInlinedSiteIndex(), n->getByteCodeIndex(), &indentLen);
          }
 
       print(pOutFile, inst);
@@ -2821,25 +2766,6 @@ TR_Debug::print(TR::FILE *pOutFile, TR::list<TR::Snippet*> & snippetList)
       _comp->cg()->dumpDataSnippets(pOutFile);
    }
 
-
-void
-TR_Debug::print(TR::FILE *pOutFile, List<TR::Snippet> & snippetList)
-   {
-   if (pOutFile == NULL)
-      return;
-
-   ListIterator<TR::Snippet> snippets(&snippetList);
-   for (TR::Snippet * snippet = snippets.getFirst(); snippet; snippet = snippets.getNext())
-      {
-      print(pOutFile, snippet);
-      }
-
-   if (_comp->cg()->hasDataSnippets())
-      _comp->cg()->dumpDataSnippets(pOutFile);
-
-   trfprintf(pOutFile, "\n");
-   }
-
 const char *
 TR_Debug::getName(TR::Snippet *snippet)
    {
@@ -3009,10 +2935,7 @@ TR_Debug::getName(TR::Register *reg, TR_RegisterSizes size)
    else
       {
       char *buf = (char *)_comp->trMemory()->allocateHeapMemory(maxPrefixSize + 6 + TR::Compiler->debug.pointerPrintfMaxLenInChars() + 1);
-      if (_comp->getOption(TR_MaskAddresses))
-         sprintf(buf, "%s%s_*Masked*", prefix, getRegisterKindName(reg->getKind()));
-      else
-         sprintf(buf, "%s%s_" POINTER_PRINTF_FORMAT, prefix, getRegisterKindName(reg->getKind()), reg);
+      sprintf(buf, "%s%s_" POINTER_PRINTF_FORMAT, prefix, getRegisterKindName(reg->getKind()), reg);
       _comp->getToStringMap().Add((void *)reg, buf);
       return buf;
       }
@@ -3601,7 +3524,7 @@ TR_Debug::dump(TR::FILE *pOutFile, TR_CHTable * chTable)
          TR_OpaqueClassBlock * clazz = chTable->_classes->element(i);
          int32_t len;
 
-         char *sig = TR::Compiler->cls.classNameChars(comp(), clazz, len);
+         const char *sig = TR::Compiler->cls.classNameChars(comp(), clazz, len);
 
          if (len>255) len = 255;
          strncpy(buf, sig, len);
@@ -3676,6 +3599,7 @@ TR_Debug::getRuntimeHelperName(int32_t index)
          case TR_arrayBoundsCheck:          return "jitThrowArrayIndexOutOfBounds";
          case TR_divCheck:                  return "jitThrowArithmeticException";
          case TR_arrayStoreException:       return "jitThrowArrayStoreException";
+         case TR_identityException:         return "jitThrowIdentityException";
          case TR_typeCheckArrayStore:       return "jitTypeCheckArrayStore";
          case TR_softwareReadBarrier:       return "jitSoftwareReadBarrier";
          case TR_writeBarrierStore:         return "jitWriteBarrierStore";
@@ -3801,12 +3725,6 @@ TR_Debug::getRuntimeHelperName(int32_t index)
             case TR_IA32double2LongSSE:                               return "__SSEdouble2LongIA32";
             case TR_IA32jitCollapseJNIReferenceFrame:                 return "_jitCollapseJNIReferenceFrame";
 
-            case TR_IA32compressString:                               return "_compressString";
-            case TR_IA32compressStringNoCheck:                        return "_compressStringNoCheck";
-            case TR_IA32compressStringJ:                              return "_compressStringJ";
-            case TR_IA32compressStringNoCheckJ:                       return "_compressStringNoCheckJ";
-            case TR_IA32andORString:                                  return "_andORString";
-
             case TR_IA32samplingRecompileMethod:                      return "__samplingRecompileMethod";
             case TR_IA32countingRecompileMethod:                      return "__countingRecompileMethod";
             case TR_IA32samplingPatchCallSite:                        return "__samplingPatchCallSite";
@@ -3827,12 +3745,6 @@ TR_Debug::getRuntimeHelperName(int32_t index)
             case TR_AMD64icallVMprJavaSendVirtualF:                   return "_icallVMprJavaSendVirtualF";
             case TR_AMD64icallVMprJavaSendVirtualD:                   return "_icallVMprJavaSendVirtualD";
             case TR_AMD64jitCollapseJNIReferenceFrame:                return "_jitCollapseJNIReferenceFrame";
-
-            case TR_AMD64compressString:                               return "_compressString";
-            case TR_AMD64compressStringNoCheck:                        return "_compressStringNoCheck";
-            case TR_AMD64compressStringJ:                              return "_compressStringJ";
-            case TR_AMD64compressStringNoCheckJ:                       return "_compressStringNoCheckJ";
-            case TR_AMD64andORString:                                  return "_andORString";
 
             case TR_AMD64samplingRecompileMethod:                     return "__samplingRecompileMethod";
             case TR_AMD64countingRecompileMethod:                     return "__countingRecompileMethod";
@@ -3876,7 +3788,7 @@ TR_Debug::getRuntimeHelperName(int32_t index)
          case TR_PPCrevertToInterpreterGlue:                       return "_revertToInterpreterGlue";
          case TR_PPCarrayTranslateTRTO:                            return "__arrayTranslateTRTO (ISO8859_1 & ASCII)";
          case TR_PPCarrayTranslateTRTO255:                         return "__arrayTranslateTRTO255 (ISO8859_1)";
-         case TR_PPCarrayTranslateTROT255:                         return "__arrayTranslateTRTO255 (ISO8859_1)";
+         case TR_PPCarrayTranslateTROT255:                         return "__arrayTranslateTROT255 (ISO8859_1)";
          case TR_PPCarrayTranslateTROT:                            return "__arrayTranslateTROT (ASCII)";
 
          case TR_PPCicallVMprJavaSendVirtual0:                     return "icallVMprJavaSendVirtual0";
@@ -3927,12 +3839,6 @@ TR_Debug::getRuntimeHelperName(int32_t index)
          case TR_PPCencodeUTF16Big:                                return "__encodeUTF16Big";
          case TR_PPCencodeUTF16Little:                             return "__encodeUTF16Little";
 
-         case TR_PPCcompressString:                                 return "__compressString";
-         case TR_PPCcompressStringNoCheck:                          return "__compressStringNoCheck";
-         case TR_PPCcompressStringJ:                                return "__compressStringJ";
-         case TR_PPCcompressStringNoCheckJ:                         return "__compressStringNoCheckJ";
-         case TR_PPCandORString:                                    return "__andORString";
-
          case TR_PPCreferenceArrayCopy:                            return "__referenceArrayCopy";
          case TR_PPCgeneralArrayCopy:                              return "__generalArrayCopy";
          case TR_PPCsamplingRecompileMethod:                       return "__samplingRecompileMethod";
@@ -3954,6 +3860,8 @@ TR_Debug::getRuntimeHelperName(int32_t index)
          case TR_PPCAESCBCEncrypt:                                 return "PPCAESCBCEncrypt";
          case TR_PPCAESKeyExpansion:                               return "PPCAESKeyExpansion";
          case TR_PPCcrc32_vpmsum:                                  return "PPCcrc32_vpmsum";
+         case TR_PPCcrc32_no_vpmsum:                               return "PPCcrc32_no_vpmsum";
+         case TR_PPCcrc32_oneByte:                                 return "PPCcrc32_oneByte";
          }
       }
 #elif defined (TR_TARGET_S390)
@@ -4224,17 +4132,12 @@ TR_Debug::getRuntimeHelperName(int32_t index)
          case TR_ARM64arrayCopy:                                   return "__arrayCopy";
          case TR_ARM64forwardArrayCopy:                            return "__forwardArrayCopy";
          case TR_ARM64backwardArrayCopy:                           return "__backwardArrayCopy";
-         case TR_ARM64forwardQuadWordArrayCopy:                    return "__fwQuadWordArrayCopy";
-         case TR_ARM64forwardDoubleWordArrayCopy:                  return "__fwDoubleWordArrayCopy";
-         case TR_ARM64forwardWordArrayCopy:                        return "__fwWordArrayCopy";
-         case TR_ARM64forwardHalfWordArrayCopy:                    return "__fwHalfWordArrayCopy";
-         case TR_ARM64backwardQuadWordArrayCopy:                   return "__bwQuadWordArrayCopy";
-         case TR_ARM64backwardDoubleWordArrayCopy:                 return "__bwDoubleWordArrayCopy";
-         case TR_ARM64backwardWordArrayCopy:                       return "__bwWordArrayCopy";
-         case TR_ARM64backwardHalfWordArrayCopy:                   return "__bwHalfWordArrayCopy";
          case TR_ARM64interfaceCompleteSlot2:                      return "_interfaceCompleteSlot2";
          case TR_ARM64interfaceSlotsUnavailable:                   return "_interfaceSlotsUnavailable";
-         case TR_ARM64PatchGCRHelper:                              return "_patchGCRHelper" ;
+         case TR_ARM64PatchGCRHelper:                              return "_patchGCRHelper";
+         case TR_ARM64arrayTranslateTRTO:                          return "__arrayTranslateTRTO";
+         case TR_ARM64arrayTranslateTRTO255:                       return "__arrayTranslateTRTO255";
+         case TR_ARM64arrayTranslateTROTNoBreak:                   return "__arrayTranslateTROTNoBreak";
          }
       }
 #endif
@@ -4924,18 +4827,18 @@ void TR_Debug::setupDebugger(void *addr)
          char cfname[20];
          FILE *cf;
          char pp[20];
-         char * Argv[20];
+         char *Argv[20];
 
          yield();
-         sprintf(cfname, "_%ld_", getpid());
-         sprintf(pp,"%ld", ppid);
-         Argv[1] = "-a";
+         sprintf(cfname, "_%" OMR_PRId64 "_", (int64_t)getpid());
+         sprintf(pp, "%" OMR_PRId64, (int64_t)ppid);
+         Argv[1] = (char *)"-a";
          Argv[2] = pp;
          Argv[3] = NULL;
 
          if ((Argv[0] = ::feGetEnv("TR_DEBUGGER")) == NULL)
             {
-            Argv[0] = "/usr/bin/dbx";
+            Argv[0] = (char *)"/usr/bin/dbx";
             if ((cf = fopen(cfname, "wb+")) == 0)
               cfname[0] = '\0';
             else
@@ -4947,7 +4850,7 @@ void TR_Debug::setupDebugger(void *addr)
                fprintf(cf, "cont SIGCONT\n");
                fclose(cf);
 
-               Argv[3] = "-c";
+               Argv[3] = (char *)"-c";
                Argv[4] = cfname;
                Argv[5] = NULL;
               }
@@ -5064,7 +4967,8 @@ void TR_Debug::setupDebugger(void *startaddr, void *endaddr, bool before)
          Argv[0] = "/tr/zos-tools/bin/dbxattach";
          // for break_before, although command file is always the same,
          // we generate it dynamically for consistency with other platforms
-         if (cf = fopen(cfname, "wb+"))
+         cf = fopen(cfname, "wb+");
+         if (NULL != cf)
             {
             fprintf(cf, "set $unsafebps\n");
             fprintf(cf, "set $unsafegoto\n");
@@ -5095,7 +4999,8 @@ void TR_Debug::setupDebugger(void *startaddr, void *endaddr, bool before)
             fclose(cf);
             }
          // check for dbx that cfname file could be read (dbx does not do this check)
-         if (cf = fopen(cfname, "r"))
+         cf = fopen(cfname, "r");
+         if (NULL != cf)
             {
             struct inheritance inh = { 0 }; /* use all the default inheritance stuff */
             int fdCount = 0; /* inherit all file descriptors from parent */

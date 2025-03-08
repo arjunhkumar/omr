@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef omrportpg_h
@@ -85,6 +85,7 @@ typedef struct OMRPortPlatformGlobals {
 	char iptTtoken[TTOKEN_BUF_SZ];
 #endif /* defined(OMR_ENV_DATA64) */
 	uintptr_t criuSupportFlags;
+	uintptr_t mem32BitFlags;
 } OMRPortPlatformGlobals;
 
 #define PPG_si_osType (portLibrary->portGlobals->platformGlobals.si_osType)
@@ -110,5 +111,7 @@ typedef struct OMRPortPlatformGlobals {
 #define PPG_stfleCache (portLibrary->portGlobals->platformGlobals.stfleCache)
 
 #define PPG_criuSupportFlags (portLibrary->portGlobals->platformGlobals.criuSupportFlags)
+
+#define PPG_mem32BitFlags (portLibrary->portGlobals->platformGlobals.mem32BitFlags)
 
 #endif /* omrportpg_h */

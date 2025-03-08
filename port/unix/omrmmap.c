@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -34,7 +34,6 @@
  * still be available, but will simply read the file into allocated memory.
  */
 
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -49,12 +48,99 @@
 #include "ut_omrport.h"
 #include "protect_helpers.h"
 #include "omrportpriv.h"
+#include "omrutil.h"
+
+#if defined(J9ZOS390)
+#include "omrvmem.h"
+#if !defined(MAP_FAILED)
+#define MAP_FAILED ((void *)(intptr_t)-1)
+#endif /* !defined(MAP_FAILED) */
+#endif /* defined(J9ZOS390) */
+
+#if defined(J9ZOS39064) && !defined(__MAP_64)
+#define __MAP_64 0x10
+#endif /* defined(J9ZOS39064) && !defined(__MAP_64) */
 
 #if defined(AIXPPC)
 #include <sys/shm.h>
 #include <sys/vminfo.h>
 #endif/*AIXPPC*/
 
+#if defined(J9ZOS390)
+static J9MmapHandle *
+omrmmap_read_map_file(struct OMRPortLibrary *portLibrary, intptr_t file, uint64_t offset, uintptr_t size, uint32_t category)
+{
+	/* default implementation will allocate memory and read the file into it */
+	uintptr_t numBytesRead = 0;
+	intptr_t rc = 0;
+	void *mappedMemory = NULL;
+	void *allocPointer = NULL;
+	J9MmapHandle *returnVal = NULL;
+
+	Trc_PRT_mmap_map_file_default_entered(file, size);
+
+	if (-1 == file) {
+		Trc_PRT_mmap_map_file_default_badfile();
+		return NULL;
+	}
+
+	if (0 == size) {
+		struct stat buf;
+
+		memset(&buf, 0, sizeof(buf));
+		if (-1 == fstat(file - FD_BIAS, &buf)) {
+			portLibrary->error_set_last_error(portLibrary, errno, OMRPORT_ERROR_MMAP_MAP_FILE_STATFAILED);
+			Trc_PRT_mmap_map_file_unix_filestatfailed_exit();
+			return NULL;
+		}
+		size = buf.st_size;
+	}
+
+	if (0 != portLibrary->file_seek(portLibrary, file, offset, EsSeekSet)) {
+		Trc_PRT_mmap_map_seek_failed(offset);
+		return NULL;
+	}
+
+	allocPointer = portLibrary->mem_allocate_memory(portLibrary, size, OMR_GET_CALLSITE(), category);
+	Trc_PRT_mmap_map_file_default_allocPointer(allocPointer, size);
+
+	if (NULL == allocPointer) {
+		Trc_PRT_mmap_map_file_default_badallocPointer();
+		portLibrary->file_close(portLibrary, file);
+		return NULL;
+	}
+
+	mappedMemory = allocPointer;
+	Trc_PRT_mmap_map_file_default_mappedMemory(mappedMemory);
+
+	numBytesRead = 0;
+	rc = 0;
+	while (size > numBytesRead) {
+		rc = portLibrary->file_read(portLibrary, file, (void *)(((uintptr_t)mappedMemory) + numBytesRead), size - numBytesRead);
+		if (rc <= 0) {
+			/* failed to completely read the file */
+			Trc_PRT_mmap_map_file_default_badread();
+			portLibrary->mem_free_memory(portLibrary, allocPointer);
+			return NULL;
+		}
+		numBytesRead += rc;
+		Trc_PRT_mmap_map_file_default_readingFile(numBytesRead);
+	}
+
+	returnVal = (J9MmapHandle *)portLibrary->mem_allocate_memory(portLibrary, sizeof(J9MmapHandle), OMR_GET_CALLSITE(), category);
+	if (NULL == returnVal) {
+		portLibrary->mem_free_memory(portLibrary, allocPointer);
+		Trc_PRT_mmap_map_file_cannotallocatehandle_exit();
+		return NULL;
+	}
+	returnVal->pointer = mappedMemory;
+	returnVal->allocPointer = allocPointer;
+	returnVal->size = size;
+
+	Trc_PRT_mmap_map_file_default_exit();
+	return returnVal;
+}
+#endif /* defined(J9ZOS390) */
 /**
  * Map a part of file into memory.
  *
@@ -72,6 +158,8 @@
  * @args                                         OMRPORT_MMAP_FLAG_COPYONWRITE copy on write map
  * @args                                         OMRPORT_MMAP_FLAG_SHARED              share memory mapping with other processes
  * @args                                         OMRPORT_MMAP_FLAG_PRIVATE              private memory mapping, do not share with other processes (implied by OMRPORT_MMAP_FLAG_COPYONWRITE)
+ * @args                                         OMRPORT_MMAP_FLAG_ZOS_READ_MAPFILE     read the mapping file into allocated memory (which is the old behaviour of omrmmap_map_file()
+ * 																						implementation on z/OS)
  * @param [in]  categoryCode     Memory allocation category code
  *
  * @return                       A J9MmapHandle struct or NULL is an error has occurred
@@ -88,6 +176,12 @@ omrmmap_map_file(struct OMRPortLibrary *portLibrary, intptr_t file, uint64_t off
 	J9MmapHandle *returnVal;
 	OMRMemCategory *category = omrmem_get_category(portLibrary, categoryCode);
 
+#if defined(J9ZOS390)
+	if (OMR_ARE_ANY_BITS_SET(flags, OMRPORT_MMAP_FLAG_ZOS_READ_MAPFILE)) {
+		/* Use the old z/OS omrmmap_map_file() implementation that reads the file into allocated memory */
+		return omrmmap_read_map_file(portLibrary, file, offset, size, categoryCode);
+	}
+#endif /* defined(J9ZOS390) */
 	Trc_PRT_mmap_map_file_unix_entered(file, offset, size, mappingName, flags);
 
 	/* Determine prot and flags values for mmap */
@@ -115,6 +209,27 @@ omrmmap_map_file(struct OMRPortLibrary *portLibrary, intptr_t file, uint64_t off
 		mmapFlags = MAP_PRIVATE;
 		spCount++;
 	}
+
+#if defined(J9ZOS39064)
+	if (OMR_ARE_ANY_BITS_SET(flags, OMRPORT_MMAP_FLAG_ZOS_64BIT)) {
+		if (zos_version_at_least(ZOS_V2R4_RELEASE, ZOS_V2R4_VERSION)) {
+			mmapFlags |= __MAP_64;
+		} else {
+			Trc_PRT_mmap_map_file_unix_invalidFlags();
+			errMsg = portLibrary->nls_lookup_message(
+						portLibrary,
+						J9NLS_ERROR | J9NLS_DO_NOT_APPEND_NEWLINE,
+						J9NLS_PORT_MMAP_INVALID_FLAG,
+						NULL);
+			portLibrary->error_set_last_error_with_message(
+						portLibrary,
+						OMRPORT_ERROR_MMAP_MAP_FILE_INVALIDFLAGS,
+						errMsg);
+			return NULL;
+		}
+	}
+#endif /* defined(J9ZOS39064) */
+
 	if (1 != rwCount) {
 		Trc_PRT_mmap_map_file_unix_invalidFlags();
 		errMsg = portLibrary->nls_lookup_message(portLibrary,
@@ -140,20 +255,22 @@ omrmmap_map_file(struct OMRPortLibrary *portLibrary, intptr_t file, uint64_t off
 
 		memset(&buf, 0, sizeof(struct stat));
 		if (-1 == fstat(file - FD_BIAS, &buf)) {
-			Trc_PRT_mmap_map_file_unix_filestatfailed();
 			portLibrary->error_set_last_error(portLibrary, errno, OMRPORT_ERROR_MMAP_MAP_FILE_STATFAILED);
+			Trc_PRT_mmap_map_file_unix_filestatfailed_exit();
 			return NULL;
 		}
 		size = buf.st_size;
 	}
 
 	if (!(returnVal = (J9MmapHandle *)portLibrary->mem_allocate_memory(portLibrary, sizeof(J9MmapHandle), OMR_GET_CALLSITE(), categoryCode))) {
-		Trc_PRT_mmap_map_file_cannotallocatehandle();
+		Trc_PRT_mmap_map_file_cannotallocatehandle_exit();
 		return NULL;
 	}
-
+#if defined(J9ZOS390)
+	returnVal->allocPointer = NULL;
+#endif /* defined(J9ZOS390) */
 	/* Call mmap */
-	pointer = mmap(0, size, mmapProt, mmapFlags, file, offset);
+	pointer = mmap(0, size, mmapProt, mmapFlags, file - FD_BIAS, offset);
 	if (pointer == MAP_FAILED) {
 		portLibrary->mem_free_memory(portLibrary, returnVal);
 		Trc_PRT_mmap_map_file_unix_badMmap(errno);
@@ -187,8 +304,16 @@ omrmmap_unmap_file(struct OMRPortLibrary *portLibrary, J9MmapHandle *handle)
 
 	if (handle != NULL) {
 		Trc_PRT_mmap_unmap_file_unix_values(handle->pointer, handle->size);
-		rc = munmap(handle->pointer, handle->size);
-		omrmem_categories_decrement_counters(handle->category, handle->size);
+
+#if defined(J9ZOS390)
+		if (NULL != handle->allocPointer) {
+			portLibrary->mem_free_memory(portLibrary, handle->allocPointer);
+		} else
+#endif /* defined(J9ZOS390) */
+		{
+			rc = munmap(handle->pointer, handle->size);
+			omrmem_categories_decrement_counters(handle->category, handle->size);
+		}
 		portLibrary->mem_free_memory(portLibrary, handle);
 	}
 
@@ -308,8 +433,10 @@ omrmmap_capabilities(struct OMRPortLibrary *portLibrary)
 {
 	return (OMRPORT_MMAP_CAPABILITY_COPYONWRITE
 			| OMRPORT_MMAP_CAPABILITY_READ
+#if !defined(J9ZOS390)
 			| OMRPORT_MMAP_CAPABILITY_PROTECT
-			/* If JSE platforms include WRITE and MSYNC - ZOS included, but currently has own omrmmap.c */
+#endif /* defined(J9ZOS390) */
+			/* If JSE platforms include WRITE and MSYNC */
 #if ((defined(LINUX) && defined(J9X86)) \
   || (defined(LINUXPPC)) \
   || (defined(LINUX) && defined(S390)) \
@@ -318,6 +445,7 @@ omrmmap_capabilities(struct OMRPortLibrary *portLibrary)
   || (defined(LINUX) && defined(AARCH64)) \
   || (defined(LINUX) && defined(RISCV64)) \
   || (defined(AIXPPC)) \
+  || (defined(J9ZOS390)) \
   || (defined(OSX)))
 			| OMRPORT_MMAP_CAPABILITY_WRITE
 			| OMRPORT_MMAP_CAPABILITY_MSYNC
@@ -328,7 +456,11 @@ omrmmap_capabilities(struct OMRPortLibrary *portLibrary)
 intptr_t
 omrmmap_protect(struct OMRPortLibrary *portLibrary, void *address, uintptr_t length, uintptr_t flags)
 {
+#if defined(J9ZOS390)
+	return OMRPORT_PAGE_PROTECT_NOT_SUPPORTED;
+#else /* defined(J9ZOS390) */
 	return protect_memory(portLibrary, address, length, flags);
+#endif /* defined(J9ZOS390) */
 }
 
 uintptr_t
@@ -336,6 +468,15 @@ omrmmap_get_region_granularity(struct OMRPortLibrary *portLibrary, void *address
 {
 	return protect_region_granularity(portLibrary, address);
 }
+
+#if defined(J9ZOS390)
+#pragma linkage (PGSERRM,OS)
+#pragma map (Pgser_Release,"PGSERRM")
+#if defined(OMR_ENV_DATA64)
+#pragma linkage (omrdiscard_data,OS_NOSTACK)
+int omrdiscard_data(void *address, int numFrames);
+#endif /* defined(OMR_ENV_DATA64) */
+#endif /* defined(J9ZOS390) */
 
 /**
  * Disclaim entire pages only: don't release partial pages at the start and end.
@@ -353,9 +494,7 @@ omrmmap_dont_need(struct OMRPortLibrary *portLibrary, const void *startAddress, 
 		uintptr_t roundedStart = ROUND_UP_TO_POWEROF2((uintptr_t) startAddress, pageSize);
 		size_t roundedLength = ROUND_DOWN_TO_POWEROF2(endAddress - roundedStart, pageSize);
 		if (roundedLength >= pageSize) {
-
 			Trc_PRT_mmap_dont_need_oscall(roundedStart, roundedLength);
-
 #if defined(LINUX) || defined(OSX)
 			if (-1 == madvise((void *)roundedStart, roundedLength, MADV_DONTNEED)) {
 				Trc_PRT_mmap_dont_need_madvise_failed((void *)roundedStart, roundedLength, errno);
@@ -365,7 +504,17 @@ omrmmap_dont_need(struct OMRPortLibrary *portLibrary, const void *startAddress, 
 			if (-1 == disclaim64((void *)roundedStart, roundedLength, DISCLAIM_ZEROMEM)) {
 				Trc_PRT_mmap_dont_need_disclaim64_failed((void *)roundedStart, roundedLength, errno);
 			}
-#endif /* defined(AIXPPC) */
+#elif defined(J9ZOS390) /* defined(AIXPPC) */
+#if defined(OMR_ENV_DATA64)
+			if (0 != omrdiscard_data((void *)roundedStart, roundedLength >> ZOS_REAL_FRAME_SIZE_SHIFT)) {
+				Trc_PRT_mmap_dont_need_j9discard_data_failed((void *)roundedStart, roundedLength);
+			}
+#else /* defined(OMR_ENV_DATA64) */
+			if (0 != Pgser_Release((void *)roundedStart, roundedLength)) {
+				Trc_PRT_mmap_dont_need_Pgser_Release_failed((void *)roundedStart, roundedLength);
+			}
+#endif /* defined(OMR_ENV_DATA64) */
+#endif /* defined(LINUX) || defined(OSX) */
 		}
 	}
 }

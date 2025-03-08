@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -1321,12 +1321,15 @@ sig_full_shutdown(struct OMRPortLibrary *portLibrary)
 		}
 		omrthread_monitor_exit(asyncReporterShutdownMonitor);
 #endif	/* defined(OMR_PORT_ASYNC_HANDLER) */
-		omrthread_monitor_enter(ztpfSigShutdownMonitor);
-		shutdown_ztpf_sigpush = 1;
-		while (shutdown_ztpf_sigpush) {
-			omrthread_monitor_wait(ztpfSigShutdownMonitor);
+		/* Assume if zTPF signal monitor is gone no need to shut it down. */
+		if (NULL != ztpfSigShutdownMonitor) {
+			omrthread_monitor_enter(ztpfSigShutdownMonitor);
+			shutdown_ztpf_sigpush = 1;
+			while (0 != shutdown_ztpf_sigpush) {
+				omrthread_monitor_wait(ztpfSigShutdownMonitor);
+			}
+			omrthread_monitor_exit(ztpfSigShutdownMonitor);
 		}
-		omrthread_monitor_exit(ztpfSigShutdownMonitor);
 		/* destroy all of the remaining monitors */
 		destroySignalTools(portLibrary);
 	}

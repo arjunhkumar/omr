@@ -17,7 +17,7 @@
 // [1] https://www.gnu.org/software/classpath/license.html
 // [2] https://openjdk.org/legal/assembly-exception.html
 //
-// SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+// SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ////////////////////////////////////////////////////////////////////////////////
 
 Executable=j9mm
@@ -868,36 +868,36 @@ TraceEvent=Trc_MM_SchedulingDelegate_estimateTotalFreeMemory Overhead=1 Level=1 
 TraceEvent=Trc_MM_SchedulingDelegate_calculateKickoffHeadroom Overhead=1 Level=1 Group=reclaim Template="calculateKickoffHeadroom oldHeadroomInBytes=%zu, newHeadroomInBytes=%zu"
 TraceExit=Trc_MM_SchedulingDelegate_calculateAutomaticGMPIntermission_1_Exit Overhead=1 Level=1 Group=kickoff Template="MM_SchedulingDelegate_calculateAutomaticGMPIntermission remaining=%zu, kickoffHeadroomInBytes=%zu"
 
-TraceEntry=Trc_MM_MSSGeneric_allocate_entry Overhead=1 Level=3 Group=allocate Template="MSSGeneric::allocate type %s size %zu subspace this %llx/%s base %llx prev %llx _allocateAtSafePointOnly %zu shouldCollectOnFailure %zu _isAllocatable %zu"
-TraceEvent=Trc_MM_MSSGeneric_allocate Overhead=1 Level=3 Group=allocate Template="MSSGeneric::allocate type %s size %zu event %u subspace %llx failed, trying parent %llx"
-TraceEvent=Trc_MM_MSSGeneric_allocate3 Overhead=1 Level=3 Group=allocate Template="MSSGeneric::allocate type %s size %zu event 3 subspace %llx failed, trying parent %llx shouldCollectAndClimb %zu"
-TraceExit=Trc_MM_MSSGeneric_allocate_exit Overhead=1 Level=3 Group=allocate Template="MSSGeneric::allocate type %s size %zu subspace %llx  result %llx"
+TraceEntry=Trc_MM_MSSGeneric_allocate_entry Overhead=1 Level=3 Group=allocate Template="MSSGeneric::allocate type %s size %zu subspace this %p/%s base %p prev %p _allocateAtSafePointOnly %zu shouldCollectOnFailure %zu _isAllocatable %zu"
+TraceEvent=Trc_MM_MSSGeneric_allocate Overhead=1 Level=3 Group=allocate Template="MSSGeneric::allocate type %s size %zu event %u subspace %p failed, trying parent %p"
+TraceEvent=Trc_MM_MSSGeneric_allocate3 Overhead=1 Level=3 Group=allocate Template="MSSGeneric::allocate type %s size %zu event 3 subspace %p failed, trying parent %p shouldCollectAndClimb %zu"
+TraceExit=Trc_MM_MSSGeneric_allocate_exit Overhead=1 Level=3 Group=allocate Template="MSSGeneric::allocate type %s size %zu subspace %p  result %p"
 
-TraceEntry=Trc_MM_MSSSS_allocate_entry Overhead=1 Level=1 Group=allocate Template="MSSSS::allocate type %s size %zu subspace this %llx/%s base %llx prev %llx shouldCollectOnFailure %zu"
+TraceEntry=Trc_MM_MSSSS_allocate_entry Overhead=1 Level=1 Group=allocate Template="MSSSS::allocate type %s size %zu subspace this %p/%s base %p prev %p shouldCollectOnFailure %zu"
 TraceEvent=Trc_MM_MSSSS_allocate Overhead=1 Level=1 Group=allocate Template="MSSSS::allocate type %s size %zu event %u"
 TraceEvent=Trc_MM_MSSSS_allocate4 Overhead=1 Level=1 Group=allocate Template="MSSSS::allocate type %s size %zu event 4 shouldClimb %zu"
-TraceExit=Trc_MM_MSSSS_allocate_exit Overhead=1 Level=1 Group=allocate Template="MSSSS::allocate type %s size %zu result %llx"
+TraceExit=Trc_MM_MSSSS_allocate_exit Overhead=1 Level=1 Group=allocate Template="MSSSS::allocate type %s size %zu result %p"
 
-TraceEntry=Trc_MM_MSSSS_allocationRequestFailed_entry Overhead=1 Level=1 Group=allocate Template="MSSSS::allocationRequestFailed size %zu subspace this %llx/%s base %llx prev %llx allocationType %zu"
+TraceEntry=Trc_MM_MSSSS_allocationRequestFailed_entry Overhead=1 Level=1 Group=allocate Template="MSSSS::allocationRequestFailed size %zu subspace this %p/%s base %p prev %p allocationType %zu"
 TraceEvent=Trc_MM_MSSSS_allocationRequestFailed Overhead=1 Level=1 Group=allocate Template="MSSSS::allocationRequestFailed size %zu event %u"
-TraceExit=Trc_MM_MSSSS_allocationRequestFailed_exit Overhead=1 Level=1 Group=allocate Template="MSSSS::allocationRequestFailed size %zu exit %zu result %llx"
+TraceExit=Trc_MM_MSSSS_allocationRequestFailed_exit Overhead=1 Level=1 Group=allocate Template="MSSSS::allocationRequestFailed size %zu exit %zu result %p"
 
-TraceEntry=Trc_MM_MSSFlat_allocate_entry Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocate type %s size %zu subspace this %llx/%s base %llx prev %llx shouldCollectOnFailure %zu"
+TraceEntry=Trc_MM_MSSFlat_allocate_entry Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocate type %s size %zu subspace this %p/%s base %p prev %p shouldCollectOnFailure %zu"
 TraceEvent=Trc_MM_MSSFlat_allocate Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocate type %s size %zu event %u"
-TraceExit=Trc_MM_MSSFlat_allocate_exit Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocate type %s size %zu result %llx"
+TraceExit=Trc_MM_MSSFlat_allocate_exit Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocate type %s size %zu result %p"
 
-TraceEntry=Trc_MM_MSSFlat_allocationRequestFailed_entry Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocationRequestFailed size %zu subspace this %llx/%s base %llx prev %llx allocationType %zu"
+TraceEntry=Trc_MM_MSSFlat_allocationRequestFailed_entry Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocationRequestFailed size %zu subspace this %p/%s base %p prev %p allocationType %zu"
 TraceEvent=Trc_MM_MSSFlat_allocationRequestFailed Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocationRequestFailed size %zu event %u"
-TraceExit=Trc_MM_MSSFlat_allocationRequestFailed_exit Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocationRequestFailed size %zu exit %zu result %llx"
+TraceExit=Trc_MM_MSSFlat_allocationRequestFailed_exit Overhead=1 Level=1 Group=allocate Template="MSSFlat::allocationRequestFailed size %zu exit %zu result %p"
 
-TraceEntry=Trc_MM_MSSGenerational_allocate_entry Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocate type %s size %zu subspace this %llx/%s base %llx prev %llx shouldCollectOnFailure %zu"
-TraceEvent=Trc_MM_MSSGenerational_allocate Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocate type %s size %zu prev != new %llx, allocate from old %llx"
-TraceExit=Trc_MM_MSSGenerational_allocate_exit Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocate type %s size %zu exit %zu result %llx"
+TraceEntry=Trc_MM_MSSGenerational_allocate_entry Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocate type %s size %zu subspace this %p/%s base %p prev %p shouldCollectOnFailure %zu"
+TraceEvent=Trc_MM_MSSGenerational_allocate Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocate type %s size %zu prev != new %p, allocate from old %p"
+TraceExit=Trc_MM_MSSGenerational_allocate_exit Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocate type %s size %zu exit %zu result %p"
 
-TraceEntry=Trc_MM_MSSGenerational_allocationRequestFailed_entry Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocationRequestFailed size %zu subspace this %llx/%s base %llx prev %llx allocationType %zu"
-TraceEvent=Trc_MM_MSSGenerational_allocationRequestFailed1 Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocationRequestFailed size %zu prev != new %llx, allocate from old %llx"
+TraceEntry=Trc_MM_MSSGenerational_allocationRequestFailed_entry Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocationRequestFailed size %zu subspace this %p/%s base %p prev %p allocationType %zu"
+TraceEvent=Trc_MM_MSSGenerational_allocationRequestFailed1 Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocationRequestFailed size %zu prev != new %p, allocate from old %p"
 TraceEvent=Trc_MM_MSSGenerational_allocationRequestFailed Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocationRequestFailed size %zu event %u"
-TraceExit=Trc_MM_MSSGenerational_allocationRequestFailed_exit Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocationRequestFailed size %zu exit %zu result %llx"
+TraceExit=Trc_MM_MSSGenerational_allocationRequestFailed_exit Overhead=1 Level=1 Group=allocate Template="MSSGenerational::allocationRequestFailed size %zu exit %zu result %p"
 
 TraceEvent=Trc_MM_LOAResize_initialize Overhead=1 Level=1 Group=loaresize Template="LOA Initialize: SOA subpool %p LOA subpool %p"
 TraceEvent=Trc_MM_LOAResize_resizeLOA1 Overhead=1 Level=1 Group=loaresize Template="post GC resize LOA: newLOAsize %zu"
@@ -943,23 +943,23 @@ TraceEntry=Trc_MM_AllocationContextBalanced_acquireMPAOLRegionFromNode_Entry Ove
 TraceExit=Trc_MM_AllocationContextBalanced_acquireMPAOLRegionFromNode_Exit Overhead=1 Level=1 Group=tarok Template="MM_AllocationContextBalanced::acquireMPAOLRegionFromNode result=%p"
 TraceEntry=Trc_MM_MemorySubSpaceTarok_calculateTargetContractSize_Entry2 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_calculateTargetContractSize Entry Allocation size = %zu"
 TraceExit=Trc_MM_MemorySubSpaceTarok_calculateExpandSize_Exit2 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_calculateExpandSize Exit1 returning expand size of %zu bytes"
-TraceEvent=Trc_MM_MemorySubSpaceTarok_calculateHybridHeapOverhead Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_calculateHybridHeapOverhead GC Componant = %f Memory Componant = %f"
-TraceEvent=Trc_MM_MemorySubSpaceTarok_getHeapSizeWithinBounds_1 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_getHeapSizeWithinBounds Better heap size = %zu hybrid overhead %f"
-TraceEvent=Trc_MM_MemorySubSpaceTarok_getHeapSizeWithinBounds_2 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_getHeapSizeWithinBounds Changing heap by %f percent"
+TraceEvent=Trc_MM_MemorySubSpaceTarok_calculateHybridHeapOverhead Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_calculateHybridHeapOverhead GC Component = %.3f%% Memory Component = %.3f%%"
+TraceEvent=Trc_MM_MemorySubSpaceTarok_getHeapSizeWithinBounds_1 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_getHeapSizeWithinBounds Better heap size = %zu hybrid overhead %.3f%%"
+TraceEvent=Trc_MM_MemorySubSpaceTarok_getHeapSizeWithinBounds_2 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_getHeapSizeWithinBounds Changing heap by factor of %f"
 TraceEvent=Trc_MM_MemorySubSpaceTarok_checkResize_1 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_checkResize ready to resize ? %s"
 TraceEvent=Trc_MM_MemorySubSpaceTarok_checkResize_2 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_checkResize heapSizeChange %zd bytes edenChangeRegionsBytes %zd"
 TraceEvent=Trc_MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead_1 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead Tenure: %zu bytes, Free Tenure %zu bytes"
-TraceEvent=Trc_MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead_2 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead heapSizeChange %zd bytes, free tenure ratio %f"
-TraceEvent=Trc_MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead_3 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead free memory mapped to gc overhead: %f"
+TraceEvent=Trc_MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead_2 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead heapSizeChange %zd bytes, free tenure ratio %.3f%%"
+TraceEvent=Trc_MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead_3 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpaceTarok_mapMemoryPercentageToGcOverhead free memory mapped to gc overhead: %.3f%%"
 
 
 TraceEvent=Trc_MM_SchedulingDelegate_calculateGlobalMarkOverhead Overhead=1 Level=1 Group=resize Template="MM_SchedulingDelegate_calculateGlobalMarkOverhead GMP Overhead = %f Increments total time = %zu Concurrent cost = %zu Interval time = %zu"
-TraceEvent=Trc_MM_SchedulingDelegate_calculatePartialGarbageCollectOverhead Overhead=1 Level=1 Group=resize Template="MM_SchedulingDelegate_calculatePartialGarbageCollectOverhead PGC Overhead = %f Average PGC interval = %zu Average PGC time = %zu"
+TraceEvent=Trc_MM_SchedulingDelegate_calculatePartialGarbageCollectOverhead Overhead=1 Level=1 Group=resize Template="MM_SchedulingDelegate_calculatePartialGarbageCollectOverhead PGC Overhead = %f Average PGC interval %zums Average PGC time %zums"
 TraceEvent=Trc_MM_SchedulingDelegate_adjustIdealEdenRegionCount Overhead=1 Level=3 Group=resize Template="SchedulingDelegate_adjustIdealEdenRegionCount Allowed eden region range: %zu - %zu idealEdenRegionCount %zu  Eden region change %d"
-TraceEvent=Trc_MM_SchedulingDelegate_calculateEdenChangeHeapNotFullyExpanded Overhead=1 Level=3 Group=resize Template="SchedulingDelegate_calculateEdenChangeHeapNotFullyExpanded Hybrid eden overhead %f recent PGC pause time %zu Pause-to-Overhead mapping %f"
-TraceEvent=Trc_MM_SchedulingDelegate_calculateRecommendedEdenChangeForExpandedHeap Overhead=1 Level=3 Group=resize Template="SchedulingDelegate_calculateRecommendedEdenChangeForExpandedHeap Hybrid eden overhead %f avg pause time %zu Pause-to-Overhead mapping %f"
+TraceEvent=Trc_MM_SchedulingDelegate_calculateEdenChangeHeapNotFullyExpanded Overhead=1 Level=3 Group=resize Template="SchedulingDelegate_calculateEdenChangeHeapNotFullyExpanded Hybrid eden overhead %f recent PGC pause time %zums Pause-to-Overhead mapping %.3f%%"
+TraceEvent=Trc_MM_SchedulingDelegate_calculateRecommendedEdenChangeForExpandedHeap Overhead=1 Level=3 Group=resize Template="SchedulingDelegate_calculateRecommendedEdenChangeForExpandedHeap Hybrid eden overhead %f avg pause time %zu Pause-to-Overhead mapping %.3f%%"
 TraceEvent=Trc_MM_SchedulingDelegate_calculateRecommendedEdenChangeForExpandedHeap_Exit Overhead=1 Level=1 Group=resize Template="SchedulingDelegate_calculateRecommendedEdenChangeForExpandedHeap_Exit Estimated free tenure = %zu GMP worktime = %zu PGC worktime = %zu PGG avg interval = %zu Eden survival rate %f Recommended eden size = %zu Recommended eden estimated overhead = %f"
-TraceEvent=Trc_MM_SchedulingDelegate_checkEdenSizeAfterPgc Overhead=1 Level=3 Group=resize Template="SchedulingDelegate_checkEdenSizeAfterPgc Not fully expanded recomendation %zd Fully expanded recommendation %zd percentage expanded %f"
+TraceEvent=Trc_MM_SchedulingDelegate_checkEdenSizeAfterPgc Overhead=1 Level=3 Group=resize Template="SchedulingDelegate_checkEdenSizeAfterPgc Not fully expanded recomendation %zd regions Fully expanded recommendation %zd regions Ratio currently expanded %f"
 TraceEvent=Trc_MM_SchedulingDelegate_updatePgcTimePrediction Overhead=1 Level=3 Group=resize Template="SchedulingDelegate_updatePgcTimePrediction x1 %f y1 %f x2 %f y2 %f edenSizeRatio %f _pgcTimeIncreasePerEdenFactor %f"
 
 TraceEvent=Trc_MM_IncrementalGenerationalGC_calculateConcurrentMarkWorkTime Overhead=1 Level=2 Group=resize Template="IncrementalGenerationalGC_calculateConcurrentMarkWorkTime Concurrent GMP ratio %f previous increment concurrent worktime %llu Total concurrent worktime %llu"
@@ -1007,7 +1007,7 @@ TraceEntry=Trc_MM_DoFixHeapForCompact_Entry Overhead=1 Level=1 Template="Trc_MM_
 TraceExit=Trc_MM_DoFixHeapForCompact_Exit Overhead=1 Level=1 Template="Trc_MM_DoFixHeapForCompact Exit after fixing up %zu objects"
 
 TraceEntry=Trc_MM_ParallelDispatcher_expandThreadPool_Entry noEnv Overhead=1 Level=1 Group=dispatcher Template="expandThreadPool Entry"
-TraceEvent=Trc_MM_ParallelDispatcher_expandThreadPool_params noEnv Overhead=1 Level=1 Group=dispatcher Template="expandThreadPool_params: newThreadCount: %zu, _threadCountMaximumAtCheckpointStartup: %zu, supportedGCThreadCount: %zu, preExpandThreadCount: %zu"
+TraceEvent=Trc_MM_ParallelDispatcher_expandThreadPool_params noEnv Overhead=1 Level=1 Group=dispatcher Template="expandThreadPool_params: newThreadCount: %zu, _threadCountMaximumAtCheckpointStartup: %zu, defaultGCThreadCount: %zu, preExpandThreadCount: %zu"
 TraceExit=Trc_MM_ParallelDispatcher_expandThreadPool_Exit noEnv Overhead=1 Level=1 Group=dispatcher Template="expandThreadPool Exit: preExpandThreadCount: %zu, gcThreadCount: %zu, _threadShutdownCount: %zu"
 
 TraceEntry=Trc_MM_ParallelDispatcher_contractThreadPool_Entry noEnv Overhead=1 Level=1 Group=dispatcher Template="contractThreadPool Entry: gcThreadCount: %zu, requested newThreadCount: %zu"
@@ -1016,3 +1016,21 @@ TraceEvent=Trc_MM_ParallelDispatcher_contractThreadPool_Success noEnv Overhead=1
 TraceExit=Trc_MM_ParallelDispatcher_contractThreadPool_Exit noEnv Overhead=1 Level=1 Group=dispatcher Template="contractThreadPool Exit: gcThreadCount: %zu"
 
 TraceException=Trc_MM_ParallelDispatcher_internalStartupThreads_Failed noEnv Overhead=1 Level=1 Group=dispatcher Template="Failed to startup threads: workerThreadCount: %zu, maxWorkerThreadIndex: %zu, _threadShutdownCount: %zu"
+
+TraceExit=Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit8 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpace_timeForHeapContract Exit8 Heap cannot contract in implicit aggressive GC"
+TraceExit=Trc_MM_MemorySubSpaceUniSpace_timeForHeapContract_Exit9 Overhead=1 Level=1 Group=resize Template="MM_MemorySubSpace_timeForHeapContract Exit9 Contraction required due to SoftMX request, size = %zu bytes"
+
+TraceEvent=Trc_MM_MSSSS_flip_step Overhead=1 Level=1 Group=scavenge Template="MSSSS::flip %s"
+TraceEvent=Trc_MM_MSSSS_flip_backout Overhead=1 Level=1 Group=scavenger Template="MSSSS::flip backout %s_allocateSpaceBase/Top %zx/%zx _survivorSpaceBase/Top %zx/%zx sizes %zu %zu"
+TraceEvent=Trc_MM_MSSSS_flip_restore_tilt_after_percolate Overhead=1 Level=1 Group=scavenger Template="MSSSS::flip restore_tilt_after_percolate last free entry %zx size %zu"
+TraceEvent=Trc_MM_MSSSS_flip_restore_tilt_after_percolate_with_stats Overhead=1 Level=1 Group=scavenge Template="MSSSS::flip restore_tilt_after_percolate heapAlignedLastFreeEntry %zu section (%zu) aligned size %zu"
+TraceEvent=Trc_MM_MSSSS_flip_restore_tilt_after_percolate_current_status Overhead=1 Level=1 Group=scavenge Template="MSSSS::flip restore_tilt_after_percolate %sallocateSize %zu survivorSize %zu"
+
+TraceEvent=Trc_MM_clearheap Overhead=1 Level=1 Group=gclogger Template="clearheap with free memory size: %zu, object size: %zu"
+TraceEvent=Trc_MM_cleanUpSegmentsInAnonymousClassLoader_stats Overhead=1 Level=1 Group=gclogger Template="Anonymous classes: total: %zu, unloaded: %zu, searched ROM: %zu, found ROM fast: %zu, found ROM slow: %zu, not found ROM: %zu"
+
+TraceEvent=Trc_MM_CPUUtilStats_processAndCpuUtilization_process_larger_than_elapsed Overhead=1 Level=1 Group=gclogger Template="process %lld larger than elapsed %lld; both adjusted to %lld"
+TraceEvent=Trc_MM_CPUUtilStats_processAndCpuUtilization_cpu_larger_than_elapsed Overhead=1 Level=1 Group=gclogger Template="cpu %lld larger than elapsed %lld; cpu adjusted to elapsed"
+TraceEvent=Trc_MM_CPUUtilStats_processAndCpuUtilization_cpu_smaller_than_process Overhead=1 Level=1 Group=gclogger Template="cpu %lld smaller than process %lld; cpu adjusted to process"
+
+TraceEntry=Trc_MM_double_map_EntryNew Overhead=1 Level=3 Group=arraylet Template="MM_IndexableObjectAllocationModel::doubleMapArraylets. originalDataSize: %p, adjustedDataSize: %p, spine: %p, leafSize: %p leavesCount: %zu"

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdio.h>
@@ -28,13 +28,14 @@
 #include "env/CompilerEnv.hpp"
 #include "env/FrontEnd.hpp"
 #include "env/IO.hpp"
+#include "env/JitConfig.hpp"
 #include "env/RawAllocator.hpp"
 #include "ilgen/IlGeneratorMethodDetails_inlines.hpp"
 #include "ilgen/MethodBuilder.hpp"
 #include "ilgen/TypeDictionary.hpp"
 #include "runtime/CodeCache.hpp"
 #include "runtime/Runtime.hpp"
-#include "runtime/JBJitConfig.hpp"
+#include "control/CompilationController.hpp"
 
 #if defined(AIXPPC)
 #include "p/codegen/PPCTableOfConstants.hpp"
@@ -58,7 +59,7 @@ initHelper(void *helper, TR_RuntimeHelper id)
    }
 
 static void
-initializeAllHelpers(JitBuilder::JitConfig *jitConfig, TR_RuntimeHelper *helperIDs, void **helperAddresses, int32_t numHelpers)
+initializeAllHelpers(TR::JitConfig *jitConfig, TR_RuntimeHelper *helperIDs, void **helperAddresses, int32_t numHelpers)
    {
    initializeJitRuntimeHelperTable(false);
 
@@ -102,7 +103,7 @@ initializeCodeCache(TR::CodeCacheManager & codeCacheManager)
    codeCacheConfig._largeCodePageFlags = 0;
    codeCacheConfig._maxNumberOfCodeCaches = 96;
    codeCacheConfig._canChangeNumCodeCaches = true;
-   codeCacheConfig._emitExecutableELF = TR::Options::getCmdLineOptions()->getOption(TR_PerfTool) 
+   codeCacheConfig._emitExecutableELF = TR::Options::getCmdLineOptions()->getOption(TR_PerfTool)
                                     ||  TR::Options::getCmdLineOptions()->getOption(TR_EmitExecutableELFFile);
    codeCacheConfig._emitRelocatableELF = TR::Options::getCmdLineOptions()->getOption(TR_EmitRelocatableELFFile);
 
@@ -135,7 +136,9 @@ initializeJitBuilder(TR_RuntimeHelper *helperIDs, void **helperAddresses, int32_
    TR::Compiler->initialize();
 
    // --------------------------------------------------------------------------
-   static JitBuilder::FrontEnd fe;
+   static TR::FrontEnd fe;
+   fe.setIsSafeToFreeOptionsOnShutdown(true);
+
    auto jitConfig = fe.jitConfig();
 
    initializeAllHelpers(jitConfig, helperIDs, helperAddresses, numHelpers);
@@ -213,7 +216,7 @@ internal_compileMethodBuilder(TR::MethodBuilder *m, void **entry)
 void
 internal_shutdownJit()
    {
-   auto fe = JitBuilder::FrontEnd::instance();
+   auto fe = TR::FrontEnd::instance();
 
    TR::CodeCacheManager &codeCacheManager = fe->codeCacheManager();
    codeCacheManager.destroy();

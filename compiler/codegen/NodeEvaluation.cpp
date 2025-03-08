@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/CodeGenerator.hpp"
@@ -121,10 +121,10 @@ OMR::CodeGenerator::evaluate(TR::Node * node)
       // As well, more insidious trees exist:
       //
       // ificmpeq
-      //    iiload
+      //    iloadi
       //       i2l
       //          x
-      //    iiload
+      //    iloadi
       //       ishl
       //          ==> i2l
       //          4
@@ -144,11 +144,11 @@ OMR::CodeGenerator::evaluate(TR::Node * node)
       // perform the function calls:
       //
       // ificmpeq
-      //    iiload
+      //    iloadi
       //       ishl
       //          ==> x
       //          7
-      //    iiload
+      //    iloadi
       //       ishl
       //          ==> x
       //          4
@@ -295,7 +295,13 @@ OMR::CodeGenerator::whichChildToEvaluate(TR::Node * node)
          }
       }
 
-   node->setEvaluationPriority(nodePriority);
+   // Do not set the evaluation priority of a treetop node, since evaluation priority
+   // is only meaningful for nodes yielding values, and treetops do not yield values.
+   if (!node->getOpCode().isTreeTop())
+      {
+      node->setEvaluationPriority(nodePriority);
+      }
+
    return bestChild;
    }
 

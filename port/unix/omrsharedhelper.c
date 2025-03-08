@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "omrsharedhelper.h"
@@ -416,7 +416,7 @@ omr_unlinkControlFile(struct OMRPortLibrary* portLibrary, const char *controlFil
 	if (msgLen + 1 > sizeof(originalErrMsg)) {
 		msgLen = sizeof(originalErrMsg) - 1;
 	}
-	strncpy(originalErrMsg, currentErrMsg, msgLen);
+	memcpy(originalErrMsg, currentErrMsg, msgLen);
 	originalErrMsg[msgLen] = '\0';
 	if (-1 == omrfile_unlink(portLibrary, controlFile)) {
 		/* If an error occurred during unlinking, store the unlink error code in 'controlFileStatus' if available,

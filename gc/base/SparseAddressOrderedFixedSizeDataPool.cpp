@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "omrcomp.h"
@@ -127,37 +127,6 @@ MM_SparseAddressOrderedFixedSizeDataPool::kill(MM_EnvironmentBase *env)
 	env->getForge()->free(this);
 }
 
-#if defined(OMR_GC_DOUBLE_MAPPING_FOR_SPARSE_HEAP_ALLOCATION)
-struct J9PortVmemIdentifier*
-MM_SparseAddressOrderedFixedSizeDataPool::findIdentifierForSparseDataPtr(void *dataPtr)
-{
-	struct J9PortVmemIdentifier *identifier = NULL;
-	MM_SparseDataTableEntry lookupEntry = MM_SparseDataTableEntry(dataPtr);
-	MM_SparseDataTableEntry *entry = (MM_SparseDataTableEntry *)hashTableFind(_objectToSparseDataTable, &lookupEntry);
-	if ((NULL == entry) || (entry->dataPtr != dataPtr)) {
-		Trc_MM_SparseAddressOrderedFixedSizeDataPool_findEntry_failure(dataPtr);
-	} else {
-		identifier = entry->identifier;
-	}
-
-	return identifier;
-}
-
-void
-MM_SparseAddressOrderedFixedSizeDataPool::recordDoubleMapIdentifierForData(void *dataPtr, struct J9PortVmemIdentifier *identifier)
-{
-	MM_SparseDataTableEntry lookupEntry = MM_SparseDataTableEntry(dataPtr);
-	MM_SparseDataTableEntry *entry = (MM_SparseDataTableEntry *)hashTableFind(_objectToSparseDataTable, &lookupEntry);
-
-	if ((NULL == entry) || (entry->dataPtr != dataPtr)) {
-		Trc_MM_SparseAddressOrderedFixedSizeDataPool_findEntry_failure(dataPtr);
-	} else {
-		Trc_MM_SparseAddressOrderedFixedSizeDataPool_findEntry_success(dataPtr);
-		entry->identifier = identifier;
-	}
-}
-#endif /* OMR_GC_DOUBLE_MAPPING_FOR_SPARSE_HEAP_ALLOCATION */
-
 bool
 MM_SparseAddressOrderedFixedSizeDataPool::mapSparseDataPtrToHeapProxyObjectPtr(void *dataPtr, void *proxyObjPtr, uintptr_t size)
 {
@@ -176,10 +145,13 @@ MM_SparseAddressOrderedFixedSizeDataPool::mapSparseDataPtrToHeapProxyObjectPtr(v
 }
 
 bool
-MM_SparseAddressOrderedFixedSizeDataPool::unmapSparseDataPtrFromHeapProxyObjectPtr(void *dataPtr)
+MM_SparseAddressOrderedFixedSizeDataPool::unmapSparseDataPtrFromHeapProxyObjectPtr(void *dataPtr, void *proxyObjPtr, uintptr_t size)
 {
 	bool ret = true;
 	MM_SparseDataTableEntry entryToRemove = MM_SparseDataTableEntry(dataPtr);
+
+	MM_SparseDataTableEntry *entry = (MM_SparseDataTableEntry *)hashTableFind(_objectToSparseDataTable, &entryToRemove);
+	Assert_MM_true((NULL != entry) && verifySparseDataEntry(entry, dataPtr, proxyObjPtr, size));
 
 	if (0 != hashTableRemove(_objectToSparseDataTable, &entryToRemove)) {
 		Trc_MM_SparseAddressOrderedFixedSizeDataPool_removeEntry_failure(dataPtr);
@@ -230,10 +202,10 @@ MM_SparseAddressOrderedFixedSizeDataPool::findHeapProxyObjectPtrForSparseDataPtr
 }
 
 bool
-MM_SparseAddressOrderedFixedSizeDataPool::isValidDataPtr(void *dataPtr)
+MM_SparseAddressOrderedFixedSizeDataPool::isValidDataPtr(void *dataPtr, void *proxyObjPtr, uintptr_t size)
 {
 	MM_SparseDataTableEntry *entry = findSparseDataTableEntryForSparseDataPtr(dataPtr);
-	return ((entry != NULL) && (entry->_dataPtr == dataPtr));
+	return verifySparseDataEntry(entry, dataPtr, proxyObjPtr, size);
 }
 
 MM_SparseHeapLinkedFreeHeader *
@@ -295,6 +267,7 @@ MM_SparseAddressOrderedFixedSizeDataPool::findFreeListEntry(uintptr_t size)
 		Assert_MM_true(NULL != returnAddr);
 		_approximateFreeMemorySize -= size;
 		_freeListPoolAllocBytes += size;
+		_allocObjectCount += 1;
 
 		Trc_MM_SparseAddressOrderedFixedSizeDataPool_freeListEntryFoundForData_success(returnAddr, (void *)size, _freeListPoolFreeNodesCount, (void *)_approximateFreeMemorySize, (void *)_freeListPoolAllocBytes);
 	}
@@ -381,6 +354,7 @@ MM_SparseAddressOrderedFixedSizeDataPool::returnFreeListEntry(void *dataAddr, ui
 
 	_approximateFreeMemorySize += size;
 	_freeListPoolAllocBytes -= size;
+	_allocObjectCount -= 1;
 	_lastFreeBytes = size;
 
 	Trc_MM_SparseAddressOrderedFixedSizeDataPool_returnFreeListEntry_success(dataAddr, (void *)size, _freeListPoolFreeNodesCount, (void *)_approximateFreeMemorySize, (void *)_freeListPoolAllocBytes);
@@ -388,23 +362,16 @@ MM_SparseAddressOrderedFixedSizeDataPool::returnFreeListEntry(void *dataAddr, ui
 }
 
 bool
-MM_SparseAddressOrderedFixedSizeDataPool::updateSparseDataEntryAfterObjectHasMoved(void *dataPtr, void *proxyObjPtr)
+MM_SparseAddressOrderedFixedSizeDataPool::updateSparseDataEntryAfterObjectHasMoved(void *dataPtr, void *oldProxyObjPtr, uintptr_t size, void *newProxyObjPtr)
 {
-	bool ret = true;
 	MM_SparseDataTableEntry lookupEntry = MM_SparseDataTableEntry(dataPtr);
 	MM_SparseDataTableEntry *entry = (MM_SparseDataTableEntry *)hashTableFind(_objectToSparseDataTable, &lookupEntry);
 
-	if (NULL == entry || (entry->_dataPtr != dataPtr)) {
-		Trc_MM_SparseAddressOrderedFixedSizeDataPool_findEntry_failure(dataPtr);
-		/* This should never occur - we should never fail to find the off-heap entry we are trying to update */
-		Assert_MM_true(false);
-		ret = false;
-	} else {
-		Trc_MM_SparseAddressOrderedFixedSizeDataPool_updateEntry_success(dataPtr, entry->_proxyObjPtr, proxyObjPtr);
-		entry->_proxyObjPtr = proxyObjPtr;
-	}
+	Assert_MM_true((NULL != entry) && verifySparseDataEntry(entry, dataPtr, oldProxyObjPtr, size));
+	Trc_MM_SparseAddressOrderedFixedSizeDataPool_updateEntry_success(dataPtr, oldProxyObjPtr, newProxyObjPtr);
+	entry->_proxyObjPtr = newProxyObjPtr;
 
-	return ret;
+	return true;
 }
 
 void
@@ -424,4 +391,22 @@ MM_SparseAddressOrderedFixedSizeDataPool::freeAllSparseHeapFreeListNodes()
 		current = current->_next;
 		pool_removeElement(_freeListPool, temp);
 	}
+}
+
+bool
+MM_SparseAddressOrderedFixedSizeDataPool::verifySparseDataEntry(MM_SparseDataTableEntry *entry, void *dataPtr, void *proxyObjPtr, uintptr_t size)
+{
+	bool ret = false;
+
+	if (NULL != entry) {
+		ret = (entry->_dataPtr == dataPtr);
+	}
+	if (ret) {
+		ret = (entry->_proxyObjPtr == proxyObjPtr);
+	}
+	if (ret) {
+		ret = (entry->_size == size);
+	}
+
+	return ret;
 }

@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 include(OmrFindFiles)
@@ -101,11 +101,10 @@ if(OMR_OS_ZOS)
 	else()
 		list(APPEND OBJECTS omrvmem_support_below_bar_31.s)
 	endif()
-else()
-	list(APPEND OBJECTS protect_helpers.c)
 endif()
 
 list(APPEND OBJECTS
+	protect_helpers.c
 	omrgetasid.c
 	omrgetjobid.c
 	omrgetjobname.c
@@ -279,6 +278,10 @@ if(OMR_OS_WINDOWS)
 endif()
 
 if(OMR_OS_AIX)
+	if(CMAKE_C_COMPILER_IS_OPENXL)
+		list(APPEND OMR_C_WARNINGS_AS_ERROR_FLAG -Wno-implicit-function-declaration)
+		target_compile_options(omrport_obj PUBLIC -Wno-implicit-function-declaration)
+	endif()
 	#ifdef I5_VERSION
 		#ifeq (1,$(OMR_ENV_DATA64))
 			#vpath % $(PORT_SRCDIR)iseries64

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef GENERALLOOPUNROLLER_INCL
@@ -26,7 +26,6 @@
 #include <stdint.h>
 #include "codegen/LinkageConventionsEnum.hpp"
 #include "compile/Compilation.hpp"
-#include "cs2/arrayof.h"
 #include "env/TRMemory.hpp"
 #include "env/jittypes.h"
 #include "il/Block.hpp"
@@ -137,6 +136,7 @@ class TR_LoopUnroller
    struct IntrnPtr;
    IntrnPtr *findIntrnPtr(int32_t symRefNum);
    bool haveIdenticalOffsets(IntrnPtr *intrnPtr1, IntrnPtr *intrnPtr2);
+   bool isSymRefSameTypeArrayShadow(TR::Node *node);
    void examineArrayAccesses();
    void refineArrayAliasing();
 
@@ -283,21 +283,21 @@ class TR_LoopUnroller
  * Class TR_GeneralLoopUnroller
  * ============================
  *
- * The general loop unroller optimization can unroll or peel a majority of 
- * loops with or without the loop driving tests done after each iteration 
- * (loop) body. Usually a peel is inserted before the unrolled loop, and 
- * the residual iterations to be done (at most u - 1 residual iterations 
- * where u is the unroll factor) are also done using the peeled code. 
- * Peeling aids partial redundancy elimination (PRE) as code does not have 
- * to be moved; instead dominated expressions can be commoned (which is far 
- * easier than code motion due to problems introduced by exception 
+ * The general loop unroller optimization can unroll or peel a majority of
+ * loops with or without the loop driving tests done after each iteration
+ * (loop) body. Usually a peel is inserted before the unrolled loop, and
+ * the residual iterations to be done (at most u - 1 residual iterations
+ * where u is the unroll factor) are also done using the peeled code.
+ * Peeling aids partial redundancy elimination (PRE) as code does not have
+ * to be moved; instead dominated expressions can be commoned (which is far
+ * easier than code motion due to problems introduced by exception
  * checks in Java).
  *
- * Async checks (yield points) are eliminated from u - 1 unrolled bodies 
+ * Async checks (yield points) are eliminated from u - 1 unrolled bodies
  * and only one remains.
- * 
- * Unroll factors and code growth thresholds are arrived at based on 
- * profiling information when available. This analysis uses induction 
+ *
+ * Unroll factors and code growth thresholds are arrived at based on
+ * profiling information when available. This analysis uses induction
  * variable information found by value propagation.
  */
 

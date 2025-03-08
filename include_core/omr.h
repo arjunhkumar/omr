@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef omr_h
@@ -527,7 +527,7 @@ omr_error_t OMR_Glue_LinkLanguageThreadToOMRThread(void *languageThread, OMR_VMT
 omr_error_t OMR_Glue_GetVMDirectoryToken(void **token);
 #endif /* defined(OMR_OS_WINDOWS) */
 
-char *OMR_Glue_GetThreadNameForUnamedThread(OMR_VMThread *vmThread);
+char *OMR_Glue_GetThreadNameForUnnamedThread(OMR_VMThread *vmThread);
 
 /**
  * Get the number of method properties. This is the number of properties per method
@@ -555,7 +555,8 @@ const char * const *OMR_Glue_GetMethodDictionaryPropertyNames(void);
  * (__xlC__ is defined by xlC_r, __ibmxl_version__ is defined by xlclang++).
  */
 #if (defined(__xlC__) && ((__xlC__ >> 8) >= 16)) \
- || (defined(__ibmxl_version__) && (__ibmxl_version__ >= 16))
+ || (defined(__ibmxl_version__) && (__ibmxl_version__ >= 16)) \
+ || defined(__open_xl__)
 #define ddr_constant(name, value) static enum { name = value } ddr_ref_ ## name
 #else /* defined(__ibmxl_version__) && (__ibmxl_version__ >= 16) */
 #define ddr_constant(name, value)        enum { name = value }

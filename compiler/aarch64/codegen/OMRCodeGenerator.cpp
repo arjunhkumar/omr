@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdlib.h>
@@ -103,6 +103,9 @@ OMR::ARM64::CodeGenerator::initialize()
 
    cg->setSupportsAlignedAccessOnly();
 
+   cg->setSupportsIMulHigh();
+   cg->setSupportsLMulHigh();
+
    if (!comp->getOption(TR_DisableTraps) && TR::Compiler->vm.hasResumableTrapHandler(comp))
       {
       _numberBytesReadInaccessible = 4096;
@@ -174,12 +177,41 @@ OMR::ARM64::CodeGenerator::initialize()
    // Enable compaction of local stack slots.  i.e. variables with non-overlapping live ranges
    // can share the same slot.
    cg->setSupportsCompactedLocals();
+
    if (!TR::Compiler->om.canGenerateArraylets())
       {
-      static const bool disableArrayCmp = feGetEnv("TR_aarch64DisableArrayCmp") != NULL;
+      static const bool disableArrayCmp = feGetEnv("TR_DisableArrayCmp") != NULL;
       if (!disableArrayCmp)
          {
          cg->setSupportsArrayCmp();
+         }
+      static const bool disableArrayCmpLen = feGetEnv("TR_DisableArrayCmpLen") != NULL;
+      if (!disableArrayCmpLen)
+         {
+         cg->setSupportsArrayCmpLen();
+         }
+
+      if (!comp->getOption(TR_DisableArraySetOpts))
+         {
+         cg->setSupportsArraySet();
+         }
+
+      static bool disableTRTO = (feGetEnv("TR_disableTRTO") != NULL);
+      if (!disableTRTO)
+         {
+         cg->setSupportsArrayTranslateTRTO();
+         }
+
+      static bool disableTRTO255 = (feGetEnv("TR_disableTRTO255") != NULL);
+      if (!disableTRTO255)
+         {
+         cg->setSupportsArrayTranslateTRTO255();
+         }
+
+      static bool disableTROTNoBreak = (feGetEnv("TR_disableTROTNoBreak") != NULL);
+      if (!disableTROTNoBreak)
+         {
+         cg->setSupportsArrayTranslateTROTNoBreak();
          }
       }
    }
@@ -688,6 +720,28 @@ bool OMR::ARM64::CodeGenerator::getSupportsOpCodeForAutoSIMD(TR::CPU *cpu, TR::I
       case TR::vmor:
       case TR::vmxor:
       case TR::vmnot:
+#if 0  // Disable vector shift and rotate opcodes until they comply with the JVM Specification
+      case TR::vshl:
+      case TR::vmshl:
+      case TR::vshr:
+      case TR::vmshr:
+      case TR::vushr:
+      case TR::vmushr:
+      case TR::vrol:
+      case TR::vmrol:
+#endif
+      case TR::vpopcnt:
+      case TR::vmpopcnt:
+      case TR::vnotz:
+      case TR::vmnotz:
+      case TR::vnolz:
+      case TR::vmnolz:
+      case TR::vbitswap:
+      case TR::vmbitswap:
+      case TR::vbyteswap:
+      case TR::vmbyteswap:
+      case TR::mmAllTrue:
+      case TR::mmAnyTrue:
          // Float/ Double are not supported
          return (et == TR::Int8 || et == TR::Int16 || et == TR::Int32 || et == TR::Int64);
       case TR::vload:
@@ -841,7 +895,7 @@ TR::Instruction *OMR::ARM64::CodeGenerator::generateDebugCounterBump(TR::Instruc
    TR::Register *addrReg = self()->allocateRegister();
    TR::Register *counterReg = self()->allocateRegister();
 
-   cursor = loadAddressConstant(self(), node, addr, addrReg, cursor, false, TR_DebugCounter);
+   cursor = loadAddressConstant(self(), self()->comp()->compileRelocatableCode(), node, addr, addrReg, cursor, TR_DebugCounter);
    cursor = generateTrg1MemInstruction(self(), TR::InstOpCode::ldrimmw, node, counterReg, TR::MemoryReference::createWithDisplacement(self(), addrReg, 0), cursor);
    cursor = generateTrg1Src1ImmInstruction(self(), TR::InstOpCode::addimmw, node, counterReg, counterReg, delta, cursor);
    cursor = generateMemSrc1Instruction(self(), TR::InstOpCode::strimmw, node, TR::MemoryReference::createWithDisplacement(self(), addrReg, 0), counterReg, cursor);
@@ -868,7 +922,7 @@ TR::Instruction *OMR::ARM64::CodeGenerator::generateDebugCounterBump(TR::Instruc
    TR::Register *addrReg = self()->allocateRegister();
    TR::Register *counterReg = self()->allocateRegister();
 
-   cursor = loadAddressConstant(self(), node, addr, addrReg, cursor, false, TR_DebugCounter);
+   cursor = loadAddressConstant(self(), self()->comp()->compileRelocatableCode(), node, addr, addrReg, cursor, TR_DebugCounter);
    cursor = generateTrg1MemInstruction(self(), TR::InstOpCode::ldrimmw, node, counterReg, TR::MemoryReference::createWithDisplacement(self(), addrReg, 0), cursor);
    cursor = generateTrg1Src2Instruction(self(), TR::InstOpCode::addw, node, counterReg, counterReg, deltaReg, cursor);
    cursor = generateMemSrc1Instruction(self(), TR::InstOpCode::strimmw, node, TR::MemoryReference::createWithDisplacement(self(), addrReg, 0), counterReg, cursor);
@@ -905,7 +959,7 @@ TR::Instruction *OMR::ARM64::CodeGenerator::generateDebugCounterBump(TR::Instruc
    TR::Register *addrReg = srm.findOrCreateScratchRegister();
    TR::Register *counterReg = srm.findOrCreateScratchRegister();
 
-   cursor = loadAddressConstant(self(), node, addr, addrReg, cursor, false, TR_DebugCounter);
+   cursor = loadAddressConstant(self(), self()->comp()->compileRelocatableCode(), node, addr, addrReg, cursor, TR_DebugCounter);
    cursor = generateTrg1MemInstruction(self(), TR::InstOpCode::ldrimmw, node, counterReg, TR::MemoryReference::createWithDisplacement(self(), addrReg, 0), cursor);
    cursor = generateTrg1Src1ImmInstruction(self(), TR::InstOpCode::addimmw, node, counterReg, counterReg, delta, cursor);
    cursor = generateMemSrc1Instruction(self(), TR::InstOpCode::strimmw, node, TR::MemoryReference::createWithDisplacement(self(), addrReg, 0), counterReg, cursor);
@@ -925,7 +979,7 @@ TR::Instruction *OMR::ARM64::CodeGenerator::generateDebugCounterBump(TR::Instruc
    TR::Register *addrReg = srm.findOrCreateScratchRegister();
    TR::Register *counterReg = srm.findOrCreateScratchRegister();
 
-   cursor = loadAddressConstant(self(), node, addr, addrReg, cursor, false, TR_DebugCounter);
+   cursor = loadAddressConstant(self(), self()->comp()->compileRelocatableCode(), node, addr, addrReg, cursor, TR_DebugCounter);
    cursor = generateTrg1MemInstruction(self(), TR::InstOpCode::ldrimmw, node, counterReg, TR::MemoryReference::createWithDisplacement(self(), addrReg, 0), cursor);
    cursor = generateTrg1Src2Instruction(self(), TR::InstOpCode::addw, node, counterReg, counterReg, deltaReg, cursor);
    cursor = generateMemSrc1Instruction(self(), TR::InstOpCode::strimmw, node, TR::MemoryReference::createWithDisplacement(self(), addrReg, 0), counterReg, cursor);
@@ -948,6 +1002,8 @@ OMR::ARM64::CodeGenerator::supportsNonHelper(TR::SymbolReferenceTable::CommonNon
          result = true;
          break;
          }
+      default:
+         break;
       }
 
    return result;

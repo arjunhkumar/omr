@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -40,6 +40,7 @@
 
 #if !defined(OMR_EBCDIC)
 #include "atoe.h"
+#include "omriconvhelpers.h"
 #endif /* !defined(OMR_EBCDIC) */
 
 void WRITE_TTY(int fileno, char *b, int bcount);
@@ -50,8 +51,10 @@ WRITE_TTY(int fileno, char *b, int bcount)
 {
 #if !defined(OMR_EBCDIC)
 	char *s = a2e(b, bcount);
-	write(fileno, s, bcount);
-	free(s);
+	if (NULL != s) {
+		write(fileno, s, bcount);
+		free(s);
+	}
 #else /* !defined(OMR_EBCDIC) */
 	write(fileno, b, bcount);
 #endif /* !defined(OMR_EBCDIC) */

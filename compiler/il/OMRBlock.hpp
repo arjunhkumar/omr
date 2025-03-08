@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_BLOCK_INCL
@@ -331,7 +331,7 @@ class OMR_EXTENSIBLE Block : public TR::CFGNode
       uint32_t                              _catchType;
       TR_ResolvedMethod *                   _owningMethod;
       TR_ByteCodeInfo                       _byteCodeInfo;
-      uint16_t                              _handlerIndex;
+      int32_t                               _handlerIndex;
       uint8_t                               _inlineDepth;
       bool                                  _isSyntheticHandler; // indicate whether the exception handler is inserted by the compiler rather than existing in the source code
       };
@@ -339,13 +339,13 @@ class OMR_EXTENSIBLE Block : public TR::CFGNode
    TR_CatchBlockExtension* getCatchBlockExtension()               { return _catchBlockExtension; }
    void setCatchBlockExtension(TR_CatchBlockExtension *extension) { _catchBlockExtension = extension; }
 
-   void setHandlerInfo(uint32_t c, uint8_t d, uint16_t i, TR_ResolvedMethod * m, TR::Compilation *comp);
-   void setHandlerInfoWithOutBCInfo(uint32_t c, uint8_t d, uint16_t i, TR_ResolvedMethod * m, TR::Compilation *comp); //also used for estimatecodesize dummy blocks
+   void setHandlerInfo(uint32_t c, uint8_t d, int32_t i, TR_ResolvedMethod * m, TR::Compilation *comp);
+   void setHandlerInfoWithOutBCInfo(uint32_t c, uint8_t d, int32_t i, TR_ResolvedMethod * m, TR::Compilation *comp); //also used for estimatecodesize dummy blocks
 
    bool                   isCatchBlock();
    uint32_t               getCatchType();
    uint8_t                getInlineDepth();
-   uint16_t               getHandlerIndex();
+   int32_t                getHandlerIndex();
    TR_ByteCodeInfo        getByteCodeInfo();
    TR_OpaqueClassBlock *  getExceptionClass();
    char *                 getExceptionClassNameChars();
@@ -448,6 +448,8 @@ class OMR_EXTENSIBLE Block : public TR::CFGNode
    bool wasHeaderOfCanonicalizedLoop()                { return _flags.testAny(_wasHeaderOfCanonicalizedLoop); }
    void setWasHeaderOfCanonicalizedLoop(bool b)       { _flags.set(_wasHeaderOfCanonicalizedLoop, b); }
 
+   bool isLastWarmBlock()                             { return _flags.testAny(_isLastWarmBlock); }
+   void setIsLastWarmBlock(bool b = true)             { _flags.set(_isLastWarmBlock, b); }
 
    bool isSyntheticHandler()                          { return  _catchBlockExtension && _catchBlockExtension->_isSyntheticHandler; }
    void setIsSyntheticHandler();
@@ -502,9 +504,9 @@ class OMR_EXTENSIBLE Block : public TR::CFGNode
 
    struct StandardException
       {
-      int32_t  length;
-      char    *name;
-      uint32_t exceptions;
+      int32_t     length;
+      const char *name;
+      uint32_t    exceptions;
       };
 
    static StandardException _standardExceptions[];
@@ -534,6 +536,7 @@ class OMR_EXTENSIBLE Block : public TR::CFGNode
       _isCreatedByVersioning                = 0x02000000,
       _isEntryOfShortRunningLoop            = 0x04000000,
       _wasHeaderOfCanonicalizedLoop         = 0x08000000,
+      _isLastWarmBlock                      = 0x10000000,
       };
 
    TR::TreeTop *                         _pEntry;

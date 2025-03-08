@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stddef.h>
@@ -284,20 +284,23 @@ static void moveBlockAfterDest(TR::CFG *cfg, TR::Block *toMove, TR::Block *dest)
    }
 
 // This opt tries to reduce merge backs from cold code that are the result of inliner
-// gnerated nopable virtual guards
+// generated nopable virtual guards
 // It looks for one basic pattern
 //
 // guard1 -> cold1
 // BBEND
 // BBSTART
 // guard2 -> cold2
-// if guard1 is the guard for a method which calls the method guard2 protects or cold1 is
-// a predecessor of cold2 (a situation commonly greated by virtual guard tail splitter) we
-// can transform the guards as follows when guard1 and guard2 a
+//
+// If guard1 is the guard for a method which calls the method guard2 protects or cold1 is
+// a predecessor of cold2 (a situation commonly created by virtual guard tail splitter) we
+// can transform the guards as follows:
+//
 // guard1 -> cold1
 // BBEND
 // BBSTART
 // guard2 -> cold1
+//
 // This is safe because there are no trees between the guards and calling the caller will
 // result in the call to the callee if we need to patch guard2. cold2 and its mergebacks
 // can then be eliminated
@@ -383,6 +386,14 @@ int32_t TR_VirtualGuardHeadMerger::perform() {
          // scan for candidate guards to merge with guard1 identified above
          for (TR::Block *nextBlock = block->getNextBlock(); nextBlock; nextBlock = nextBlock->getNextBlock())
             {
+            if (block->nodeIsRemoved() || nextBlock->nodeIsRemoved())
+               {
+               if (trace())
+                  traceMsg(comp(), "block block_%d %p (%d) or nextBlock block_%d %p (%d) has been removed\n",
+                     block->getNumber(), block, block->nodeIsRemoved(), nextBlock->getNumber(), nextBlock, nextBlock->nodeIsRemoved());
+               break;
+               }
+
             if (!(nextBlock->getPredecessors().size() == 1) ||
                 !nextBlock->hasPredecessor(block))
                {
@@ -467,6 +478,22 @@ int32_t TR_VirtualGuardHeadMerger::perform() {
             if (guard2->getBranchDestination() != guard1->getBranchDestination())
                guard2Block->changeBranchDestination(guard1->getBranchDestination(), cfg);
 
+            // changeBranchDestination tries to remove unreachable blocks after the removal of the old edge
+            // from guard2 to cold2. Rarely, a previous transformation in this pass could have made
+            // guard2Block unreachable without removing it, in which case it might have been removed just now.
+            // Normally, if all relevant blocks are removed, later moveBlockAfterDest will not cause any issue
+            // since it will be just moving around all unreachable blocks. However, in an even more rare case,
+            // if some of the blocks are removed and some of them are not (eg, guard2Block and the previous block
+            // of guard2Block are removed but the next block of guard2Block is still valid), moveBlockAfterDest
+            // could end up joining an invalid/removed block with a valid block. Therefore, if guard2Block
+            // is no longer valid, it should not proceed.
+            if (guard2Block->nodeIsRemoved())
+               {
+               if (trace())
+                  traceMsg(comp(), "guard2Block block_%d %p has been removed after changeBranchDestination\n", guard2Block->getNumber(), guard2Block);
+               break;
+               }
+
             if (guard2Tree != guard2Block->getFirstRealTreeTop())
                {
                cfg->setStructure(NULL);
@@ -477,7 +504,7 @@ int32_t TR_VirtualGuardHeadMerger::perform() {
                // 2, it might contain live monitor, moving it up above a guard can affect the monitor's live range
                if (!isStopTheWorldGuard(guard2))
                   {
-	          // the block created above guard2 contains only privarg treetops or monitor stores if
+                  // the block created above guard2 contains only privarg treetops or monitor stores if
                   // guard2 is a runtime-patchable guard and is safe to merge. We need to move the priv
                   // args up to the runtime insert point and leave the monitor stores in place
                   // It's safe to do so because there is no data dependency between the monitor store and

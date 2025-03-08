@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "infra/SimpleRegex.hpp"
@@ -55,11 +55,11 @@
 namespace TR
 {
 
-SimpleRegex *SimpleRegex::create(char *&s)
+SimpleRegex *SimpleRegex::create(const char *& s)
    {
    if (s == NULL || s[0] != '{')
       return NULL;
-   char *origStr = s;
+   const char *origStr = s;
    ++s;
    bool negate = (s[0] == '^');
    if (negate)
@@ -78,7 +78,7 @@ SimpleRegex *SimpleRegex::create(char *&s)
    }
 
 
-SimpleRegex::Regex *SimpleRegex::processRegex(char *&s, bool &foundError)
+SimpleRegex::Regex *SimpleRegex::processRegex(const char *&s, bool &foundError)
    {
    // First get rid of all + and |
    //
@@ -108,10 +108,10 @@ void *SimpleRegex::Component::operator new (size_t size, PERSISTENT_NEW_DECLARE,
 
 // Process a simple_pattern: a sequence of components
 //
-SimpleRegex::Simple *SimpleRegex::processSimple(char *&s, TR_YesNoMaybe allowAlternates, bool &foundError)
+SimpleRegex::Simple *SimpleRegex::processSimple(const char *&s, TR_YesNoMaybe allowAlternates, bool &foundError)
    {
    int32_t i,lo,hi;
-   char *startSimple = s;
+   const char *startSimple = s;
 
    if (s[0] == '\0' || s[0] == ',' || s[0] == '|' || s[0] == '}')
       return NULL;

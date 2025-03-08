@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef VALUEPROPAGATIONTABLE_INCL
@@ -67,7 +67,7 @@ TR::Node *constrainFload(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainFloatCmp(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainGoto(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainI2l(OMR::ValuePropagation *vp, TR::Node *node);
-TR::Node *constrainIaload(OMR::ValuePropagation *vp, TR::Node *node);
+TR::Node *constrainAloadi(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainIand(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainIdiv(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainIfcmpeq(OMR::ValuePropagation *vp, TR::Node *node);
@@ -76,7 +76,7 @@ TR::Node *constrainIfcmpgt(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainIfcmple(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainIfcmplt(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainIfcmpne(OMR::ValuePropagation *vp, TR::Node *node);
-TR::Node *constrainIiload(OMR::ValuePropagation *vp, TR::Node *node);
+TR::Node *constrainIloadi(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainImul(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainIneg(OMR::ValuePropagation *vp, TR::Node *node);
 TR::Node *constrainIabs(OMR::ValuePropagation *vp, TR::Node *node);
@@ -187,17 +187,17 @@ TR::Node * constrainLongBitCount(OMR::ValuePropagation *vp, TR::Node *node);
 #define brdbarVPHandler constrainIntLoad
 #define srdbarVPHandler constrainShortLoad
 #define lrdbarVPHandler constrainLload
-#define iloadiVPHandler constrainIiload
+#define iloadiVPHandler constrainIloadi
 #define floadiVPHandler constrainFload
 #define dloadiVPHandler constrainDload
-#define aloadiVPHandler constrainIaload
+#define aloadiVPHandler constrainAloadi
 #define bloadiVPHandler constrainIntLoad
 #define sloadiVPHandler constrainShortLoad
 #define lloadiVPHandler constrainLload
-#define irdbariVPHandler constrainIiload
+#define irdbariVPHandler constrainIloadi
 #define frdbariVPHandler constrainFload
 #define drdbariVPHandler constrainDload
-#define ardbariVPHandler constrainIaload
+#define ardbariVPHandler constrainAloadi
 #define brdbariVPHandler constrainIntLoad
 #define srdbariVPHandler constrainShortLoad
 #define lrdbariVPHandler constrainLload
@@ -654,6 +654,32 @@ TR::Node * constrainLongBitCount(OMR::ValuePropagation *vp, TR::Node *node);
 #define vmxorVPHandler constrainChildren
 #define vmfirstNonZeroVPHandler constrainChildren
 
+#define vpopcntVPHandler constrainChildren
+#define vmpopcntVPHandler constrainChildren
+#define vcompressVPHandler constrainChildren
+#define vexpandVPHandler constrainChildren
+#define vshlVPHandler constrainChildren
+#define vmshlVPHandler constrainChildren
+#define vshrVPHandler constrainChildren
+#define vmshrVPHandler constrainChildren
+#define vushrVPHandler constrainChildren
+#define vmushrVPHandler constrainChildren
+#define vrolVPHandler constrainChildren
+#define vmrolVPHandler constrainChildren
+#define mcompressVPHandler constrainChildren
+#define vnotzVPHandler constrainChildren
+#define vmnotzVPHandler constrainChildren
+#define vnolzVPHandler constrainChildren
+#define vmnolzVPHandler constrainChildren
+#define vbitswapVPHandler constrainChildren
+#define vmbitswapVPHandler constrainChildren
+#define vbyteswapVPHandler constrainChildren
+#define vmbyteswapVPHandler constrainChildren
+#define vcompressbitsVPHandler constrainChildren
+#define vmcompressbitsVPHandler constrainChildren
+#define vexpandbitsVPHandler constrainChildren
+#define vmexpandbitsVPHandler constrainChildren
+
 #define f2iuVPHandler constrainChildren
 #define f2luVPHandler constrainChildren
 #define f2buVPHandler constrainChildren
@@ -723,6 +749,7 @@ TR::Node * constrainLongBitCount(OMR::ValuePropagation *vp, TR::Node *node);
 #define long2StringVPHandler constrainChildren
 #define bitOpMemVPHandler constrainChildren
 #define arraycmpVPHandler constrainChildren
+#define arraycmplenVPHandler constrainChildren
 #define allocationFenceVPHandler constrainChildren
 #define loadFenceVPHandler constrainChildren
 #define storeFenceVPHandler constrainChildren
@@ -793,6 +820,14 @@ TR::Node * constrainLongBitCount(OMR::ValuePropagation *vp, TR::Node *node);
 #define sbitpermuteVPHandler constrainChildren
 #define ibitpermuteVPHandler constrainChildren
 #define lbitpermuteVPHandler constrainChildren
+#define lcompressbitsVPHandler constrainChildren
+#define icompressbitsVPHandler constrainChildren
+#define scompressbitsVPHandler constrainChildren
+#define bcompressbitsVPHandler constrainChildren
+#define lexpandbitsVPHandler constrainChildren
+#define iexpandbitsVPHandler constrainChildren
+#define sexpandbitsVPHandler constrainChildren
+#define bexpandbitsVPHandler constrainChildren
 #define PrefetchVPHandler constrainChildren
 
 #ifdef J9_PROJECT_SPECIFIC
@@ -891,6 +926,7 @@ TR::Node * constrainLongBitCount(OMR::ValuePropagation *vp, TR::Node *node);
 #define pdModifyPrecisionVPHandler constrainChildren
 #define countDigitsVPHandler constrainChildren
 #define BCDCHKVPHandler constrainBCDCHK
+#define zdchkVPHandler constrainChildren
 #endif
 
 const ValuePropagationPointerTable constraintHandlers;

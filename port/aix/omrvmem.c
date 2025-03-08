@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -316,7 +316,7 @@ omrvmem_free_memory(struct OMRPortLibrary *portLibrary, void *userAddress, uintp
 	uintptr_t allocator = identifier->allocator;
 	uintptr_t size = identifier->size;
 	OMRMemCategory *category = identifier->category;
-	
+
 	update_vmemIdentifier(identifier, NULL, NULL, 0, 0, 0, 0, 0, NULL);
 
 	if (OMRPORT_VMEM_RESERVE_USED_J9MEM_ALLOCATE_MEMORY == allocator) {
@@ -756,8 +756,8 @@ default_pageSize_reserve_memory(struct OMRPortLibrary *portLibrary, void *addres
 	int protMask;
 	void *result = NULL;
 
-	if(mode & OMRPORT_VMEM_MEMORY_MODE_SHARE_FILE_OPEN) {
-		portLibrary->error_set_last_error(portLibrary,  errno, OMRPORT_ERROR_VMEM_NOT_SUPPORTED);
+	if (OMR_ARE_ANY_BITS_SET(mode, OMRPORT_VMEM_MEMORY_MODE_SHARE_FILE_OPEN | OMRPORT_VMEM_MEMORY_MODE_SHARE_TMP_FILE_OPEN)) {
+		portLibrary->error_set_last_error(portLibrary, errno, OMRPORT_ERROR_VMEM_NOT_SUPPORTED);
 		return result;
 	}
 

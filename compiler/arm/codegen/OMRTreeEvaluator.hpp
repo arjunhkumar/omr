@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_ARM_TREE_EVALUATOR_INCL
@@ -395,6 +395,32 @@ public:
    static TR::Register *vmxorEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vmfirstNonZeroEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
+   static TR::Register *vpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vexpandEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vshlEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmshlEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vshrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmshrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vushrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmushrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vrolEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmrolEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *mcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+
    static TR::Register *f2iuEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *f2luEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *f2buEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -507,6 +533,14 @@ public:
    static TR::Register *sbitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *ibitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *lbitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *bcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *scompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *icompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *lcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *bexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *sexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *iexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *lexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *PrefetchEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
    static TR::Register *badILOpEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -533,9 +567,6 @@ public:
    static TR::Register *dstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *bstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *sstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *ilstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *ifstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *idstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *gotoEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *ireturnEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *lreturnEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -736,6 +767,7 @@ public:
    static TR::Register *arraytranslateAndTestEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *arraytranslateEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *arraycmpEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *arraycmplenEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *BBStartEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *BBEndEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *commonLoadEvaluator(TR::Node *node, TR::InstOpCode::Mnemonic memoryToRegisterOp, int32_t memSize, TR::CodeGenerator *cg);

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_TRANSFORMUTIL_INCL
@@ -188,6 +188,95 @@ class OMR_EXTENSIBLE TransformUtil
                                               TR::Block* mergeBlock,
                                               TR::CFG *cfg,
                                               bool markCold = true);
+
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+   /**
+    * \brief
+    *    Generate IL to load dataAddr pointer from the array header
+    *
+    * \param comp
+    *    The compilation object
+    *
+    * \param arrayObject
+    *    The array object node
+    *
+    * \return
+    *    IL for loading dataAddr pointer
+    */
+   static TR::Node *generateDataAddrLoadTrees(TR::Compilation *comp, TR::Node *arrayObject);
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
+
+   /**
+    * \brief
+    *    Generate array element access IL for on and off heap contiguous arrays
+    *
+    * \param comp
+    *    The compilation object
+    *
+    * \param arrayNode
+    *    The array object node
+    *
+    * \param offsetNode
+    *    The offset node (in bytes)
+    *
+    * \param originatingByteCodeNode
+    *    The originating byte code node
+    *
+    * \return
+    *    IL to access array element at offset provided by offsetNode or
+    *    first array element if no offset node is provided
+    */
+   static TR::Node *generateArrayElementAddressTrees(
+      TR::Compilation *comp,
+      TR::Node *arrayNode,
+      TR::Node *offsetNode = NULL,
+      TR::Node *originatingByteCodeNode = NULL);
+
+   /**
+    * \brief
+    *    Generate IL to access first array element
+    *
+    * \param comp
+    *    The compilation object
+    *
+    * \param arrayObject
+    *    The array object node
+    *
+    * \return
+    *    IL for accessing first array element
+    */
+   static TR::Node *generateFirstArrayElementAddressTrees(TR::Compilation *comp, TR::Node *arrayObject);
+
+   /**
+    * \brief
+    *    Generates IL to convert element index to offset in bytes using element
+    *    size (node or integer)
+    *
+    * \param comp
+    *    The compilation object
+    *
+    * \param indexNode
+    *    Array element index node
+    *
+    * \param elementSizeNode
+    *    Array element size tree (ex: const node containing element size)
+    *
+    * \param elementSize
+    *    Array element size
+    *
+    * \param useShiftOpCode
+    *    Use left shift instead of multiplication
+    *
+    * \return
+    *    IL to convert array element index to offset in bytes
+    */
+   static TR::Node *generateConvertArrayElementIndexToOffsetTrees(
+      TR::Compilation *comp,
+      TR::Node *indexNode,
+      TR::Node *elementSizeNode = NULL,
+      int32_t elementSize = 0,
+      bool useShiftOpCode = false);
+
    private:
 
    static uint32_t _widthToShift[];

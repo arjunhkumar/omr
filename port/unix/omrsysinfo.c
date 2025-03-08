@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -80,13 +80,14 @@
 
 
 #if defined(J9ZOS390)
+#include "omrgetthent.h"
 #include "omrsimap.h"
 #endif /* defined(J9ZOS390) */
 
-#if defined(LINUXPPC) || (defined(S390) && defined(LINUX) && !defined(J9ZTPF)) || (defined(AARCH64) && defined(LINUX))
+#if defined(LINUXPPC) || (defined(S390) && defined(LINUX) && !defined(OMRZTPF)) || (defined(AARCH64) && defined(LINUX))
 #include "auxv.h"
 #include <strings.h>
-#endif /* defined(LINUXPPC) || (defined(S390) && defined(LINUX) && !defined(J9ZTPF)) || (defined(AARCH64) && defined(LINUX)) */
+#endif /* defined(LINUXPPC) || (defined(S390) && defined(LINUX) && !defined(OMRZTPF)) || (defined(AARCH64) && defined(LINUX)) */
 
 #if (defined(S390))
 #include "omrportpriv.h"
@@ -95,6 +96,7 @@
 
 #if defined(AIXPPC)
 #include <fcntl.h>
+#include <procinfo.h>
 #include <sys/procfs.h>
 #include <sys/systemcfg.h>
 #endif /* defined(AIXPPC) */
@@ -151,7 +153,7 @@
 #include <sys/sysinfo.h>
 #include <sys/vfs.h>
 #include <sched.h>
-#elif defined(OSX)
+#elif defined(OSX) /* defined(LINUX) && !defined(OMRZTPF) */
 #include <sys/sysctl.h>
 #endif /* defined(LINUX) && !defined(OMRZTPF) */
 
@@ -163,6 +165,7 @@
 #include "omrportpriv.h"
 #include "omrportpg.h"
 #include "omrportptb.h"
+#include "portnls.h"
 #include "ut_omrport.h"
 
 #if defined(OMRZTPF)
@@ -194,6 +197,14 @@ uintptr_t Get_Number_Of_CPUs();
 #define JIFFIES         100
 #define USECS_PER_SEC   1000000
 #define TICKS_TO_USEC   ((uint64_t)(USECS_PER_SEC/JIFFIES))
+#define OMRPORT_SYSINFO_PROC_DIR_BUFFER_SIZE 256
+#define OMRPORT_SYSINFO_NUM_SYSCTL_ARGS 4
+#define OMRPORT_SYSINFO_NANOSECONDS_PER_MICROSECOND 1000ULL
+#if defined(_LP64)
+#define GETTHENT BPX4GTH
+#else /* defined(_LP64) */
+#define GETTHENT BPX1GTH
+#endif /* defined(_LP64) */
 
 static uintptr_t copyEnvToBuffer(struct OMRPortLibrary *portLibrary, void *args);
 static uintptr_t copyEnvToBufferSignalHandler(struct OMRPortLibrary *portLib, uint32_t gpType, void *gpInfo, void *unUsed);
@@ -242,6 +253,19 @@ static intptr_t omrsysinfo_get_aix_ppc_description(struct OMRPortLibrary *portLi
 #define __power_10() (_system_configuration.implementation == POWER_10)
 #endif /* !defined(__power_10) */
 
+#if !defined(__power_11)
+#define POWER_11 0x80000 /* Power 11 class CPU */
+#define __power_11() (_system_configuration.implementation == POWER_11)
+#endif /* !defined(__power_11) */
+
+/*
+ * Please update the macro below to stay in sync with the latest POWER processor known to OMR,
+ * ensuring CPU recognition is more robust than in the past. As the macro currently stands, any
+ * later processors are recognized as at least POWER11.
+ */
+#define POWER11_OR_ABOVE (0xFFFFFFFF << 19)
+#define __power_latestKnownAndUp() OMR_ARE_ANY_BITS_SET(_system_configuration.implementation, POWER11_OR_ABOVE)
+
 #if defined(J9OS_I5_V6R1) /* vmx_version id only available since TL4 */
 #define __power_vsx() (_system_configuration.vmx_version > 1)
 #endif
@@ -257,11 +281,11 @@ static intptr_t omrsysinfo_get_aix_ppc_description(struct OMRPortLibrary *portLi
 #endif  /* !defined(__power_tm) */
 #endif /* !defined(J9OS_I5_V7R2) && !defined(J9OS_I5_V6R1) */
 
-#if (defined(S390) || defined(J9ZOS390) || defined(J9ZTPF))
+#if (defined(S390) || defined(J9ZOS390) || defined(OMRZTPF))
 static BOOLEAN omrsysinfo_test_stfle(struct OMRPortLibrary *portLibrary, uint64_t stfleBit);
 static intptr_t omrsysinfo_get_s390_description(struct OMRPortLibrary *portLibrary, OMRProcessorDesc *desc);
 const char * omrsysinfo_get_s390_processor_feature_name(uint32_t feature);
-#endif /* defined(S390) || defined(J9ZOS390) || defined(J9ZTPF) */
+#endif /* defined(S390) || defined(J9ZOS390) || defined(OMRZTPF) */
 
 #if defined(RISCV)
 static intptr_t omrsysinfo_get_riscv_description(struct OMRPortLibrary *portLibrary, OMRProcessorDesc *desc);
@@ -353,6 +377,7 @@ struct {
 #define ROOT_CGROUP "/"
 #define SYSTEMD_INIT_CGROUP "/init.scope"
 #define OMR_PROC_PID_ONE_CGROUP_FILE "/proc/1/cgroup"
+#define OMR_PROC_PID_ONE_SCHED_FILE "/proc/1/sched"
 #define MAX_DEFAULT_VALUE_CHECK (LLONG_MAX - (1024 * 1024 * 1024)) /* subtracting the MAX page size (1GB) from LLONG_MAX to check against a value */
 #define CGROUP_METRIC_FILE_CONTENT_MAX_LIMIT 1024
 
@@ -387,10 +412,16 @@ struct {
  */
 #define OMRPORT_SYSINFO_CGROUP_V1_AVAILABLE 0x1
 #define OMRPORT_SYSINFO_CGROUP_V2_AVAILABLE 0x2
-#define OMRPORT_SYSINFO_RUNNING_IN_CONTAINER 0x4
+
+/* Different states of PPG_processInContainerState. */
+#define OMRPORT_PROCESS_IN_CONTAINER_UNINITIALIZED 0x0
+#define OMRPORT_PROCESS_IN_CONTAINER_TRUE 0x1
+#define OMRPORT_PROCESS_IN_CONTAINER_FALSE 0x2
+#define OMRPORT_PROCESS_IN_CONTAINER_ERROR 0x3
 
 /* Cgroup v1 and v2 memory files */
 #define CGROUP_MEMORY_STAT_FILE "memory.stat"
+#define CGROUP_MEMORY_SWAPPINESS "memory.swappiness"
 
 /* Cgroup v1 memory files */
 #define CGROUP_MEMORY_LIMIT_IN_BYTES_FILE "memory.limit_in_bytes"
@@ -566,7 +597,13 @@ static struct OMRCgroupSubsystemMetricMap omrCgroupCpusetMetricMapV2[] = {
 #define OMR_CGROUP_CPUSET_METRIC_MAP_V2_SIZE sizeof(omrCgroupCpusetMetricMapV2) / sizeof(omrCgroupCpusetMetricMapV2[0])
 
 static uint32_t attachedPortLibraries;
-static omrthread_monitor_t cgroupEntryListMonitor;
+
+/* Used to enforce data consistency for
+ * - PPG_cgroupEntryList, and
+ * - PPG_processInContainerState.
+ * Both variables are related and modified in the same code-path.
+ */
+static omrthread_monitor_t cgroupMonitor;
 #endif /* defined(LINUX) */
 
 static intptr_t cwdname(struct OMRPortLibrary *portLibrary, char **result);
@@ -584,6 +621,19 @@ static intptr_t searchSystemPath(struct OMRPortLibrary *portLibrary, char *filen
 #if defined(J9ZOS390)
 static void setOSFeature(struct OMROSDesc *desc, uint32_t feature);
 static intptr_t getZOSDescription(struct OMRPortLibrary *portLibrary, struct OMROSDesc *desc);
+#if defined(_LP64)
+#pragma linkage(BPX4GTH,OS)
+#else /* defined(_LP64) */
+#pragma linkage(BPX1GTH,OS)
+#endif /* defined(_LP64) */
+void GETTHENT(
+	unsigned int *inputSize,
+	unsigned char **input,
+	unsigned int *outputSize,
+	unsigned char **output,
+	unsigned int *ret,
+	unsigned int *retCode,
+	unsigned int *reasonCode);
 #endif /* defined(J9ZOS390) */
 
 #if !defined(RS6000) && !defined(J9ZOS390) && !defined(OSX) && !defined(OMRZTPF)
@@ -610,7 +660,7 @@ static int32_t getAbsolutePathOfCgroupSubsystemFile(struct OMRPortLibrary *portL
 static int32_t  getHandleOfCgroupSubsystemFile(struct OMRPortLibrary *portLibrary, uint64_t subsystemFlag, const char *fileName, FILE **subsystemFile);
 static int32_t readCgroupMetricFromFile(struct OMRPortLibrary *portLibrary, uint64_t subsystemFlag, const char *fileName, const char *metricKeyInFile, char **fileContent, char *value);
 static int32_t readCgroupSubsystemFile(struct OMRPortLibrary *portLibrary, uint64_t subsystemFlag, const char *fileName, int32_t numItemsToRead, const char *format, ...);
-static int32_t isRunningInContainer(struct OMRPortLibrary *portLibrary, BOOLEAN *inContainer);
+static BOOLEAN isRunningInContainer(struct OMRPortLibrary *portLibrary);
 static int32_t scanCgroupIntOrMax(struct OMRPortLibrary *portLibrary, const char *metricString, uint64_t *val);
 static int32_t readCgroupMemoryFileIntOrMax(struct OMRPortLibrary *portLibrary, const char *fileName, uint64_t *metric);
 static int32_t getCgroupMemoryLimit(struct OMRPortLibrary *portLibrary, uint64_t *limit);
@@ -825,9 +875,9 @@ omrsysinfo_get_processor_feature_name(struct OMRPortLibrary *portLibrary, uint32
 	Trc_PRT_sysinfo_get_processor_feature_name_Entered(feature);
 #if defined(J9X86) || defined(J9HAMMER)
 	rc = omrsysinfo_get_x86_processor_feature_name(feature);
-#elif defined(S390) || defined(J9ZOS390) || defined(J9ZTPF) /* defined(J9X86) || defined(J9HAMMER) */
+#elif defined(S390) || defined(J9ZOS390) || defined(OMRZTPF) /* defined(J9X86) || defined(J9HAMMER) */
 	rc = omrsysinfo_get_s390_processor_feature_name(feature);
-#elif defined(AIXPPC) || defined(LINUXPPC) /* defined(S390) || defined(J9ZOS390) || defined(J9ZTPF) */
+#elif defined(AIXPPC) || defined(LINUXPPC) /* defined(S390) || defined(J9ZOS390) || defined(OMRZTPF) */
 	rc = omrsysinfo_get_ppc_processor_feature_name(feature);
 #elif defined(AARCH64) /* defined(AIXPPC) || defined(LINUXPPC) */
 	rc = omrsysinfo_get_aarch64_processor_feature_name(feature);
@@ -838,7 +888,7 @@ omrsysinfo_get_processor_feature_name(struct OMRPortLibrary *portLibrary, uint32
 
 
 /**
- * Generate the corresponding string literals for the provided OMRProcessorDesc. The buffer will be zero 
+ * Generate the corresponding string literals for the provided OMRProcessorDesc. The buffer will be zero
  * initialized and overwritten with the processor feature output string.
  *
  * @param[in] portLibrary The port library.
@@ -1092,6 +1142,8 @@ omrsysinfo_map_ppc_processor(const char *processorName)
 		rc = OMR_PROCESSOR_PPC_P9;
 	} else if (0 == strncasecmp(processorName, "power10", 7)) {
 		rc = OMR_PROCESSOR_PPC_P10;
+	} else if (0 == strncasecmp(processorName, "power11", 7)) {
+		rc = OMR_PROCESSOR_PPC_P11;
 	}
 
 	return rc;
@@ -1145,6 +1197,8 @@ omrsysinfo_get_aix_ppc_description(struct OMRPortLibrary *portLibrary, OMRProces
 		desc->processor = OMR_PROCESSOR_PPC_P9;
 	} else if (__power_10()) {
 		desc->processor = OMR_PROCESSOR_PPC_P10;
+	} else if (__power_latestKnownAndUp()) {
+		desc->processor = OMR_PROCESSOR_PPC_P11;
 	} else {
 		desc->processor = OMR_PROCESSOR_PPC_UNKNOWN;
 	}
@@ -1294,8 +1348,18 @@ omrsysinfo_get_s390_zos_supports_vector_extension_facility(void)
 	return FALSE;
 }
 
+/* The following two functions for checking if z/OS supports the constrained and non-constrained
+ * transactional executional facilities rely on FLCCVT and CVTFLAG4, documented here:
+ *
+ * FLCCVT is an ADDRESS (of the CVT structure) off the PSA structure
+ * https://www.ibm.com/support/knowledgecenter/en/SSLTBW_2.3.0/com.ibm.zos.v2r3.iead300/PSA-map.htm
+ *
+ * CVTFLAG4 is a BITSTRING off the CVT structure containing the CVTTX (0x08), CVTTXC (0x04), and CVTRI (0x02) bits
+ * https://www.ibm.com/support/knowledgecenter/en/SSLTBW_2.3.0/com.ibm.zos.v2r3.iead100/CVT-map.htm
+ */
+
 /** @internal
- *  Check if z/OS supports the Transactional Execution Facility (TX). We use the CVTTX (0x08) and CVTTXC (0x04) bits in
+ *  Check if z/OS supports the Transactional Execution Facility (TX). We use the CVTTX (0x08) bit in
  *  the CVT structure for the OS check.
  *
  *  @return TRUE if TX is supported; FALSE otherwise.
@@ -1303,16 +1367,25 @@ omrsysinfo_get_s390_zos_supports_vector_extension_facility(void)
 static BOOLEAN
 omrsysinfo_get_s390_zos_supports_transactional_execution_facility(void)
 {
-	/* FLCCVT is an ADDRESS off the PSA structure
-	 * https://www.ibm.com/support/knowledgecenter/en/SSLTBW_2.3.0/com.ibm.zos.v2r3.iead300/PSA-map.htm */
-	uint8_t* CVT = (uint8_t*)(*(uint32_t*)0x10);
+	uint8_t* FLCCVT = (uint8_t*)(*(uint32_t*)0x10);
+	uint8_t CVTFLAG4 = *(FLCCVT + 0x17B);
 
-	/* CVTFLAG4 is a BITSTRING off the CVT structure containing the CVTTX (0x08), CVTTXC (0x04), and CVTRI (0x02) bits
-	 * https://www.ibm.com/support/knowledgecenter/en/SSLTBW_2.3.0/com.ibm.zos.v2r3.iead100/CVT-map.htm */
-	uint8_t CVTFLAG4 = *(CVT + 0x17B);
+	return OMR_ARE_ALL_BITS_SET(CVTFLAG4, 0x08);
+}
 
-	/* Note we check for both constrained and non-constrained transaction support */
-	return OMR_ARE_ALL_BITS_SET(CVTFLAG4, 0x0C);
+/** @internal
+ *  Check if z/OS supports the Constrained Transactional Execution Facility (TXC). We use the CVTTXC (0x04) bit in
+ *  the CVT structure for the OS check.
+ *
+ *  @return TRUE if TXC is supported; FALSE otherwise.
+ */
+static BOOLEAN
+omrsysinfo_get_s390_zos_supports_constrained_transactional_execution_facility(void)
+{
+	uint8_t* FLCCVT = (uint8_t*)(*(uint32_t*)0x10);
+	uint8_t CVTFLAG4 = *(FLCCVT + 0x17B);
+
+	return OMR_ARE_ALL_BITS_SET(CVTFLAG4, 0x04);
 }
 
 /** @internal
@@ -1375,7 +1448,7 @@ omrsysinfo_get_s390_description(struct OMRPortLibrary *portLibrary, OMRProcessor
 	if (OMR_ARE_NO_BITS_SET(*(int*) 200, S390_STFLE_BIT)) {
 		return -1;
 	}
-#elif defined(J9ZTPF)  /* defined(J9ZOS390) */
+#elif defined(OMRZTPF)  /* defined(J9ZOS390) */
 	/*
 	 * z/TPF requires OS support for some of the Hardware Capabilities.
 	 * Setting the auxvFeatures capabilities flag directly to mimic the query_auxv call in Linux.
@@ -1384,7 +1457,7 @@ omrsysinfo_get_s390_description(struct OMRPortLibrary *portLibrary, OMRProcessor
 			OMR_HWCAP_S390_STFLE|OMR_HWCAP_S390_MSA|OMR_HWCAP_S390_DFP|
 			OMR_HWCAP_S390_LDISP|OMR_HWCAP_S390_EIMM|OMR_HWCAP_S390_ETF3EH;
 
-#elif defined(LINUX) /* defined(J9ZTPF) */
+#elif defined(LINUX) /* defined(OMRZTPF) */
 	/* Some s390 features require OS support on Linux, querying auxv for AT_HWCAP bit-mask of processor capabilities. */
 	unsigned long auxvFeatures = query_auxv(AT_HWCAP);
 #endif /* defined(LINUX) */
@@ -1551,14 +1624,26 @@ omrsysinfo_get_s390_description(struct OMRPortLibrary *portLibrary, OMRProcessor
 	/* zEC12 facility and processor detection */
 
 	/* TE/TX hardware support */
-	if (omrsysinfo_test_stfle(portLibrary, 50) && omrsysinfo_test_stfle(portLibrary, 73)) {
+	if (omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_TRANSACTIONAL_EXECUTION_FACILITY)) {
 #if defined(J9ZOS390)
 		if (omrsysinfo_get_s390_zos_supports_transactional_execution_facility())
 #elif defined(LINUX) /* LINUX S390 */
 		if (OMR_ARE_ALL_BITS_SET(auxvFeatures, OMR_HWCAP_S390_TE))
 #endif /* defined(J9ZOS390) */
 		{
-			omrsysinfo_set_feature(desc, OMR_FEATURE_S390_TE);
+			if (!omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_INEFFECTIVE_NONCONSTRAINED_TRANSACTION_FACILITY))
+			{
+				omrsysinfo_set_feature(desc, OMR_FEATURE_S390_TRANSACTIONAL_EXECUTION_FACILITY);
+			}
+
+			if (omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_CONSTRAINED_TRANSACTIONAL_EXECUTION_FACILITY)) {
+#if defined(J9ZOS390)
+				if (omrsysinfo_get_s390_zos_supports_constrained_transactional_execution_facility())
+#endif /* defined(J9ZOS390) */
+				{
+					omrsysinfo_set_feature(desc, OMR_FEATURE_S390_CONSTRAINED_TRANSACTIONAL_EXECUTION_FACILITY);
+				}
+			}
 		}
 	}
 
@@ -1568,9 +1653,9 @@ omrsysinfo_get_s390_description(struct OMRPortLibrary *portLibrary, OMRProcessor
 		if (omrsysinfo_get_s390_zos_supports_runtime_instrumentation_facility())
 #endif /* defined(J9ZOS390) */
 		{
-#if !defined(J9ZTPF)
+#if !defined(OMRZTPF)
 			omrsysinfo_set_feature(desc, OMR_FEATURE_S390_RI);
-#endif /* !defined(J9ZTPF) */
+#endif /* !defined(OMRZTPF) */
 		}
 	}
 
@@ -1681,9 +1766,9 @@ omrsysinfo_get_s390_description(struct OMRPortLibrary *portLibrary, OMRProcessor
 	if (omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_VECTOR_FACILITY_ENHANCEMENT_2)) {
 #if defined(J9ZOS390)
 		if (omrsysinfo_get_s390_zos_supports_vector_extension_facility())
-#elif defined(LINUX) && !defined(J9ZTPF) /* defined(J9ZOS390) */
+#elif defined(LINUX) && !defined(OMRZTPF) /* defined(J9ZOS390) */
 		if (OMR_ARE_ALL_BITS_SET(auxvFeatures, OMR_HWCAP_S390_VXRS))
-#endif /* defined(LINUX) && !defined(J9ZTPF) */
+#endif /* defined(LINUX) && !defined(OMRZTPF) */
 		{
 			omrsysinfo_set_feature(desc, OMR_FEATURE_S390_VECTOR_FACILITY_ENHANCEMENT_2);
 
@@ -1694,9 +1779,9 @@ omrsysinfo_get_s390_description(struct OMRPortLibrary *portLibrary, OMRProcessor
 	if (omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY)) {
 #if defined(J9ZOS390)
 		if (omrsysinfo_get_s390_zos_supports_vector_extension_facility())
-#elif defined(LINUX) && !defined(J9ZTPF) /* defined(J9ZOS390) */
+#elif defined(LINUX) && !defined(OMRZTPF) /* defined(J9ZOS390) */
 		if (OMR_ARE_ALL_BITS_SET(auxvFeatures, OMR_HWCAP_S390_VXRS))
-#endif /* defined(LINUX) && !defined(J9ZTPF) */
+#endif /* defined(LINUX) && !defined(OMRZTPF) */
 		{
 			omrsysinfo_set_feature(desc, OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY);
 
@@ -1709,13 +1794,53 @@ omrsysinfo_get_s390_description(struct OMRPortLibrary *portLibrary, OMRProcessor
 	if (omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY_2)) {
 #if defined(J9ZOS390)
 		if (omrsysinfo_get_s390_zos_supports_vector_extension_facility())
-#elif defined(LINUX) && !defined(J9ZTPF) /* defined(J9ZOS390) */
+#elif defined(LINUX) && !defined(OMRZTPF) /* defined(J9ZOS390) */
 		if (OMR_ARE_ALL_BITS_SET(auxvFeatures, OMR_HWCAP_S390_VXRS))
-#endif /* defined(LINUX) && !defined(J9ZTPF) */
+#endif /* defined(LINUX) && !defined(OMRZTPF) */
 		{
 			omrsysinfo_set_feature(desc, OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY_2);
 
 			desc->processor = OMR_PROCESSOR_S390_Z16;
+		}
+	}
+
+   /* zNext facility and processor detection */
+
+	if (omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_MISCELLANEOUS_INSTRUCTION_EXTENSION_4)) {
+		omrsysinfo_set_feature(desc, OMR_FEATURE_S390_MISCELLANEOUS_INSTRUCTION_EXTENSION_4);
+
+		desc->processor = OMR_PROCESSOR_S390_ZNEXT;
+	}
+
+	if (omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_VECTOR_FACILITY_ENHANCEMENT_3)) {
+#if defined(J9ZOS390)
+		if (omrsysinfo_get_s390_zos_supports_vector_extension_facility())
+#elif defined(LINUX) && !defined(J9ZTPF) /* defined(J9ZOS390) */
+		if (OMR_ARE_ALL_BITS_SET(auxvFeatures, OMR_HWCAP_S390_VXRS))
+#endif /* defined(LINUX) && !defined(J9ZTPF) */
+		{
+			omrsysinfo_set_feature(desc, OMR_FEATURE_S390_VECTOR_FACILITY_ENHANCEMENT_3);
+
+			desc->processor = OMR_PROCESSOR_S390_ZNEXT;
+		}
+	}
+
+	if (omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_PLO_EXTENSION)) {
+		omrsysinfo_set_feature(desc, OMR_FEATURE_S390_PLO_EXTENSION);
+
+		desc->processor = OMR_PROCESSOR_S390_ZNEXT;
+	}
+
+	if (omrsysinfo_test_stfle(portLibrary, OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY_3)) {
+#if defined(J9ZOS390)
+		if (omrsysinfo_get_s390_zos_supports_vector_extension_facility())
+#elif defined(LINUX) && !defined(J9ZTPF) /* defined(J9ZOS390) */
+		if (OMR_ARE_ALL_BITS_SET(auxvFeatures, OMR_HWCAP_S390_VXRS))
+#endif /* defined(LINUX) && !defined(J9ZTPF) */
+		{
+			omrsysinfo_set_feature(desc, OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY_3);
+
+			desc->processor = OMR_PROCESSOR_S390_ZNEXT;
 		}
 	}
 
@@ -1747,8 +1872,10 @@ omrsysinfo_get_s390_processor_feature_name(uint32_t feature)
 		return "dfp";
 	case OMR_FEATURE_S390_HPAGE:
 		return "hpage";
-	case OMR_FEATURE_S390_TE:
-		return "te";
+	case OMR_FEATURE_S390_TRANSACTIONAL_EXECUTION_FACILITY:
+		return "tx";
+	case OMR_FEATURE_S390_CONSTRAINED_TRANSACTIONAL_EXECUTION_FACILITY:
+		return "txc";
 	case OMR_FEATURE_S390_MSA_EXTENSION3:
 		return "msa_e3";
 	case OMR_FEATURE_S390_MSA_EXTENSION4:
@@ -1805,6 +1932,14 @@ omrsysinfo_get_s390_processor_feature_name(uint32_t feature)
 		return "vec_pde";
 	case OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY_2:
 		return "vec_pde2";
+	case OMR_FEATURE_S390_MISCELLANEOUS_INSTRUCTION_EXTENSION_4:
+		return "mi_e4";
+	case OMR_FEATURE_S390_VECTOR_FACILITY_ENHANCEMENT_3:
+		return "vec_e4";
+	case OMR_FEATURE_S390_PLO_EXTENSION:
+		return "plo";
+	case OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY_3:
+		return "vec_pde3";
 	default:
 		return "null";
 	}
@@ -1818,9 +1953,9 @@ static intptr_t
 omrsysinfo_get_riscv_description(struct OMRPortLibrary *portLibrary, OMRProcessorDesc *desc)
 {
 #if defined(RISCV32)
-	desc->processor = OMR_PROCESOR_RISCV32_UNKNOWN;
+	desc->processor = OMR_PROCESSOR_RISCV32_UNKNOWN;
 #elif defined(RISCV64)
-	desc->processor = OMR_PROCESOR_RISCV64_UNKNOWN;
+	desc->processor = OMR_PROCESSOR_RISCV64_UNKNOWN;
 #elif
 	desc->processor = OMR_PROCESSOR_UNDEFINED;
 #endif
@@ -1915,7 +2050,7 @@ omrsysinfo_get_aarch64_processor_feature_name(uint32_t feature)
 	case OMR_FEATURE_ARM64_FLAGM2:
 		return "flagm2";
 	case OMR_FEATURE_ARM64_FRINTTS:
-		return "frint";	
+		return "frint";
 	case OMR_FEATURE_ARM64_SVE_I8MM:
 		return "svei8mm";
 	case OMR_FEATURE_ARM64_F32MM:
@@ -2584,7 +2719,7 @@ find_executable_name(struct OMRPortLibrary *portLibrary, char **result)
 	portLibrary->mem_free_memory(portLibrary, buf.ps_pathptr);
 
 	/* Return val of w_getpsent == -1 indicates error, == 0 indicates no more processes */
-	if (token <= 0) {
+	if ((token <= 0) || (NULL == e2aName)) {
 		retval = -1;
 		goto cleanup;
 	}
@@ -2612,7 +2747,7 @@ find_executable_name(struct OMRPortLibrary *portLibrary, char **result)
 	uintptr_t strLen = 0L;
 	int32_t portableError = 0;
 
-	portLibrary->str_printf(portLibrary, buffer, PATH_MAX, "/proc/%ld/psinfo", getpid());
+	portLibrary->str_printf(portLibrary, buffer, sizeof(buffer), "/proc/%ld/psinfo", getpid());
 	fd = portLibrary->file_open(portLibrary, buffer, EsOpenRead, 0);
 	if (-1 == fd) {
 		portableError = portLibrary->error_last_error_number(portLibrary);
@@ -3244,6 +3379,8 @@ omrsysinfo_get_number_CPUs_by_type(struct OMRPortLibrary *portLibrary, uintptr_t
 #define BUFFERS_PREFIX      "Buffers:"
 #define BUFFERS_PREFIX_SZ   (sizeof(BUFFERS_PREFIX) - 1)
 
+#define PROC_SYS_VM_SWAPPINESS "/proc/sys/vm/swappiness"
+
 /**
  * Function collects memory usage statistics by reading /proc/meminfo on Linux platforms.
  *
@@ -3256,7 +3393,9 @@ static int32_t
 retrieveLinuxMemoryStatsFromProcFS(struct OMRPortLibrary *portLibrary, struct J9MemoryInfo *memInfo)
 {
 	int32_t rc = 0;
+	int32_t rcSwappiness = 0;
 	FILE *memStatFs = NULL;
+	FILE *swappinessFs = NULL;
 	char lineString[MAX_LINE_LENGTH] = {0};
 
 	/* Open the memstat file on Linux for reading; this is readonly. */
@@ -3367,6 +3506,24 @@ retrieveLinuxMemoryStatsFromProcFS(struct OMRPortLibrary *portLibrary, struct J9
 		} /* end if else-if */
 	} /* end while() */
 
+	swappinessFs = fopen(PROC_SYS_VM_SWAPPINESS, "r");
+	if (NULL == swappinessFs) {
+		Trc_PRT_retrieveLinuxMemoryStats_failedOpeningSwappinessFs(errno);
+		rc = OMRPORT_ERROR_SYSINFO_ERROR_SWAPPINESS_OPEN_FAILED;
+		goto _cleanup;
+	}
+
+	rcSwappiness = fscanf(swappinessFs, "%" SCNu64, &memInfo->swappiness);
+	if (1 != rcSwappiness) {
+		if (EOF == rcSwappiness) {
+			Trc_PRT_retrieveLinuxMemoryStats_failedReadingSwappiness(errno);
+		} else {
+			Trc_PRT_retrieveLinuxMemoryStats_unexpectedSwappinessFormat(1, rcSwappiness);
+		}
+		rc = OMRPORT_ERROR_SYSINFO_ERROR_READING_SWAPPINESS;
+		goto _cleanup;
+	}
+
 	/* Set hostXXX fields with memory stats from proc fs.
 	 * These may be used for calculating available physical memory on the host.
 	 */
@@ -3377,6 +3534,9 @@ retrieveLinuxMemoryStatsFromProcFS(struct OMRPortLibrary *portLibrary, struct J9
 _cleanup:
 	if (NULL != memStatFs) {
 		fclose(memStatFs);
+	}
+	if (NULL != swappinessFs) {
+		fclose(swappinessFs);
 	}
 
 	return rc;
@@ -3410,6 +3570,7 @@ retrieveLinuxCgroupMemoryStats(struct OMRPortLibrary *portLibrary, struct OMRCgr
 	cgroupMemInfo->memoryUsage = OMRPORT_MEMINFO_NOT_AVAILABLE;
 	cgroupMemInfo->memoryAndSwapLimit = OMRPORT_MEMINFO_NOT_AVAILABLE;
 	cgroupMemInfo->memoryAndSwapUsage = OMRPORT_MEMINFO_NOT_AVAILABLE;
+	cgroupMemInfo->swappiness = OMRPORT_MEMINFO_NOT_AVAILABLE;
 	cgroupMemInfo->cached = OMRPORT_MEMINFO_NOT_AVAILABLE;
 
 	if (OMR_ARE_ANY_BITS_SET(PPG_sysinfoControlFlags, OMRPORT_SYSINFO_CGROUP_V1_AVAILABLE)) {
@@ -3467,6 +3628,15 @@ retrieveLinuxCgroupMemoryStats(struct OMRPortLibrary *portLibrary, struct OMRCgr
 	} else if (OMR_ARE_ANY_BITS_SET(PPG_sysinfoControlFlags, OMRPORT_SYSINFO_CGROUP_V2_AVAILABLE)) {
 		/* Cgroup v2 swap limit and usage do not include the memory limit and usage. */
 		cgroupMemInfo->memoryAndSwapUsage += cgroupMemInfo->memoryUsage;
+	}
+
+	rc = readCgroupSubsystemFile(portLibrary, OMR_CGROUP_SUBSYSTEM_MEMORY, CGROUP_MEMORY_SWAPPINESS, numItemsToRead, "%" SCNu64, &cgroupMemInfo->swappiness);
+	if (0 != rc) {
+		cgroupMemInfo->swappiness = OMRPORT_MEMINFO_NOT_AVAILABLE;
+		/* Cgroup swappiness may not always be available (e.g. Cgroup v2),
+		 * so do not treat this condition as an error
+		 */
+		rc = 0;
 	}
 
 	/* Read value of page cache memory from memory.stat file */
@@ -3594,6 +3764,7 @@ retrieveLinuxMemoryStats(struct OMRPortLibrary *portLibrary, struct J9MemoryInfo
 		}
 	}
 
+	memInfo->swappiness = cgroupMemInfo.swappiness;
 	memInfo->cached = cgroupMemInfo.cached;
 	/* Buffered value is not available when running in a cgroup.
 	 * See https://www.kernel.org/doc/Documentation/cgroup-v1/memory.txt
@@ -3758,6 +3929,7 @@ omrsysinfo_get_memory_info(struct OMRPortLibrary *portLibrary, struct J9MemoryIn
 	memInfo->availSwap = OMRPORT_MEMINFO_NOT_AVAILABLE;
 	memInfo->cached = OMRPORT_MEMINFO_NOT_AVAILABLE;
 	memInfo->buffered = OMRPORT_MEMINFO_NOT_AVAILABLE;
+	memInfo->swappiness = OMRPORT_MEMINFO_NOT_AVAILABLE;
 
 	memInfo->hostAvailPhysical = OMRPORT_MEMINFO_NOT_AVAILABLE;
 	memInfo->hostCached = OMRPORT_MEMINFO_NOT_AVAILABLE;
@@ -3915,14 +4087,14 @@ omrsysinfo_shutdown(struct OMRPortLibrary *portLibrary)
 			PPG_si_executableName = NULL;
 		}
 #if defined(LINUX) && !defined(OMRZTPF)
-		omrthread_monitor_enter(cgroupEntryListMonitor);
+		omrthread_monitor_enter(cgroupMonitor);
 		freeCgroupEntries(portLibrary, PPG_cgroupEntryList);
 		PPG_cgroupEntryList = NULL;
-		omrthread_monitor_exit(cgroupEntryListMonitor);
+		omrthread_monitor_exit(cgroupMonitor);
 		attachedPortLibraries -= 1;
 		if (0 == attachedPortLibraries) {
-			omrthread_monitor_destroy(cgroupEntryListMonitor);
-			cgroupEntryListMonitor = NULL;
+			omrthread_monitor_destroy(cgroupMonitor);
+			cgroupMonitor = NULL;
 		}
 #endif /* defined(LINUX) */
 #if (defined(S390) || defined(J9ZOS390))
@@ -3935,9 +4107,6 @@ int32_t
 omrsysinfo_startup(struct OMRPortLibrary *portLibrary)
 {
 	int32_t rc = 0;
-#if defined(LINUX) && !defined(OMRZTPF)
-	BOOLEAN runningInContainer = FALSE;
-#endif /* defined(LINUX) && !defined(OMRZTPF) */
 
 	PPG_criuSupportFlags = 0;
 	PPG_sysinfoControlFlags = 0;
@@ -3949,13 +4118,14 @@ omrsysinfo_startup(struct OMRPortLibrary *portLibrary)
 
 #if defined(LINUX) && !defined(OMRZTPF)
 	PPG_cgroupEntryList = NULL;
-	/* To handle the case where multiple port libraries are started and shutdown,
-	 * as done by some fvtests (eg fvtest/porttest/j9portTest.cpp) that create fake portlibrary
-	 * to test its management and lifecycle,
-	 * we need to ensure globals like cgroupEntryListMonitor are initialized and destroyed only once.
+	PPG_processInContainerState = OMRPORT_PROCESS_IN_CONTAINER_UNINITIALIZED;
+	/* To handle the case where multiple port libraries are started and shutdown, as done
+	 * by some fvtests (eg fvtest/porttest/j9portTest.cpp) that create fake portlibrary to
+	 * test its management and lifecycle, we need to ensure globals, such as cgroupMonitor,
+	 * are initialized and destroyed only once.
 	 */
 	if (0 == attachedPortLibraries) {
-		if (omrthread_monitor_init_with_name(&cgroupEntryListMonitor, 0, "cgroup entry list monitor")) {
+		if (omrthread_monitor_init_with_name(&cgroupMonitor, 0, "cgroup monitor")) {
 			rc = OMRPORT_ERROR_STARTUP_SYSINFO_MONITOR_INIT;
 			goto _end;
 		}
@@ -3967,17 +4137,6 @@ omrsysinfo_startup(struct OMRPortLibrary *portLibrary)
 	} else if (isCgroupV2Available()) {
 		PPG_sysinfoControlFlags |= OMRPORT_SYSINFO_CGROUP_V2_AVAILABLE;
 	}
-	/* isCgroupV1Available must be called before the following function as the latter checks
-	 * a bit set by the former.
-	 */
-	if (0 == isRunningInContainer(portLibrary, &runningInContainer)) {
-		if (runningInContainer) {
-			PPG_sysinfoControlFlags |= OMRPORT_SYSINFO_RUNNING_IN_CONTAINER;
-		}
-	} else {
-		rc = OMRPORT_ERROR_STARTUP_SYSINFO_RUNNING_IN_CONTAINER;
-	}
-
 _end:
 #endif /* defined(LINUX) && !defined(OMRZTPF) */
 	return rc;
@@ -4579,7 +4738,7 @@ omrsysinfo_get_CPU_load(struct OMRPortLibrary *portLibrary, double *cpuLoad)
 	if (oldestCPUTime->timestamp == 0) {
 		*oldestCPUTime = currentCPUTime;
 		*latestCPUTime = currentCPUTime;
-		return OMRPORT_ERROR_OPFAILED;
+		return OMRPORT_ERROR_INSUFFICIENT_DATA;
 	}
 
 	/* Calculate using the most recent value in the history */
@@ -4611,7 +4770,7 @@ omrsysinfo_get_CPU_load(struct OMRPortLibrary *portLibrary, double *cpuLoad)
 	if (oldestCPUTime->timestamp == 0) {
 		*oldestCPUTime = currentCPUTime;
 		*latestCPUTime = currentCPUTime;
-		return OMRPORT_ERROR_OPFAILED;
+		return OMRPORT_ERROR_INSUFFICIENT_DATA;
 	}
 
 	/* Calculate using the most recent value in the history */
@@ -5975,7 +6134,7 @@ populateCgroupEntryListV1(struct OMRPortLibrary *portLibrary, int pid, BOOLEAN i
 	Assert_PRT_true(NULL != cgroupEntryList);
 
 	requiredSize = portLibrary->str_printf(portLibrary, NULL, 0, "/proc/%d/cgroup", pid);
-	Assert_PRT_true(requiredSize <= PATH_MAX);
+	Assert_PRT_true(requiredSize <= sizeof(cgroupFilePath));
 	portLibrary->str_printf(portLibrary, cgroupFilePath, sizeof(cgroupFilePath), "/proc/%d/cgroup", pid);
 
 	/* Even if 'inContainer' is TRUE, we need to parse the cgroup file to get the list of subsystems */
@@ -5996,7 +6155,7 @@ populateCgroupEntryListV1(struct OMRPortLibrary *portLibrary, int pid, BOOLEAN i
 		char *separator = NULL;
 		int32_t hierId = -1;
 
-		if (NULL == fgets(buffer, PATH_MAX, cgroupFile)) {
+		if (NULL == fgets(buffer, sizeof(buffer), cgroupFile)) {
 			break;
 		}
 		if (0 != ferror(cgroupFile)) {
@@ -6105,10 +6264,19 @@ populateCgroupEntryListV2(struct OMRPortLibrary *portLibrary, int pid, OMRCgroup
 	uint64_t available = 0;
 	int32_t rc = 0;
 
+	char cgroup[PATH_MAX];
+	/* This array should be large enough to read names of all subsystems.
+	 * 1024 should be enough based on current supported subsystems.
+	 */
+	char subsystems[PATH_MAX];
+	char *cursor = NULL;
+	char *newline = NULL;
+	char *separator = NULL;
+
 	Assert_PRT_true(NULL != cgroupEntryList);
 
 	requiredSize = portLibrary->str_printf(portLibrary, NULL, 0, "/proc/%d/cgroup", pid);
-	Assert_PRT_true(requiredSize <= PATH_MAX);
+	Assert_PRT_true(requiredSize <= sizeof(cgroupFilePath));
 	portLibrary->str_printf(portLibrary, cgroupFilePath, sizeof(cgroupFilePath), "/proc/%d/cgroup", pid);
 
 	cgroupFile = fopen(cgroupFilePath, "r");
@@ -6119,7 +6287,14 @@ populateCgroupEntryListV2(struct OMRPortLibrary *portLibrary, int pid, OMRCgroup
 		goto _end;
 	}
 
-	if (NULL == fgets(buffer, PATH_MAX, cgroupFile)) {
+	/* There can be multiple lines in the cgroup file. For v2, the line with the
+	 * format '0::<cgroup>' needs to be located.
+	 */
+	while (0 == feof(cgroupFile)) {
+		if (NULL == fgets(buffer, sizeof(buffer), cgroupFile)) {
+			break;
+		}
+
 		if (0 != ferror(cgroupFile)) {
 			int32_t osErrCode = errno;
 			Trc_PRT_populateCgroupEntryList_fgets_failed(2, cgroupFilePath, osErrCode);
@@ -6131,71 +6306,77 @@ populateCgroupEntryListV2(struct OMRPortLibrary *portLibrary, int pid, OMRCgroup
 					osErrCode);
 			goto _end;
 		}
-	} else {
-		/* For v2, the cgroup file contains one line of the format '0::<cgroup>'. */
-		char cgroup[PATH_MAX];
-		/* This array should be large enough to read names of all subsystems. 1024 should be enough based on current supported subsystems. */
-		char subsystems[PATH_MAX];
-		char *cursor = NULL;
-		char *separator = NULL;
 
 		rc = sscanf(buffer, PROC_PID_CGROUPV2_ENTRY_FORMAT, cgroup);
-
 		if (1 == rc) {
-			/* The controller file consists of a single space-delimited line of controllers/subsystems. */
-			requiredSize = portLibrary->str_printf(portLibrary, NULL, 0, "%s/%s/cgroup.controllers", OMR_CGROUP_MOUNT_POINT, cgroup);
-			Assert_PRT_true(requiredSize <= PATH_MAX);
-			portLibrary->str_printf(portLibrary, controllerFilePath, sizeof(controllerFilePath), "%s/%s/cgroup.controllers", OMR_CGROUP_MOUNT_POINT, cgroup);
+			break;
+		}
+	}
 
-			controllerFile = fopen(controllerFilePath, "r");
-			if (NULL == controllerFile) {
-				int32_t osErrCode = errno;
-				Trc_PRT_populateCgroupEntryList_fopen_failed(2, controllerFilePath, osErrCode);
-				rc = portLibrary->error_set_last_error(portLibrary, osErrCode, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_FOPEN_FAILED);
-				goto _end;
-			}
+	if (1 == rc) {
+		/* The controller file consists of a single space-delimited line of controllers/subsystems. */
+		requiredSize = portLibrary->str_printf(portLibrary, NULL, 0, "%s/%s/cgroup.controllers", OMR_CGROUP_MOUNT_POINT, cgroup);
+		Assert_PRT_true(requiredSize <= sizeof(controllerFilePath));
+		portLibrary->str_printf(portLibrary, controllerFilePath, sizeof(controllerFilePath), "%s/%s/cgroup.controllers", OMR_CGROUP_MOUNT_POINT, cgroup);
 
-			if (NULL == fgets(subsystems, PATH_MAX, controllerFile)) {
-				/* No controllers enabled. */
-				rc = 0;
-				goto _end;
-			}
-		} else {
-			Trc_PRT_populateCgroupEntryList_unexpected_format(2, cgroupFilePath);
-			rc = portLibrary->error_set_last_error_with_message_format(
-					portLibrary,
-					OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_READ_FAILED,
-					"unexpected format of %s",
-					cgroupFilePath);
+		controllerFile = fopen(controllerFilePath, "r");
+		if (NULL == controllerFile) {
+			int32_t osErrCode = errno;
+			Trc_PRT_populateCgroupEntryList_fopen_failed(2, controllerFilePath, osErrCode);
+			rc = portLibrary->error_set_last_error(portLibrary, osErrCode, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_FOPEN_FAILED);
 			goto _end;
 		}
 
-		cursor = subsystems;
-		do {
-			int32_t i = 0;
-
-			separator = strchr(cursor, ' ');
-			if (NULL != separator) {
-				*separator = '\0';
-			}
-
-			for (i = 0; i < sizeof(supportedSubsystems) / sizeof(supportedSubsystems[0]); i++) {
-				if (OMR_ARE_NO_BITS_SET(available, supportedSubsystems[i].flag)
-					&& (0 == strcmp(cursor, supportedSubsystems[i].name))
-				) {
-					/* In cgroup v2, all cgroups are bound to the single unified hierarchy, '0'. */
-					rc = addCgroupEntry(portLibrary, &cgEntryList, 0, cursor, cgroup, supportedSubsystems[i].flag);
-					if (0 != rc) {
-						goto _end;
-					}
-					available |= supportedSubsystems[i].flag;
-				}
-			}
-			if (NULL != separator) {
-				cursor = separator + 1;
-			}
-		} while (NULL != separator);
+		if (NULL == fgets(subsystems, sizeof(subsystems), controllerFile)) {
+			/* No controllers enabled. */
+			rc = 0;
+			goto _end;
+		}
+	} else {
+		Trc_PRT_populateCgroupEntryList_unexpected_format(2, cgroupFilePath);
+		rc = portLibrary->error_set_last_error_with_message_format(
+				portLibrary,
+				OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_READ_FAILED,
+				"unexpected format of %s",
+				cgroupFilePath);
+		goto _end;
 	}
+
+	cursor = subsystems;
+
+	/* Strip the \n at the end (see Linux kernel source, file
+	 * kernel/cgroup/cgroup.c, function cgroup_print_ss_mask()).
+	 */
+	newline = strchr(cursor, '\n');
+	if (NULL != newline) {
+		*newline = '\0';
+	}
+
+	do {
+		int32_t i = 0;
+
+		separator = strchr(cursor, ' ');
+		if (NULL != separator) {
+			*separator = '\0';
+		}
+
+		for (i = 0; i < sizeof(supportedSubsystems) / sizeof(supportedSubsystems[0]); i++) {
+			if (OMR_ARE_NO_BITS_SET(available, supportedSubsystems[i].flag)
+				&& (0 == strcmp(cursor, supportedSubsystems[i].name))
+			) {
+				/* In cgroup v2, all cgroups are bound to the single unified hierarchy, '0'. */
+				rc = addCgroupEntry(portLibrary, &cgEntryList, 0, cursor, cgroup, supportedSubsystems[i].flag);
+				if (0 != rc) {
+					goto _end;
+				}
+				available |= supportedSubsystems[i].flag;
+			}
+		}
+		if (NULL != separator) {
+			cursor = separator + 1;
+		}
+	} while (NULL != separator);
+
 	rc = 0;
 
 _end:
@@ -6472,88 +6653,164 @@ _end:
  * Checks if the process is running inside container
  *
  * @param[in] portLibrary pointer to OMRPortLibrary
- * @param[out] inContainer pointer to BOOLEAN which on successful return indicates if
- *      the process is running in container or not.  On error it indicates FALSE.
  *
- * @return 0 on success, otherwise negative error code
+ * @return TRUE if running in a container; otherwise, return FALSE
  */
-static int32_t
-isRunningInContainer(struct OMRPortLibrary *portLibrary, BOOLEAN *inContainer)
+static BOOLEAN
+isRunningInContainer(struct OMRPortLibrary *portLibrary)
 {
-	int32_t rc = 0;
-	FILE *cgroupFile = NULL;
+	if (OMRPORT_PROCESS_IN_CONTAINER_UNINITIALIZED == PPG_processInContainerState) {
+		omrthread_monitor_enter(cgroupMonitor);
+		if (OMRPORT_PROCESS_IN_CONTAINER_UNINITIALIZED == PPG_processInContainerState) {
+			FILE *cgroupFile = NULL;
+			int32_t rc = 0;
 
-	/* Assume we are not in container */
-	*inContainer = FALSE;
+			/* Assume we are not in a container. */
+			BOOLEAN inContainer = FALSE;
 
-	/* Check for existence of files that signify running in a container (Docker and Podman respectively). Not completely
-	 * reliable as these files may not be available, but it should work for most cases.
-	 */
-	if ((0 == access("/.dockerenv", F_OK)) || (0 == access("/run/.containerenv", F_OK))) {
-		*inContainer = TRUE;
-	} else if (OMR_ARE_ANY_BITS_SET(PPG_sysinfoControlFlags, OMRPORT_SYSINFO_CGROUP_V1_AVAILABLE)) {
-		/* Read PID 1's cgroup file /proc/1/cgroup and check cgroup name for each subsystem.
-		 * If cgroup name for each subsystem points to the root cgroup "/",
-		 * then the process is not running in a container.
-		 * For any other cgroup name, assume we are in a container.
-		 * Note that this will not work if namespaces are enabled in the container as all
-		 * cgroup names will be the root cgroup.
-		 */
-		cgroupFile = fopen(OMR_PROC_PID_ONE_CGROUP_FILE, "r");
-
-		if (NULL == cgroupFile) {
-			int32_t osErrCode = errno;
-			Trc_PRT_isRunningInContainer_fopen_failed(OMR_PROC_PID_ONE_CGROUP_FILE, osErrCode);
-			rc = portLibrary->error_set_last_error(portLibrary, osErrCode, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_FOPEN_FAILED);
-			goto _end;
-		}
-
-		while (0 == feof(cgroupFile)) {
-			char buffer[PATH_MAX];
-			char cgroup[PATH_MAX];
-			char subsystems[PATH_MAX];
-			int32_t hierId = -1;
-
-			if (NULL == fgets(buffer, PATH_MAX, cgroupFile)) {
-				break;
-			}
-			if (0 != ferror(cgroupFile)) {
-				int32_t osErrCode = errno;
-				Trc_PRT_isRunningInContainer_fgets_failed(OMR_PROC_PID_ONE_CGROUP_FILE, osErrCode);
-				rc = portLibrary->error_set_last_error_with_message_format(portLibrary, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_READ_FAILED, "fgets failed to read %s file stream with errno=%d", OMR_PROC_PID_ONE_CGROUP_FILE, osErrCode);
-				goto _end;
-			}
-			rc = sscanf(buffer, PROC_PID_CGROUPV1_ENTRY_FORMAT, &hierId, subsystems, cgroup);
-
-			if (EOF == rc) {
-				break;
-			} else if (1 == rc) {
-				rc = sscanf(buffer, PROC_PID_CGROUP_SYSTEMD_ENTRY_FORMAT, &hierId, cgroup);
-
-				if (2 != rc) {
-					Trc_PRT_isRunningInContainer_unexpected_format(OMR_PROC_PID_ONE_CGROUP_FILE);
-					rc = portLibrary->error_set_last_error_with_message_format(portLibrary, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_READ_FAILED, "unexpected format of %s file", OMR_PROC_PID_ONE_CGROUP_FILE);
+			/* Check for existence of files that signify running in a container (Docker and Podman respectively).
+			 * Not completely reliable as these files may not be available, but it should work for most cases.
+			 */
+			if ((0 == access("/.dockerenv", F_OK)) || (0 == access("/run/.containerenv", F_OK))) {
+				inContainer = TRUE;
+			} else if (OMR_ARE_ANY_BITS_SET(PPG_sysinfoControlFlags, OMRPORT_SYSINFO_CGROUP_V1_AVAILABLE)) {
+				/* Read PID 1's cgroup file /proc/1/cgroup and check cgroup name for each subsystem.
+				 * If cgroup name for each subsystem points to the root cgroup "/",
+				 * then the process is not running in a container.
+				 * For any other cgroup name, assume we are in a container.
+				 * Note that this will not work if namespaces are enabled in the container as all
+				 * cgroup names will be the root cgroup.
+				 */
+				cgroupFile = fopen(OMR_PROC_PID_ONE_CGROUP_FILE, "r");
+				if (NULL == cgroupFile) {
+					int32_t osErrCode = errno;
+					Trc_PRT_isRunningInContainer_fopen_failed(OMR_PROC_PID_ONE_CGROUP_FILE, osErrCode);
+					rc = portLibrary->error_set_last_error_with_message_format(
+							portLibrary, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_FOPEN_FAILED,
+							"failed to open %s file with errno=%d", OMR_PROC_PID_ONE_CGROUP_FILE, osErrCode);
 					goto _end;
 				}
-			} else if (3 != rc) {
-				Trc_PRT_isRunningInContainer_unexpected_format(OMR_PROC_PID_ONE_CGROUP_FILE);
-				rc = portLibrary->error_set_last_error_with_message_format(portLibrary, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_READ_FAILED, "unexpected format of %s file", OMR_PROC_PID_ONE_CGROUP_FILE);
-				goto _end;
+
+				while (0 == feof(cgroupFile)) {
+					char buffer[PATH_MAX];
+					char cgroup[PATH_MAX];
+					char subsystems[PATH_MAX];
+					int32_t hierId = -1;
+
+					if (NULL == fgets(buffer, sizeof(buffer), cgroupFile)) {
+						break;
+					}
+					if (0 != ferror(cgroupFile)) {
+						int32_t osErrCode = errno;
+						Trc_PRT_isRunningInContainer_fgets_failed(OMR_PROC_PID_ONE_CGROUP_FILE, osErrCode);
+						rc = portLibrary->error_set_last_error_with_message_format(
+								portLibrary, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_READ_FAILED,
+								"failed to read %s file stream with errno=%d", OMR_PROC_PID_ONE_CGROUP_FILE, osErrCode);
+						goto _end;
+					}
+					rc = sscanf(buffer, PROC_PID_CGROUPV1_ENTRY_FORMAT, &hierId, subsystems, cgroup);
+
+					if (EOF == rc) {
+						break;
+					} else if (1 == rc) {
+						rc = sscanf(buffer, PROC_PID_CGROUP_SYSTEMD_ENTRY_FORMAT, &hierId, cgroup);
+
+						if (2 != rc) {
+							Trc_PRT_isRunningInContainer_unexpected_format(OMR_PROC_PID_ONE_CGROUP_FILE);
+							rc = portLibrary->error_set_last_error_with_message_format(
+									portLibrary, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_READ_FAILED,
+									"unexpected format of %s file, error code = %d",
+									OMR_PROC_PID_ONE_CGROUP_FILE, rc);
+							goto _end;
+						}
+					} else if (3 != rc) {
+						Trc_PRT_isRunningInContainer_unexpected_format(OMR_PROC_PID_ONE_CGROUP_FILE);
+						rc = portLibrary->error_set_last_error_with_message_format(
+								portLibrary, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_READ_FAILED,
+								"unexpected format of %s file, error code = %d",
+								OMR_PROC_PID_ONE_CGROUP_FILE, rc);
+						goto _end;
+					}
+
+					if ((0 != strcmp(ROOT_CGROUP, cgroup)) && (0 != strcmp(SYSTEMD_INIT_CGROUP, cgroup))) {
+						inContainer = TRUE;
+						break;
+					}
+				}
+				rc = 0;
 			}
 
-			if ((0 != strcmp(ROOT_CGROUP, cgroup)) && (0 != strcmp(SYSTEMD_INIT_CGROUP, cgroup))) {
-				*inContainer = TRUE;
-				break;
+			/* Read the first line in /proc/1/sched if it exists.
+			 * Outside a container, the initialization process is either "init" or "systemd".
+			 * A containerized environment can be assumed for any other initialization process.
+			 */
+			if ((0 == rc) && (!inContainer) && (0 == access(OMR_PROC_PID_ONE_SCHED_FILE, F_OK))) {
+				char buffer[PATH_MAX];
+				FILE *schedFile = fopen(OMR_PROC_PID_ONE_SCHED_FILE, "r");
+
+				if (NULL == schedFile) {
+					int32_t osErrCode = errno;
+					Trc_PRT_isRunningInContainer_fopen_failed(OMR_PROC_PID_ONE_SCHED_FILE, osErrCode);
+					rc = portLibrary->error_set_last_error_with_message_format(
+							portLibrary, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_FOPEN_FAILED,
+							"failed to open %s file with errno=%d", OMR_PROC_PID_ONE_SCHED_FILE, osErrCode);
+					goto _end;
+				}
+
+				if (NULL == fgets(buffer, sizeof(buffer), schedFile)) {
+					if (0 != ferror(schedFile)) {
+						int32_t osErrCode = errno;
+						Trc_PRT_isRunningInContainer_fgets_failed(OMR_PROC_PID_ONE_SCHED_FILE, osErrCode);
+						rc = portLibrary->error_set_last_error_with_message_format(
+								portLibrary, OMRPORT_ERROR_SYSINFO_PROCESS_CGROUP_FILE_READ_FAILED,
+								"failed to read %s file stream with errno=%d",
+								OMR_PROC_PID_ONE_SCHED_FILE, osErrCode);
+						goto _end;
+					}
+				} else {
+					/* Check if the initialization process is either "init " or "systemd ".
+					 * The space after systemd and init allows us to exactly check for those
+					 * strings and filter any strings which either begin with systemd or init.
+					 *
+					 * The first line of /proc/1/sched in a non-containerized environment:
+					 * - systemd (1, #threads: 1)
+					 * - init (1, #threads: 1)
+					 *
+					 * The first line of /proc/1/sched in a containerized environment:
+					 * - bash (1, #threads: 1)
+					 * - sh (1, #threads: 1)
+					 */
+#define STARTS_WITH(string, prefix) (0 == strncmp(string, prefix, sizeof(prefix) - 1))
+					if (!STARTS_WITH(buffer, "init ") && !STARTS_WITH(buffer, "systemd ")) {
+						inContainer = TRUE;
+					}
+#undef STARTS_WITH
+				}
+			}
+
+_end:
+			if (NULL != cgroupFile) {
+				fclose(cgroupFile);
+			}
+
+			if (0 != rc) {
+				PPG_processInContainerState = OMRPORT_PROCESS_IN_CONTAINER_ERROR;
+				/* Print a warning message. */
+				portLibrary->nls_printf(
+						portLibrary, J9NLS_WARNING, J9NLS_PORT_RUNNING_IN_CONTAINER_FAILURE,
+						omrerror_last_error_message(portLibrary));
+			} else if (inContainer) {
+				PPG_processInContainerState = OMRPORT_PROCESS_IN_CONTAINER_TRUE;
+			} else {
+				PPG_processInContainerState = OMRPORT_PROCESS_IN_CONTAINER_FALSE;
 			}
 		}
-		rc = 0;
+		omrthread_monitor_exit(cgroupMonitor);
 	}
-	Trc_PRT_isRunningInContainer_container_detected((uintptr_t)*inContainer);
-_end:
-	if (NULL != cgroupFile) {
-		fclose(cgroupFile);
-	}
-	return rc;
+
+	Trc_PRT_isRunningInContainer_container_detected(PPG_processInContainerState);
+
+	return (OMRPORT_PROCESS_IN_CONTAINER_TRUE == PPG_processInContainerState) ? TRUE : FALSE;
 }
 
 /**
@@ -6781,19 +7038,27 @@ omrsysinfo_cgroup_is_system_available(struct OMRPortLibrary *portLibrary)
 	Trc_PRT_sysinfo_cgroup_is_system_available_Entry();
 	if (NULL == PPG_cgroupEntryList) {
 		if (OMR_ARE_ANY_BITS_SET(PPG_sysinfoControlFlags, OMRPORT_SYSINFO_CGROUP_V1_AVAILABLE)) {
-			BOOLEAN inContainer = OMR_ARE_ANY_BITS_SET(PPG_sysinfoControlFlags, OMRPORT_SYSINFO_RUNNING_IN_CONTAINER);
+			BOOLEAN inContainer = isRunningInContainer(portLibrary);
 
-			omrthread_monitor_enter(cgroupEntryListMonitor);
 			if (NULL == PPG_cgroupEntryList) {
-				rc = populateCgroupEntryListV1(portLibrary, getpid(), inContainer, &PPG_cgroupEntryList, &PPG_cgroupSubsystemsAvailable);
+				omrthread_monitor_enter(cgroupMonitor);
+				if (NULL == PPG_cgroupEntryList) {
+					rc = populateCgroupEntryListV1(
+							portLibrary, getpid(), inContainer,
+							&PPG_cgroupEntryList, &PPG_cgroupSubsystemsAvailable);
+				}
+				omrthread_monitor_exit(cgroupMonitor);
 			}
-			omrthread_monitor_exit(cgroupEntryListMonitor);
 		} else if (OMR_ARE_ANY_BITS_SET(PPG_sysinfoControlFlags, OMRPORT_SYSINFO_CGROUP_V2_AVAILABLE)) {
-			omrthread_monitor_enter(cgroupEntryListMonitor);
 			if (NULL == PPG_cgroupEntryList) {
-				rc = populateCgroupEntryListV2(portLibrary, getpid(), &PPG_cgroupEntryList, &PPG_cgroupSubsystemsAvailable);
+				omrthread_monitor_enter(cgroupMonitor);
+				if (NULL == PPG_cgroupEntryList) {
+					rc = populateCgroupEntryListV2(
+							portLibrary, getpid(),
+							&PPG_cgroupEntryList, &PPG_cgroupSubsystemsAvailable);
+				}
+				omrthread_monitor_exit(cgroupMonitor);
 			}
-			omrthread_monitor_exit(cgroupEntryListMonitor);
 		} else {
 			rc = OMRPORT_ERROR_SYSINFO_CGROUP_UNSUPPORTED_PLATFORM;
 		}
@@ -6934,7 +7199,7 @@ BOOLEAN
 omrsysinfo_is_running_in_container(struct OMRPortLibrary *portLibrary)
 {
 #if defined(LINUX) && !defined(OMRZTPF)
-	return OMR_ARE_ANY_BITS_SET(PPG_sysinfoControlFlags, OMRPORT_SYSINFO_RUNNING_IN_CONTAINER);
+	return isRunningInContainer(portLibrary);
 #else /* defined(LINUX) && !defined(OMRZTPF) */
 	return FALSE;
 #endif /* defined(LINUX) && !defined(OMRZTPF) */
@@ -7185,3 +7450,110 @@ get_Dispatch_IstreamCount(void) {
 	return (uintptr_t)numberOfIStreams;
 }
 #endif /* defined(OMRZTPF) */
+
+int32_t
+omrsysinfo_get_process_start_time(struct OMRPortLibrary *portLibrary, uintptr_t pid, uint64_t *processStartTimeInNanoseconds)
+{
+	int32_t rc = 0;
+	uint64_t computedProcessStartTimeInNanoseconds = 0;
+	Trc_PRT_sysinfo_get_process_start_time_enter(pid);
+	if (0 != omrsysinfo_process_exists(portLibrary, pid)) {
+#if defined(LINUX)
+		char procDir[OMRPORT_SYSINFO_PROC_DIR_BUFFER_SIZE] = {0};
+		struct stat st;
+		snprintf(procDir, sizeof(procDir), "/proc/%" PRIuPTR, pid);
+		if (-1 == stat(procDir, &st)) {
+			rc = OMRPORT_ERROR_SYSINFO_ERROR_GETTING_PROCESS_START_TIME;
+			goto done;
+		}
+		computedProcessStartTimeInNanoseconds = (uint64_t)st.st_mtime * OMRPORT_TIME_DELTA_IN_NANOSECONDS + st.st_mtim.tv_nsec;
+#elif defined(OSX) /* defined(LINUX) */
+		int mib[OMRPORT_SYSINFO_NUM_SYSCTL_ARGS] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
+		size_t len = sizeof(struct kinfo_proc);
+		struct kinfo_proc procInfo;
+		if (-1 == sysctl(mib, OMRPORT_SYSINFO_NUM_SYSCTL_ARGS, &procInfo, &len, NULL, 0)) {
+			rc = OMRPORT_ERROR_SYSINFO_ERROR_GETTING_PROCESS_START_TIME;
+			goto done;
+		}
+		if (0 == len) {
+			rc = OMRPORT_ERROR_SYSINFO_NONEXISTING_PROCESS;
+			goto done;
+		}
+		computedProcessStartTimeInNanoseconds =
+			((uint64_t)procInfo.kp_proc.p_starttime.tv_sec * OMRPORT_TIME_DELTA_IN_NANOSECONDS) +
+			((uint64_t)procInfo.kp_proc.p_starttime.tv_usec * OMRPORT_SYSINFO_NANOSECONDS_PER_MICROSECOND);
+#elif defined(AIXPPC) /* defined(OSX) */
+		pid_t convertedPid = (pid_t)pid;
+		struct procsinfo procInfos[] = {0};
+		int ret = getprocs(procInfos, sizeof(procInfos[0]), NULL, 0, &convertedPid, sizeof(procInfos) / sizeof(procInfos[0]));
+		if (-1 == ret) {
+			rc = OMRPORT_ERROR_SYSINFO_ERROR_GETTING_PROCESS_START_TIME;
+			goto done;
+		} else if (0 == ret) {
+			rc = OMRPORT_ERROR_SYSINFO_NONEXISTING_PROCESS;
+			goto done;
+		}
+		computedProcessStartTimeInNanoseconds = (uint64_t)(procInfos[0].pi_start) * OMRPORT_TIME_DELTA_IN_NANOSECONDS;
+#elif defined(J9ZOS390) /* defined(AIXPPC) */
+		pgtha pgtha;
+		ProcessData processData;
+		pgthc *currentProcessInfo = NULL;
+		uint32_t dataOffset = 0;
+		uint32_t inputSize = sizeof(pgtha);
+		unsigned char *input = (unsigned char *)&pgtha;
+		uint32_t outputSize = sizeof(ProcessData);
+		unsigned char *output = (unsigned char *)&processData;
+		uint32_t ret = 0;
+		uint32_t retCode = 0;
+		uint32_t reasonCode = 0;
+		memset(input, 0, sizeof(pgtha));
+		memset(output, 0, sizeof(processData));
+		pgtha.pid = pid;
+		pgtha.accesspid = PGTHA_ACCESS_CURRENT;
+		pgtha.flag1 = PGTHA_FLAG_PROCESS_DATA;
+		GETTHENT(&inputSize, &input, &outputSize, &output, &ret, &retCode, &reasonCode);
+		if (-1 == ret) {
+			rc = OMRPORT_ERROR_SYSINFO_ERROR_GETTING_PROCESS_START_TIME;
+			goto done;
+		}
+		dataOffset = *((unsigned int *)processData.pgthb.offc);
+		dataOffset = (dataOffset & I_32_MAX) >> 8;
+		currentProcessInfo = (pgthc *)(((char *)&processData) + dataOffset);
+		computedProcessStartTimeInNanoseconds = (uint64_t)currentProcessInfo->starttime * OMRPORT_TIME_DELTA_IN_NANOSECONDS;
+#else /* defined(J9ZOS390) */
+		rc = OMRPORT_ERROR_NOT_SUPPORTED_ON_THIS_PLATFORM;
+#endif /* defined(LINUX) */
+	} else {
+		rc = OMRPORT_ERROR_SYSINFO_NONEXISTING_PROCESS;
+	}
+done:
+	*processStartTimeInNanoseconds = computedProcessStartTimeInNanoseconds;
+	Trc_PRT_sysinfo_get_process_start_time_exit(pid, computedProcessStartTimeInNanoseconds, rc);
+	return rc;
+}
+
+int32_t
+omrsysinfo_get_number_context_switches(struct OMRPortLibrary *portLibrary, uint64_t *numSwitches)
+{
+#if defined(LINUX)
+	char buf[128];
+	int32_t rc = 0;
+	intptr_t fd = portLibrary->file_open(portLibrary, "/proc/stat", EsOpenRead, 0);
+	if (-1 == fd) {
+		return portLibrary->error_last_error_number(portLibrary);
+	}
+
+	while (NULL != portLibrary->file_read_text(portLibrary, fd, buf, sizeof(buf))) {
+		if (1 == sscanf(buf, "ctxt %" SCNu64, numSwitches)) {
+			goto done;
+		}
+	}
+
+	rc = OMRPORT_ERROR_SYSINFO_GET_STATS_FAILED;
+done:
+	portLibrary->file_close(portLibrary, fd);
+	return rc;
+#else /* defined(LINUX) */
+	return OMRPORT_ERROR_SYSINFO_NOT_SUPPORTED;
+#endif /* defined(LINUX) */
+}

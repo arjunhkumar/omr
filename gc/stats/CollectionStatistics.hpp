@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(COLLECTIONSTATISTICS_HPP_)
@@ -27,6 +27,7 @@
 #include "omrcomp.h"
 
 #include "Base.hpp"
+#include "thread_api.h"
 
 /**
  * A collection of interesting statistics for the Heap.
@@ -46,6 +47,8 @@ public:
 
 	omrthread_process_time_t _startProcessTimes; /**< Process (Kernel and User) start time(s) */
 	omrthread_process_time_t _endProcessTimes;   /**< Process (Kernel and User) end time(s) */
+
+	MM_CPUUtilStats _cpuUtilStats; /**< Snapshot of global CPU utilization stats created before reporting overall stats via an event  */
 private:
 protected:
 public:
@@ -62,6 +65,7 @@ public:
 		,_stallTime(0)
 		,_startProcessTimes()
 		,_endProcessTimes()
+		,_cpuUtilStats()
 	{};
 };
 

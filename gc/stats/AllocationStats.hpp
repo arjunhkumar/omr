@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(ALLOCATIONSTATS_HPP_)
@@ -49,6 +49,7 @@ public:
 
 	uintptr_t _allocationCount;
 	uintptr_t _allocationBytes;
+	uintptr_t _allocationBytesCumulative;   /**< cumulative allocation up to last clear, excluding since last clear */
 	uintptr_t _ownableSynchronizerObjectCount;  /**< Number of Ownable Synchronizer Object allocations */
 	uintptr_t _continuationObjectCount;  /**< Number of Continuation Object allocations */
 	uintptr_t _discardedBytes;
@@ -86,6 +87,18 @@ public:
 		return totalBytesAllocated;
 	}
 
+	bool bytesAllocatedCumulative(uintptr_t *cumulativeValue) {
+		if (NULL != cumulativeValue) {
+			/* sum the values up to last clear and since last clear */
+			*cumulativeValue = _allocationBytesCumulative + bytesAllocated();
+
+			/* return false if overflowing */
+			return (_allocationBytesCumulative <= *cumulativeValue);
+		}
+
+		return false;
+	}
+
 	MM_AllocationStats() :
 #if defined(OMR_GC_THREAD_LOCAL_HEAP)
 		_tlhRefreshCountFresh(0),
@@ -101,6 +114,7 @@ public:
 		_arrayletLeafAllocationBytes(0),
 		_allocationCount(0),
 		_allocationBytes(0),
+		_allocationBytesCumulative(0),
 		_ownableSynchronizerObjectCount(0),
 		_continuationObjectCount(0),
 		_discardedBytes(0),

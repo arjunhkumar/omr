@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdint.h>
@@ -1621,12 +1621,14 @@ static TR::Register *signedIntegerDivisionOrRemainderAnalyser(TR::Node          
             generateTrg1Src1Instruction(cg, TR::InstOpCode::neg, node, trgReg, trgReg);
          }
       }
+#ifdef OMR_ENABLE_POWER_INTMODULO // Re-enable this code with new hardware update
    else if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P9) && isRemainder)
       {
       if (divisorReg == NULL)
          divisorReg = cg->evaluate(node->getSecondChild());
       generateTrg1Src2Instruction(cg, TR::InstOpCode::modsw, node, trgReg, dividendReg, divisorReg);
       }
+#endif
    else
       {
       if (tmp1Reg == NULL)
@@ -2078,11 +2080,13 @@ strengthReducingLongDivideOrRemainder32BitMode(TR::Node *node,      TR::CodeGene
 
          if (isRemainder)
             {
+#ifdef OMR_ENABLE_POWER_INTMODULO // Re-enable this code with new hardware update
             if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P9))
                {
                generateTrg1Src2Instruction(cg, TR::InstOpCode::moduw, node, dr_l, dd_l, dr_l);
                }
             else
+#endif
                {
                generateTrg1Src2Instruction(cg, TR::InstOpCode::divwu, node, tmp2Reg, dd_l, dr_l);
                generateTrg1Src2Instruction(cg, TR::InstOpCode::mullw, node, tmp1Reg, tmp2Reg, dr_l);
@@ -2154,11 +2158,13 @@ TR::Register *OMR::Power::TreeEvaluator::iremEvaluator(TR::Node *node, TR::CodeG
          {
          TR::Register *divisorReg = cg->evaluate(secondChild);
          trgReg = cg->allocateRegister();
+#ifdef OMR_ENABLE_POWER_INTMODULO // Re-enable this code with new hardware update
          if(cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P9))
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::modsw, node, trgReg, dividendReg, divisorReg);
             }
          else
+#endif
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::divw, node, trgReg, dividendReg, divisorReg);
             generateTrg1Src2Instruction(cg, TR::InstOpCode::mullw, node, trgReg, divisorReg, trgReg);
@@ -2210,11 +2216,13 @@ TR::Register *OMR::Power::TreeEvaluator::iremEvaluator(TR::Node *node, TR::CodeG
             generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, doneLabel, condReg);
             cg->stopUsingRegister(condReg);
             }
+#ifdef OMR_ENABLE_POWER_INTMODULO // Re-enable this code with new hardware update
          if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P9))
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::modsw, node, trgReg, dividendReg, divisorReg);
             }
          else
+#endif
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::divw, node, trgReg, dividendReg, divisorReg);
             generateTrg1Src2Instruction(cg, TR::InstOpCode::mullw, node, trgReg, divisorReg, trgReg);
@@ -2250,11 +2258,13 @@ TR::Register *lrem64Evaluator(TR::Node *node, TR::CodeGenerator *cg)
          {
          TR::Register *divisorReg = cg->evaluate(secondChild);
          trgReg = cg->allocateRegister();
+#ifdef OMR_ENABLE_POWER_INTMODULO // Re-enable this code with new hardware update
          if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P9))
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::modsd, node, trgReg, dividendReg, divisorReg);
             }
          else
+#endif
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::divd, node, trgReg, dividendReg, divisorReg);
             generateTrg1Src2Instruction(cg, TR::InstOpCode::mulld, node, trgReg, divisorReg, trgReg);
@@ -2306,11 +2316,13 @@ TR::Register *lrem64Evaluator(TR::Node *node, TR::CodeGenerator *cg)
             generateConditionalBranchInstruction(cg, TR::InstOpCode::beq, node, doneLabel, condReg);
             cg->stopUsingRegister(condReg);
             }
+#ifdef OMR_ENABLE_POWER_INTMODULO // Re-enable this code with new hardware update
          if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_PPC_P9))
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::modsd, node, trgReg, dividendReg, divisorReg);
             }
          else
+#endif
             {
             generateTrg1Src2Instruction(cg, TR::InstOpCode::divd, node, trgReg, dividendReg, divisorReg);
             generateTrg1Src2Instruction(cg, TR::InstOpCode::mulld, node, trgReg, divisorReg, trgReg);
@@ -2638,8 +2650,9 @@ static bool isMaskThenShiftRightCandidate(TR::CodeGenerator *cg, TR::Node *node,
 
    // If the operation is signed, then the mask must clear the sign bit. If the sign bit is not
    // cleared, then a rotate and mask instruction would not correctly bring in the sign bit when
-   // shifting.
-   if (!isUnsigned && (mask & (1LL << (operandBits - 1))) != 0)
+   // shifting. If shiftAmount is 0, it is also okay if the mask does not clear the sign bit since
+   // the value will not get shifted.
+   if (!(isUnsigned || (0 == shiftAmount)) && (mask & (1LL << (operandBits - 1))) != 0)
       return false;
 
    // When using an rldicl instruction (for 64-bit operands), the mask must be entirely confined to
@@ -2656,6 +2669,7 @@ static TR::Register *integerShiftRight(TR::Node *node, uint32_t operandSize, boo
    uint64_t operandMask = operandBits == 64 ? 0xffffffffffffffffULL : ((1ULL << operandBits) - 1);
 
    TR::Register *trg = cg->allocateRegister();
+   bool decRefGrandchildren = false;
 
    if (node->getSecondChild()->getOpCode().isLoadConst())
       {
@@ -2671,30 +2685,123 @@ static TR::Register *integerShiftRight(TR::Node *node, uint32_t operandSize, boo
       // shift operations together using the rlwinm or rldicl instructions.
       if (isMaskThenShiftRightCandidate(cg, node, operandBits, rhs, isUnsigned))
          {
-         TR::Register *lhs = cg->evaluate(node->getFirstChild()->getFirstChild());
+         TR::Node *lhsNode = node->getFirstChild()->getFirstChild();
+         TR::Register *lhs = cg->evaluate(lhsNode);
          uint64_t mask = (operandMask & node->getFirstChild()->getSecondChild()->get64bitIntegralValueAsUnsigned()) >> rhs;
 
          if (mask == 0)
+            {
             generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, trg, 0);
+            }
          else if (operandSize > 4)
-            generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rldicl, node, trg, lhs, (64 - rhs), mask);
+            {
+            if ((0 != rhs) || (mask != operandMask))
+               {
+               generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rldicl, node, trg, lhs, (64 - rhs) % 64, mask);
+               }
+            else if (!cg->canClobberNodesRegister(lhsNode))
+               {
+               /*
+                * If the shift amount is 0 and the mask covers the entire value, the input value does not change.
+                * As such, it can just be passed on.
+                */
+               generateTrg1Src1Instruction(cg, TR::InstOpCode::mr, node, trg, lhs);
+               }
+            else
+               {
+               /*
+                * If the shift amount is 0 and the mask covers the entire value, the input value does not change.
+                * As such, it can just be passed on.
+                * Also, the source register can be clobbered so the source can be passed on in the same register.
+                */
+               cg->stopUsingRegister(trg);
+               trg = lhs;
+               }
+            }
          else
-            generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, trg, lhs, (32 - rhs), mask);
+            {
+            if ((0 != rhs) || (mask != operandMask))
+               {
+               generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, trg, lhs, (32 - rhs) % 32, mask);
+               }
+            else if (!cg->canClobberNodesRegister(lhsNode))
+               {
+               /*
+                * If the shift amount is 0 and the mask covers the entire value, the input value does not change.
+                * As such, it can just be passed on.
+                */
+               generateTrg1Src1Instruction(cg, TR::InstOpCode::mr, node, trg, lhs);
+               }
+            else
+               {
+               /*
+                * If the shift amount is 0 and the mask covers the entire value, the input value does not change.
+                * As such, it can just be passed on.
+                * Also, the source register can be clobbered so the source can be passed on in the same register.
+                */
+               cg->stopUsingRegister(trg);
+               trg = lhs;
+               }
+            }
 
-         cg->decReferenceCount(node->getFirstChild()->getFirstChild());
-         cg->decReferenceCount(node->getFirstChild()->getSecondChild());
+         decRefGrandchildren = true;
          }
-      else if (isUnsigned)
+      else if (isUnsigned || (0 == rhs))
          {
-         TR::Register *lhs = cg->evaluate(node->getFirstChild());
+         TR::Node *lhsNode = node->getFirstChild();
+         TR::Register *lhs = cg->evaluate(lhsNode);
          uint64_t mask = operandMask >> rhs;
 
          if (mask == 0)
+            {
             generateTrg1ImmInstruction(cg, TR::InstOpCode::li, node, trg, 0);
+            }
          else if (operandSize > 4)
-            generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rldicl, node, trg, lhs, (64 - rhs), mask);
+            {
+            if (0 != rhs)
+               {
+               generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rldicl, node, trg, lhs, (64 - rhs) % 64, mask);
+               }
+            else if (!cg->canClobberNodesRegister(lhsNode))
+               {
+               /*
+                * If the shift amount is 0, the input value does not change. As such, it can just be passed on.
+                */
+               generateTrg1Src1Instruction(cg, TR::InstOpCode::mr, node, trg, lhs);
+               }
+            else
+               {
+               /*
+                * If the shift amount is 0, the input value does not change. As such, it can just be passed on.
+                * Also, the source register can be clobbered so the source can be passed on in the same register.
+                */
+               cg->stopUsingRegister(trg);
+               trg = lhs;
+               }
+            }
          else
-            generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, trg, lhs, (32 - rhs), mask);
+            {
+            if (0 != rhs)
+               {
+               generateTrg1Src1Imm2Instruction(cg, TR::InstOpCode::rlwinm, node, trg, lhs, (32 - rhs) % 32, mask);
+               }
+            else if (!cg->canClobberNodesRegister(lhsNode))
+               {
+               /*
+                * If the shift amount is 0, the input value does not change. As such, it can just be passed on.
+                */
+               generateTrg1Src1Instruction(cg, TR::InstOpCode::mr, node, trg, lhs);
+               }
+            else
+               {
+               /*
+                * If the shift amount is 0, the input value does not change. As such, it can just be passed on.
+                * Also, the source register can be clobbered so the source can be passed on in the same register.
+                */
+               cg->stopUsingRegister(trg);
+               trg = lhs;
+               }
+            }
          }
       else
          {
@@ -2746,6 +2853,12 @@ static TR::Register *integerShiftRight(TR::Node *node, uint32_t operandSize, boo
       }
 
    node->setRegister(trg);
+
+   if (decRefGrandchildren)
+      {
+      cg->decReferenceCount(node->getFirstChild()->getFirstChild());
+      cg->decReferenceCount(node->getFirstChild()->getSecondChild());
+      }
    cg->decReferenceCount(node->getFirstChild());
    cg->decReferenceCount(node->getSecondChild());
 

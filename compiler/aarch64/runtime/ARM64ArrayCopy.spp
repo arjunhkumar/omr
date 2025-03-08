@@ -1,0 +1,155 @@
+/*******************************************************************************
+ * Copyright IBM Corp. and others 2021
+ *
+ * This program and the accompanying materials are made available under
+ * the terms of the Eclipse Public License 2.0 which accompanies this
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
+ * or the Apache License, Version 2.0 which accompanies this distribution
+ * and is available at https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * This Source Code may also be made available under the following Secondary
+ * Licenses when the conditions for such availability set forth in the
+ * Eclipse Public License, v. 2.0 are satisfied: GNU General Public License,
+ * version 2 with the GNU Classpath Exception [1] and GNU General Public
+ * License, version 2 with the OpenJDK Assembly Exception [2].
+ *
+ * [1] https://www.gnu.org/software/classpath/license.html
+ * [2] https://openjdk.org/legal/assembly-exception.html
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
+ *******************************************************************************/
+
+	.file	"ARM64arrayCopy.s"
+
+#include "aarch64/runtime/arm64asmdefs.inc"
+
+	.global	FUNC_LABEL(__arrayCopy)
+	.global	FUNC_LABEL(__forwardArrayCopy)
+	.global	FUNC_LABEL(__backwardArrayCopy)
+	.global	FUNC_LABEL(__fwHalfWordArrayCopy)
+	.global	FUNC_LABEL(__fwWordArrayCopy)
+	.global	FUNC_LABEL(__fwDoubleWordArrayCopy)
+	.global	FUNC_LABEL(__fwQuadWordArrayCopy)
+	.global	FUNC_LABEL(__bwHalfWordArrayCopy)
+	.global	FUNC_LABEL(__bwWordArrayCopy)
+	.global	FUNC_LABEL(__bwDoubleWordArrayCopy)
+	.global	FUNC_LABEL(__bwQuadWordArrayCopy)
+
+	.text
+	.align	2
+
+// This is a generic entry point that will determine which direction(forward/backward) to copy as appropriate.
+//
+// in:    x0 - length in bytes
+//        x1 - src addr
+//        x2 - dst addr
+// trash: x3, q30, q31
+
+FUNC_LABEL(__arrayCopy):
+	cbz	x0, finished			// return if no bytes to copy
+	subs	x3, x2, x1
+	beq	finished			// return if srcAddr == dstAddr
+	cmp	x0, x3
+	bhi	adjustAddressForBackwardCopy	// byteLength > dstAddr - srcAddr, must do backward array copy, hence adjusting the address
+	// Forward copy case: fall through
+
+// This assembler function can be called during runtime,
+// instead of emmitting these instructions through functions.
+//
+// in:    x0 - length in bytes
+//        x1 - src addr
+//        x2 - dst addr
+// trash: x3, q30, q31
+
+FUNC_LABEL(__forwardArrayCopy):
+	cmp	x1, x2
+	beq	finished			// return if srcAddr == dstAddr
+	asr	x3, x0, 6			// loop count
+	cbz	x3, fwAC32
+fwACLoop:
+	// Copy 32x2 bytes
+	ldp	q30, q31, [x1], #32
+	subs	x3, x3, #1
+	stp	q30, q31, [x2], #32
+	ldp	q30, q31, [x1], #32
+	stp	q30, q31, [x2], #32
+	bne	fwACLoop
+fwAC32:
+	tbz	x0, #5, fwAC16			// test bit 5
+	ldp	q30, q31, [x1], #32
+	stp	q30, q31, [x2], #32
+fwAC16:
+	tbz	x0, #4, fwAC8			// test bit 4
+	ldr	q30, [x1], #16
+	str	q30, [x2], #16
+fwAC8:
+	tbz	x0, #3, fwAC4			// test bit 3
+	ldr	x3, [x1], #8
+	str	x3, [x2], #8
+fwAC4:
+	tbz	x0, #2, fwAC2			// test bit 2
+	ldr	w3, [x1], #4
+	str	w3, [x2], #4
+fwAC2:
+	tbz	x0, #1, fwAC1			// test bit 1
+	ldrh	w3, [x1], #2
+	strh	w3, [x2], #2
+fwAC1:
+	tbz	x0, #0, finished		// test bit 0 (LSB)
+	ldrb	w3, [x1], #1
+	strb	w3, [x2], #1
+finished:
+	ret
+
+adjustAddressForBackwardCopy:
+	add	x1, x1, x0
+	add	x2, x2, x0
+	b	bwACSkipCheck
+
+// This assembler function can be called during runtime,
+// instead of emmitting these instructions through functions.
+//
+// in:    x0 - length in bytes
+//        x1 - src addr + length
+//        x2 - dst addr + length
+// trash: x3, q30, q31
+
+FUNC_LABEL(__backwardArrayCopy):
+	cmp	x1, x2
+	beq	finished			// return if srcAddr == dstAddr
+bwACSkipCheck:
+	asr	x3, x0, 6			// loop count
+	cbz	x3, bwAC32
+bwACLoop:
+	// Copy 32x2 bytes
+	ldp	q30, q31, [x1, #-32]!
+	subs	x3, x3, #1
+	stp	q30, q31, [x2, #-32]!
+	ldp	q30, q31, [x1, #-32]!
+	stp	q30, q31, [x2, #-32]!
+	bne	bwACLoop
+bwAC32:
+	tbz	x0, #5, bwAC16			// test bit 5
+	ldp	q30, q31, [x1, #-32]!
+	stp	q30, q31, [x2, #-32]!
+bwAC16:
+	tbz	x0, #4, bwAC8			// test bit 4
+	ldr	q30, [x1, #-16]!
+	str	q30, [x2, #-16]!
+bwAC8:
+	tbz	x0, #3, bwAC4			// test bit 3
+	ldr	x3, [x1, #-8]!
+	str	x3, [x2, #-8]!
+bwAC4:
+	tbz	x0, #2, bwAC2			// test bit 2
+	ldr	w3, [x1, #-4]!
+	str	w3, [x2, #-4]!
+bwAC2:
+	tbz	x0, #1, bwAC1			// test bit 1
+	ldrh	w3, [x1, #-2]!
+	strh	w3, [x2, #-2]!
+bwAC1:
+	tbz	x0, #0, finished		// test bit 0 (LSB)
+	ldrb	w3, [x1, #-1]!
+	strb	w3, [x2, #-1]!
+	ret

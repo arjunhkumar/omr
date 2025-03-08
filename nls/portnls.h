@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef portnls_h
@@ -173,5 +173,8 @@
 #define J9NLS_PORT_LINUXDUMP_PIPE_CORE_NOT_FOUND__MODULE 0x504f5254
 #define J9NLS_PORT_LINUXDUMP_PIPE_CORE_NOT_FOUND__ID 49
 #define J9NLS_PORT_LINUXDUMP_PIPE_CORE_NOT_FOUND J9NLS_PORT_LINUXDUMP_PIPE_CORE_NOT_FOUND__MODULE, J9NLS_PORT_LINUXDUMP_PIPE_CORE_NOT_FOUND__ID
+#define J9NLS_PORT_RUNNING_IN_CONTAINER_FAILURE__MODULE 0x504f5254
+#define J9NLS_PORT_RUNNING_IN_CONTAINER_FAILURE__ID 50
+#define J9NLS_PORT_RUNNING_IN_CONTAINER_FAILURE J9NLS_PORT_RUNNING_IN_CONTAINER_FAILURE__MODULE, J9NLS_PORT_RUNNING_IN_CONTAINER_FAILURE__ID
 
 #endif

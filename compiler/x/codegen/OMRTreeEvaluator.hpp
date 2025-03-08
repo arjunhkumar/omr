@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_X86_TREE_EVALUATOR_INCL
@@ -81,7 +81,6 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *istoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *bstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *sstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   static TR::Register *ilstoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *gotoEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *lookupEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *tableEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -150,6 +149,7 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *s2iEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *su2iEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *c2iEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *ipopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *ibits2fEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *fbits2iEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *compareFloatAndBranchEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -215,16 +215,25 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *arraysetEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *arraytranslateEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *arraycmpEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *arraycmplenEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *arraycopyEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *overflowCHKEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *ibyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *bitpermuteEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *bcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *scompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *icompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *bexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *sexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *iexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *compressExpandBitsEvaluator(TR::Node *node, TR::CodeGenerator *cg, TR::InstOpCode::Mnemonic regRegRegOpCode, TR::InstOpCode::Mnemonic regRegMemOpCode);
+
    static TR::Register *PrefetchEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *BBStartEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *BBEndEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *minmaxEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *sbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
-   typedef TR::Register *(* EvaluatorComputesCarry)(TR::Node *node, TR::CodeGenerator *codeGen, bool computesCarry);
+   typedef TR::Register *(* EvaluatorComputesCarry)(TR::Node *node, TR::CodeGenerator *cg, bool computesCarry);
    // routines for integers (or addresses) that can fit in one register
    // (see also the integerPair*Evaluator functions)
    static TR::Register *integerStoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -318,6 +327,12 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *vreductionOrUncheckedEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vreductionXorEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
+   static TR::Register *vcmpeqEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcmpneEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcmpgtEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcmpgeEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcmpltEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcmpleEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vmabsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vmaddEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vmandEvaluator(TR::Node *node, TR::CodeGenerator *cg);
@@ -353,6 +368,33 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *vmxorEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *vmfirstNonZeroEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
+   static TR::Register *vpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmpopcntEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vexpandEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vshlEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmshlEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vshrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmshrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vushrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmushrEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vrolEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmrolEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *mcompressEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmnotzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmnolzEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmbitswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmbyteswapEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vbitselectEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmcompressbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vmexpandbitsEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+
    // routines for floating point values that can fit in one GPR
    static TR::Register *floatingPointStoreEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
@@ -361,6 +403,7 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
    static TR::Register *vectorFPNaNHelper(TR::Node *node, TR::Register *lhs, TR::Register *tmpReg, TR::Register *rhs, TR::MemoryReference *mr, TR::CodeGenerator *cg);
    static TR::Register *vectorBinaryArithmeticEvaluator(TR::Node *node, TR::CodeGenerator *cg);
    static TR::Register *floatingPointBinaryArithmeticEvaluator(TR::Node *node, TR::CodeGenerator *cg);
+   static TR::Register *vectorCompareEvaluator(TR::Node *node, TR::CodeGenerator *cg);
 
    static TR::Register *unaryVectorMaskHelper(TR::InstOpCode opcode,
                                               OMR::X86::Encoding encoding,
@@ -376,7 +419,8 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
                                                TR::Register *lhsReg,
                                                TR::Register *rhsReg,
                                                TR::Register *maskReg,
-                                               TR::CodeGenerator *cg);
+                                               TR::CodeGenerator *cg,
+                                               bool maskTypeMismatch = false);
    static TR::Register *ternaryVectorMaskHelper(TR::InstOpCode opcode,
                                                 OMR::X86::Encoding encoding,
                                                 TR::Node *node,
@@ -483,9 +527,36 @@ class OMR_EXTENSIBLE TreeEvaluator: public OMR::TreeEvaluator
 
    static bool setCarryBorrow(TR::Node *flagNode, bool invertValue, TR::CodeGenerator *cg);
 
-   protected:
+   static void arrayCopy64BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16(TR::Node *node,
+                                                                              TR::Register *dstReg,
+                                                                              TR::Register *srcReg,
+                                                                              TR::Register *sizeReg,
+                                                                              TR::Register *tmpReg1,
+                                                                              TR::Register *tmpReg2,
+                                                                              TR::Register *tmpXmmYmmReg1,
+                                                                              TR::Register *tmpXmmYmmReg2,
+                                                                              TR::CodeGenerator *cg,
+                                                                              int repMovsThresholdBytes,
+                                                                              TR::LabelSymbol *repMovsLabel,
+                                                                              TR::LabelSymbol *mainEndLabel);
+
+   static void arrayCopy32BitPrimitiveInlineSmallSizeWithoutREPMOVSImplRoot16(TR::Node *node,
+                                                                              TR::Register *dstReg,
+                                                                              TR::Register *srcReg,
+                                                                              TR::Register *sizeReg,
+                                                                              TR::Register *tmpReg1,
+                                                                              TR::Register *tmpReg2,
+                                                                              TR::Register *tmpXmmYmmReg1,
+                                                                              TR::Register *tmpXmmYmmReg2,
+                                                                              TR::CodeGenerator *cg,
+                                                                              int repMovsThresholdBytes,
+                                                                              TR::LabelSymbol *repMovsLabel,
+                                                                              TR::LabelSymbol *mainEndLabel);
 
    static TR::Register *performHelperCall(TR::Node *node, TR::SymbolReference *helperSymRef, TR::ILOpCodes helperCallOpCode, bool spillFPRegs, TR::CodeGenerator *cg);
+
+   protected:
+
    static TR::Register *performIload(TR::Node *node, TR::MemoryReference  *sourceMR, TR::CodeGenerator *cg);
    static TR::Register *performFload(TR::Node *node, TR::MemoryReference  *sourceMR, TR::CodeGenerator *cg);
    static TR::Register *performDload(TR::Node *node, TR::MemoryReference  *sourceMR, TR::CodeGenerator *cg);

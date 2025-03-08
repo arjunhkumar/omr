@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "AllocateDescription.hpp"
@@ -258,10 +258,15 @@ MM_Collector::preCollect(MM_EnvironmentBase* env, MM_MemorySubSpace* subSpace, M
 		}
 	}
 
-	/* If this is a global collection then set the globalgc flag.  This will allow us to
-	 * trigger excessiveGC checks from a local collection that has recursed into a global gc .
+	/* If this is a global collection then set the didGlobalGC flag.  This will allow us to
+	 * trigger excessiveGC checks from a local collection that has recursed into a global GC.
+	 * Only include GCs that collect the whole heap to correctly evaluate the reclaimed
+	 * memory criteria.
+	 * There may be collectors that have global domain (any part of heap may be collected),
+	 * but not necessarily all the heap is collected, so all possible global GC criteria
+	 * are included.
 	 */
-	if (_globalCollector) {
+	if (_globalCollector && (MM_CycleState::CT_GLOBAL_GARBAGE_COLLECTION == env->_cycleState->_collectionType)) {
 		extensions->didGlobalGC = true;
 	}
 }
@@ -484,6 +489,8 @@ MM_Collector::garbageCollect(MM_EnvironmentBase* env, MM_MemorySubSpace* calling
 {
 	Assert_MM_mustHaveExclusiveVMAccess(env->getOmrVMThread());
 
+	uintptr_t vmState = env->pushVMstate(getVMStateID());
+
 	Assert_MM_true(NULL == env->_cycleState);
 	preCollect(env, callingSubSpace, allocateDescription, gcCode);
 	Assert_MM_true(NULL != env->_cycleState);
@@ -491,15 +498,11 @@ MM_Collector::garbageCollect(MM_EnvironmentBase* env, MM_MemorySubSpace* calling
 	/* ensure that we aren't trying to collect while in a NoGC allocation */
 	Assert_MM_false(env->_isInNoGCAllocationCall);
 
-	uintptr_t vmState = env->pushVMstate(getVMStateID());
-
 	/* First do any pre-collection initialization of the collector*/
 	setupForGC(env);
 
 	/* perform the collection */
 	_gcCompleted = internalGarbageCollect(env, callingSubSpace, allocateDescription);
-
-	env->popVMstate(vmState);
 
 	/* now, see if we need to resume an allocation or replenishment attempt */
 	void* postCollectAllocationResult = NULL;
@@ -521,6 +524,8 @@ MM_Collector::garbageCollect(MM_EnvironmentBase* env, MM_MemorySubSpace* calling
 	postCollect(env, callingSubSpace);
 	Assert_MM_true(NULL != env->_cycleState);
 	env->_cycleState = NULL;
+
+	env->popVMstate(vmState);
 
 	return postCollectAllocationResult;
 }

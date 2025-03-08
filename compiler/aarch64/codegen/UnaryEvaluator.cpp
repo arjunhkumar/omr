@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/CodeGenerator.hpp"
@@ -116,14 +116,22 @@ TR::Register *OMR::ARM64::TreeEvaluator::lnegEvaluator(TR::Node *node, TR::CodeG
    return tempReg;
    }
 
-static TR::Register *inlineVectorUnaryOp(TR::Node *node, TR::CodeGenerator *cg, TR::InstOpCode::Mnemonic op)
+TR::Register *OMR::ARM64::TreeEvaluator::inlineVectorUnaryOp(TR::Node *node, TR::CodeGenerator *cg, TR::InstOpCode::Mnemonic op, unaryEvaluatorHelper evaluatorHelper)
    {
    TR::Node *firstChild = node->getFirstChild();
    TR::Register *srcReg = cg->evaluate(firstChild);
-   TR::Register *resReg = (firstChild->getReferenceCount() == 1) ? srcReg : cg->allocateRegister(TR_VRF);
+   TR::Register *resReg = cg->allocateRegister(TR_VRF);
 
    node->setRegister(resReg);
-   generateTrg1Src1Instruction(cg, op, node, resReg, srcReg);
+   TR_ASSERT_FATAL_WITH_NODE(node, (op != TR::InstOpCode::bad) || (evaluatorHelper != NULL), "If op is TR::InstOpCode::bad, evaluatorHelper must not be NULL");
+   if (evaluatorHelper != NULL)
+      {
+      (*evaluatorHelper)(node, resReg, srcReg, cg);
+      }
+   else
+      {
+      generateTrg1Src1Instruction(cg, op, node, resReg, srcReg);
+      }
    cg->decReferenceCount(firstChild);
    return resReg;
    }
@@ -545,7 +553,7 @@ TR::Register *OMR::ARM64::TreeEvaluator::bu2iEvaluator(TR::Node *node, TR::CodeG
        && child->getRegister() == NULL)
       {
       // Use unsigned load
-      TR::Register *trgReg = commonLoadEvaluator(child, TR::InstOpCode::ldrbimm, cg);
+      TR::Register *trgReg = commonLoadEvaluator(child, TR::InstOpCode::ldrbimm, 1, cg);
       node->setRegister(trgReg);
       cg->decReferenceCount(child);
       return trgReg;
@@ -565,7 +573,7 @@ TR::Register *OMR::ARM64::TreeEvaluator::su2iEvaluator(TR::Node *node, TR::CodeG
        && child->getRegister() == NULL)
       {
       // Use unsigned load
-      TR::Register *trgReg = commonLoadEvaluator(child, TR::InstOpCode::ldrhimm, cg);
+      TR::Register *trgReg = commonLoadEvaluator(child, TR::InstOpCode::ldrhimm, 2, cg);
       node->setRegister(trgReg);
       cg->decReferenceCount(child);
       return trgReg;
@@ -611,11 +619,11 @@ TR::Register *OMR::ARM64::TreeEvaluator::l2aEvaluator(TR::Node *node, TR::CodeGe
    if (comp->useCompressedPointers())
       {
       // pattern match the sequence under the l2a
-      //    iaload f      l2a                       <- node
+      //    aloadi f      l2a                       <- node
       //       aload O       ladd
       //                       lshl
       //                          i2l
-      //                            iiload f        <- load
+      //                            iloadi f        <- load
       //                               aload O
       //                          iconst shftKonst
       //                       lconst HB
@@ -623,7 +631,7 @@ TR::Register *OMR::ARM64::TreeEvaluator::l2aEvaluator(TR::Node *node, TR::CodeGe
       // -or- if the load is known to be null
       //  l2a
       //    i2l
-      //      iiload f
+      //      iloadi f
       //         aload O
       //
       TR::Node *firstChild = node->getFirstChild();

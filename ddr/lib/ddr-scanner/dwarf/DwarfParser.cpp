@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "ddr/scanner/dwarf/DwarfFunctions.hpp"
@@ -470,6 +470,7 @@ static const pair<const char *, Dwarf_Half> tagStrings[] = {
 	make_pair("namespace", DW_TAG_namespace),
 	make_pair("pointer_type", DW_TAG_pointer_type),
 	make_pair("ptr_to_member_type", DW_TAG_ptr_to_member_type),
+	make_pair("reference_type", DW_TAG_reference_type),
 	make_pair("restrict_type", DW_TAG_restrict_type),
 	make_pair("shared_type", DW_TAG_shared_type),
 	make_pair("structure_type", DW_TAG_structure_type),
@@ -478,6 +479,7 @@ static const pair<const char *, Dwarf_Half> tagStrings[] = {
 	make_pair("subroutine_type", DW_TAG_subroutine_type),
 	make_pair("typedef", DW_TAG_typedef),
 	make_pair("union_type", DW_TAG_union_type),
+	make_pair("unspecified_type", DW_TAG_unspecified_type),
 	make_pair("volatile_type", DW_TAG_volatile_type),
 };
 
@@ -500,7 +502,7 @@ parseAttribute(char *line, Dwarf_Die *lastCreatedDie,
 	int ret = DW_DLV_OK;
 
 	/* Get the type and form of the attribute. */
-	Dwarf_Half type = DW_TAG_unknown;
+	Dwarf_Half type = DW_AT_unknown;
 	Dwarf_Half form = DW_FORM_unknown;
 	size_t span = strcspn(line, "\t (");
 

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stddef.h>
@@ -61,14 +61,23 @@ void TR_CallStackIterator::printStackBacktrace(TR::Compilation *comp)
    }                     \
    while (0)
 
-
-#define GET_CURR_TOS(dst) \
-   do                     \
-   {                      \
-   /*copy current stack pointer to dst*/ \
-   asm("la %0, 0(r1)" : "=r" (dst)); \
-   }                      \
-   while (0)
+#if defined(__open_xl__)
+   #define GET_CURR_TOS(dst) \
+      do                     \
+      {                      \
+      /*copy current stack pointer to dst*/ \
+      asm("la %0, 0(1)" : "=r" (dst)); \
+      }                      \
+      while (0)
+#else /* defined(__open_xl__) */
+   #define GET_CURR_TOS(dst) \
+      do                     \
+      {                      \
+      /*copy current stack pointer to dst*/ \
+      asm("la %0, 0(r1)" : "=r" (dst)); \
+      }                      \
+      while (0)
+#endif /* defined(__open_xl__) */
 
 void TR_PPCCallStackIterator::_set_tb_table()
    {
@@ -260,12 +269,18 @@ void TR_LinuxCallStackIterator::printStackBacktrace(TR::Compilation *comp)
 #include <unistd.h>
 #include <ceeedcct.h>
 
+#if !defined(__open_xl__)
 extern "builtin" void *__gdsa();
+#endif /* !defined(__open_xl__) */
 
 TR_MvsCallStackIterator::TR_MvsCallStackIterator ()
       : TR_CallStackIterator()
    {
+#if defined(__open_xl__)
+   _parms.__tf_dsa_addr = (void*)__builtin_s390_gdsa();
+#else /* defined(__open_xl__) */
    _parms.__tf_dsa_addr = (void*)__gdsa();
+#endif /* defined(__open_xl__) */
    _parms.__tf_caa_addr = (void*)__gtca();
    _parms.__tf_call_instruction = 0;
    _parms.__tf_pu_addr = 0;

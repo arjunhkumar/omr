@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stddef.h>
@@ -73,6 +73,7 @@
 #include "z/codegen/BinaryAnalyser.hpp"
 #include "z/codegen/BinaryCommutativeAnalyser.hpp"
 #include "z/codegen/CompareAnalyser.hpp"
+#include "z/codegen/OMRTreeEvaluator.hpp"
 #include "z/codegen/S390GenerateInstructions.hpp"
 #include "z/codegen/S390HelperCallSnippet.hpp"
 #include "z/codegen/S390Instruction.hpp"
@@ -323,45 +324,193 @@ generateS390Compare(TR::Node * node, TR::CodeGenerator * cg, TR::InstOpCode::Mne
    return branchOpCond;
    }
 
-static TR::Register*
-xmaxxminHelper(TR::Node* node, TR::CodeGenerator* cg, TR::InstOpCode::Mnemonic compareRROp, TR::InstOpCode::S390BranchCondition branchCond, TR::InstOpCode::Mnemonic moveRROp)
+TR::Register *
+OMR::Z::TreeEvaluator::xmaxxminHelper(TR::Node * node, TR::CodeGenerator * cg)
    {
-   TR::Node* lhsNode = node->getChild(0);
-   TR::Node* rhsNode = node->getChild(1);
-
-   TR::Register* lhsReg = cg->gprClobberEvaluate(lhsNode);
-   TR::Register* rhsReg = cg->evaluate(rhsNode);
+   TR_ASSERT_FATAL(node->getNumChildren() == 2, "node must have exactly 2 children");
+   TR::Register * operand1 = cg->gprClobberEvaluate(node->getChild(0));
+   TR::Register * operand2 = cg->evaluate(node->getChild(1));
 
    TR::LabelSymbol* cFlowRegionStart = generateLabelSymbol(cg);
-   TR::LabelSymbol* cFlowRegionEnd = generateLabelSymbol(cg);
-
    generateS390LabelInstruction(cg, TR::InstOpCode::label, node, cFlowRegionStart);
    cFlowRegionStart->setStartInternalControlFlow();
 
-   generateRREInstruction(cg, compareRROp, node, lhsReg, rhsReg);
-   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, branchCond, node, cFlowRegionEnd);
+   TR::InstOpCode::Mnemonic compareRROp = TR::InstOpCode::NOP;
+   TR::InstOpCode::S390BranchCondition returnFirstArgCond = TR::InstOpCode::COND_NOP;
+   bool isMaxOp = node->getOpCode().isMax();
+   bool isFloatingPointOp = node->getOpCode().isFloatingPoint();
+   if (isFloatingPointOp)
+      {
+      compareRROp = node->getOpCode().isDouble() ? TR::InstOpCode::CDBR : TR::InstOpCode::CEBR;
+      returnFirstArgCond = isMaxOp ? TR::InstOpCode::COND_MASK2 : TR::InstOpCode::COND_MASK4;
+      }
+   else
+      {
+      TR_ASSERT_FATAL(node->getOpCode().isInt() || node->getOpCode().isLong(), "invalid operand type");
+      compareRROp = node->getOpCode().isLong() ? TR::InstOpCode::CGR : TR::InstOpCode::CR;
+      returnFirstArgCond = isMaxOp ? TR::InstOpCode::COND_BHR : TR::InstOpCode::COND_BLR;
+      }
 
-   generateRREInstruction(cg, moveRROp, node, lhsReg, rhsReg);
+   TR::LabelSymbol* cFlowRegionEnd = generateLabelSymbol(cg);
+   TR::LabelSymbol* swapValues = generateLabelSymbol(cg);
+   generateRREInstruction(cg, compareRROp, node, operand1, operand2);
+   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, returnFirstArgCond, node, cFlowRegionEnd);
+   if (isFloatingPointOp)
+      {
+      /*
+       * Check for NaN operands for float and double
+       * Support float and double +0/-0 comparisons adhering to IEEE 754 standard
+       * Checking if operands are equal, then branching to equalRegion, otherwise
+       * fall through for NaN case handling
+       */
+      TR::LabelSymbol* equalRegion = generateLabelSymbol(cg);
+      generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_MASK8, node, equalRegion);
+
+      // If first operand is NaN, then we are done, otherwise fallthrough to move second operand as result
+      TR::InstOpCode::Mnemonic tdcOpcode = node->getOpCode().isDouble() ? TR::InstOpCode::TCDB : TR::InstOpCode::TCEB;
+      generateRXEInstruction(cg, tdcOpcode, node, operand1, generateS390MemoryReference(0x00F, cg), 0); // can't use load and test here since it would set the quiet bit
+      generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_MASK4, node, cFlowRegionEnd);
+
+      // branch to swap label, since either second operand is NaN, or entire satisfies the alternate condition code
+      generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_BRC, node, swapValues);
+
+      // code for handling +0/-0 comparisons when operands are equal
+      generateS390LabelInstruction(cg, TR::InstOpCode::label, node, equalRegion);
+      if (node->getOpCode().isMax())
+         {
+         // For Max calls, checking if first operand is +0, then we are done, otherwise fall through for swap
+         generateRXEInstruction(cg, tdcOpcode, node, operand1, generateS390MemoryReference(0x800, cg), 0);  // operand1 is +0 ?
+         generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_MASK4, node, cFlowRegionEnd);   // it is +0
+         }
+      else if (node->getOpCode().isMin())
+         {
+         // For Min calls, checking if first operand is not +0, then we are done, otherwise fall through for swap
+         generateRXEInstruction(cg, tdcOpcode, node, operand1, generateS390MemoryReference(0x400, cg), 0);  // operand1 is -0 ?
+         generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_MASK4, node, cFlowRegionEnd);
+         }
+      }
+
+   // Move resulting operand to operand1 as fallthrough for alternate Condition Code
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, swapValues);
+   TR::InstOpCode::Mnemonic moveRROp = TR::InstOpCode::NOP;
+   if (isFloatingPointOp)
+      {
+      moveRROp = node->getOpCode().isDouble() ? TR::InstOpCode::LDR : TR::InstOpCode::LER;
+      }
+   else
+      {
+      moveRROp = node->getOpCode().isLong() ? TR::InstOpCode::LGR : TR::InstOpCode::LR;
+      }
+   generateRREInstruction(cg, moveRROp, node, operand1, operand2);
 
    TR::RegisterDependencyConditions* deps = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0, 2, cg);
-
-   deps->addPostConditionIfNotAlreadyInserted(lhsReg, TR::RealRegister::AssignAny);
-   deps->addPostConditionIfNotAlreadyInserted(rhsReg, TR::RealRegister::AssignAny);
+   deps->addPostConditionIfNotAlreadyInserted(operand1, TR::RealRegister::AssignAny);
+   deps->addPostConditionIfNotAlreadyInserted(operand2, TR::RealRegister::AssignAny);
 
    generateS390LabelInstruction(cg, TR::InstOpCode::label, node, cFlowRegionEnd, deps);
    cFlowRegionEnd->setEndInternalControlFlow();
 
-   node->setRegister(lhsReg);
+   node->setRegister(operand1);
+   cg->decReferenceCount(node->getChild(0));
+   cg->decReferenceCount(node->getChild(1));
+   return operand1;
+   }
 
-   cg->decReferenceCount(lhsNode);
-   cg->decReferenceCount(rhsNode);
 
-   return lhsReg;
+TR::Register *
+OMR::Z::TreeEvaluator::fpMinMaxVectorHelper(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR_ASSERT_FATAL((node->getNumChildren() == 2) && node->getOpCode().isFloatingPoint(),
+      "node has incorrect number of children or is not floating point type");
+
+   /* ===================== Allocating Registers  ===================== */
+
+   TR::Register * argumentSelectorReg = cg->allocateRegister(TR_VRF);
+   TR::Register * compareResultReg = cg->allocateRegister(TR_VRF);
+   TR::Register * zeroCheckReg = cg->allocateRegister(TR_VRF);
+
+   /* ====== LD FPR0,16(GPR5)       Load a ====== */
+   TR::Register * operand1 = cg->fprClobberEvaluate(node->getFirstChild());
+
+   /* ====== LD FPR2, 0(GPR5)       Load b ====== */
+   TR::Register * operand2 = cg->evaluate(node->getSecondChild());
+
+   /* ===================== Generating instructions  ===================== */
+
+   const uint8_t typeMask = node->getOpCode().isDouble() ? 3 : 2;
+   /* ====== WFTCIDB argumentSelectorReg,operand1,X'F'         a == NaN ====== */
+   generateVRIeInstruction(cg, TR::InstOpCode::VFTCI, node, argumentSelectorReg, operand1, 0xF, 8, typeMask);
+
+   /* ====== For Max: WFCHE compareResultReg,operand1,operand2       Compare a > b ====== */
+   bool isMaxOp = node->getOpCode().isMax();
+   if(isMaxOp)
+      {
+      generateVRRcInstruction(cg, TR::InstOpCode::VFCH, node, compareResultReg, operand1, operand2, 0, 8, typeMask);
+      }
+   /* ====== For Min: WFCHE compareResultReg,operand1,operand2       Compare a < b ====== */
+   else
+      {
+      generateVRRcInstruction(cg, TR::InstOpCode::VFCH, node, compareResultReg, operand2, operand1, 0, 8, typeMask);
+      }
+
+   /*
+    * VO argumentSelectorReg,argumentSelectorReg,compareResultReg
+    * VSEL will select first arg when:
+    * For Max: (a > b) || (a == NaN)
+    * For Min: (a < b) || (a == NaN)
+    */
+   generateVRRcInstruction(cg, TR::InstOpCode::VO, node, argumentSelectorReg, argumentSelectorReg, compareResultReg, 0, 0, 0);
+
+   /* ====== For Max: WFTCIDB compareResultReg,operand1,X'800'       a == +0 ====== */
+   if(isMaxOp)
+      {
+      generateVRIeInstruction(cg, TR::InstOpCode::VFTCI, node, compareResultReg, operand1, 0x800, 8, typeMask);
+      }
+   /* ====== For Min: WFTCIDB compareResultReg,operand1,X'400'       a == -0 ====== */
+   else
+      {
+      generateVRIeInstruction(cg, TR::InstOpCode::VFTCI, node, compareResultReg, operand1, 0x400, 8, typeMask);
+      }
+
+   /* ====== WFTCIDB zeroCheckReg,operand2,X'C00'        b == 0 ====== */
+   generateVRIeInstruction(cg, TR::InstOpCode::VFTCI, node, zeroCheckReg, operand2, 0xC00, 8, typeMask);
+
+   /*
+    * VN compareResultReg,compareResultReg,zeroCheckReg
+    * VSEL will select first arg when:
+    * For Max: (a == +0) && (b == 0)
+    * For Min: (a == -0) && (b == 0)
+    */
+   generateVRRcInstruction(cg, TR::InstOpCode::VN, node, compareResultReg, compareResultReg, zeroCheckReg, 0, 0, 0);
+
+   /*
+    * VO argumentSelectorReg,argumentSelectorReg,compareResultReg
+    * VSEL will select first arg when:
+    * For Max: (a > b) || (a == NaN) || ((a == +0) && (b == 0))
+    * For Min: (a < b) || (a == NaN) || ((a == -0) && (b == 0))
+    * selects second arg otherwise (always selects second arg on (a == b) && (a != 0))
+    */
+   generateVRRcInstruction(cg, TR::InstOpCode::VO, node, argumentSelectorReg, argumentSelectorReg, compareResultReg, 0, 0, 0);
+
+   /* ====== VSEL operand1,operand1,operand2,argumentSelectorReg ====== */
+   generateVRReInstruction(cg, TR::InstOpCode::VSEL, node, operand1, operand1, operand2, argumentSelectorReg);
+
+   /* ===================== Deallocating Registers  ===================== */
+   cg->stopUsingRegister(operand2);
+   cg->stopUsingRegister(argumentSelectorReg);
+   cg->stopUsingRegister(compareResultReg);
+   cg->stopUsingRegister(zeroCheckReg);
+
+   node->setRegister(operand1);
+   cg->decReferenceCount(node->getFirstChild());
+   cg->decReferenceCount(node->getSecondChild());
+   return operand1;
    }
 
 static TR::Register*
-imaximinHelper(TR::Node* node, TR::CodeGenerator* cg, TR::InstOpCode::Mnemonic compareRROp, TR::InstOpCode::S390BranchCondition branchCond, TR::InstOpCode::Mnemonic moveRROp)
+imaximinHelper(TR::Node* node, TR::CodeGenerator* cg)
    {
+   TR::InstOpCode::S390BranchCondition branchCond = node->getOpCode().isMax() ? TR::InstOpCode::COND_BHR : TR::InstOpCode::COND_BLR;
    if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_S390_Z15))
       {
       TR::Node* lhsNode = node->getChild(0);
@@ -401,13 +550,14 @@ imaximinHelper(TR::Node* node, TR::CodeGenerator* cg, TR::InstOpCode::Mnemonic c
       }
    else
       {
-      return xmaxxminHelper(node, cg, compareRROp, branchCond, moveRROp);
+      return OMR::Z::TreeEvaluator::xmaxxminHelper(node, cg);
       }
    }
 
 static TR::Register*
-lmaxlminHelper(TR::Node* node, TR::CodeGenerator* cg, TR::InstOpCode::Mnemonic compareRROp, TR::InstOpCode::S390BranchCondition branchCond, TR::InstOpCode::Mnemonic moveRROp)
+lmaxlminHelper(TR::Node* node, TR::CodeGenerator* cg)
    {
+   TR::InstOpCode::S390BranchCondition branchCond = node->getOpCode().isMax() ? TR::InstOpCode::COND_BHR : TR::InstOpCode::COND_BLR;
    if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_S390_Z15))
       {
       TR::Node* lhsNode = node->getChild(0);
@@ -447,56 +597,132 @@ lmaxlminHelper(TR::Node* node, TR::CodeGenerator* cg, TR::InstOpCode::Mnemonic c
       }
    else
       {
-      return xmaxxminHelper(node, cg, compareRROp, branchCond, moveRROp);
+      return OMR::Z::TreeEvaluator::xmaxxminHelper(node, cg);
       }
    }
 
 TR::Register*
 OMR::Z::TreeEvaluator::imaxEvaluator(TR::Node* node, TR::CodeGenerator* cg)
    {
-   return imaximinHelper(node, cg, TR::InstOpCode::CR, TR::InstOpCode::COND_BHR, TR::InstOpCode::LR);
+   return imaximinHelper(node, cg);
    }
 
 TR::Register*
 OMR::Z::TreeEvaluator::lmaxEvaluator(TR::Node* node, TR::CodeGenerator* cg)
    {
-   return lmaxlminHelper(node, cg, TR::InstOpCode::CGR, TR::InstOpCode::COND_BHR, TR::InstOpCode::LGR);
+   return lmaxlminHelper(node, cg);
+   }
+
+TR::Register*
+OMR::Z::TreeEvaluator::fmaxHelper(TR::Node* node, TR::CodeGenerator* cg)
+   {
+   TR::Register * result = NULL;
+   if (cg->getSupportsVectorRegisters() && cg->comp()->target().cpu.supportsFeature(OMR_FEATURE_S390_VECTOR_FACILITY_ENHANCEMENT_1))
+      {
+      cg->generateDebugCounter("z14/simd/floatMax", 1, TR::DebugCounter::Free);
+      result = OMR::Z::TreeEvaluator::fpMinMaxVectorHelper(node, cg);
+      }
+   else
+      {
+      result = OMR::Z::TreeEvaluator::xmaxxminHelper(node, cg);
+      }
+   return result;
    }
 
 TR::Register*
 OMR::Z::TreeEvaluator::fmaxEvaluator(TR::Node* node, TR::CodeGenerator* cg)
    {
-   return xmaxxminHelper(node, cg, TR::InstOpCode::CEBR, TR::InstOpCode::COND_BHR, TR::InstOpCode::LER);
+   TR::Register * result = fmaxHelper(node, cg);
+   // load and test (result <- result) - sets quiet bit on NaN
+   generateRREInstruction(cg, TR::InstOpCode::LTEBR, node, result, result);
+   return result;
+   }
+
+TR::Register*
+OMR::Z::TreeEvaluator::dmaxHelper(TR::Node* node, TR::CodeGenerator* cg)
+   {
+   TR::Register * result = NULL;
+   if (cg->getSupportsVectorRegisters())
+      {
+      cg->generateDebugCounter("z13/simd/doubleMax", 1, TR::DebugCounter::Free);
+      result = OMR::Z::TreeEvaluator::fpMinMaxVectorHelper(node, cg);
+      }
+   else
+      {
+      result = OMR::Z::TreeEvaluator::xmaxxminHelper(node, cg);
+      }
+   return result;
    }
 
 TR::Register*
 OMR::Z::TreeEvaluator::dmaxEvaluator(TR::Node* node, TR::CodeGenerator* cg)
    {
-   return xmaxxminHelper(node, cg, TR::InstOpCode::CDBR, TR::InstOpCode::COND_BHR, TR::InstOpCode::LDR);
+   TR::Register * result = dmaxHelper(node, cg);
+   // load and test (result <- result) - sets quiet bit on NaN
+   generateRREInstruction(cg, TR::InstOpCode::LTDBR, node, result, result);
+   return result;
    }
 
 TR::Register *
 OMR::Z::TreeEvaluator::iminEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return imaximinHelper(node, cg, TR::InstOpCode::CR, TR::InstOpCode::COND_BLR, TR::InstOpCode::LR);
+   return imaximinHelper(node, cg);
    }
 
 TR::Register *
 OMR::Z::TreeEvaluator::lminEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
-   return lmaxlminHelper(node, cg, TR::InstOpCode::CGR, TR::InstOpCode::COND_BLR, TR::InstOpCode::LGR);
+   return lmaxlminHelper(node, cg);
+   }
+
+TR::Register*
+OMR::Z::TreeEvaluator::fminHelper(TR::Node* node, TR::CodeGenerator* cg)
+   {
+   TR::Register * result = NULL;
+   if (cg->getSupportsVectorRegisters() && cg->comp()->target().cpu.supportsFeature(OMR_FEATURE_S390_VECTOR_FACILITY_ENHANCEMENT_1))
+      {
+      cg->generateDebugCounter("z14/simd/floatMin", 1, TR::DebugCounter::Free);
+      result = OMR::Z::TreeEvaluator::fpMinMaxVectorHelper(node, cg);
+      }
+   else
+      {
+      result = OMR::Z::TreeEvaluator::xmaxxminHelper(node, cg);
+      }
+   return result;
    }
 
 TR::Register*
 OMR::Z::TreeEvaluator::fminEvaluator(TR::Node* node, TR::CodeGenerator* cg)
    {
-   return xmaxxminHelper(node, cg, TR::InstOpCode::CEBR, TR::InstOpCode::COND_BLR, TR::InstOpCode::LER);
+   TR::Register * result = fminHelper(node, cg);
+   // load and test (result <- result) - sets quiet bit on NaN
+   generateRREInstruction(cg, TR::InstOpCode::LTEBR, node, result, result);
+   return result;
+   }
+
+TR::Register*
+OMR::Z::TreeEvaluator::dminHelper(TR::Node* node, TR::CodeGenerator *cg)
+   {
+   TR::Register * result = NULL;
+   if (cg->getSupportsVectorRegisters())
+      {
+      cg->generateDebugCounter("z13/simd/doubleMin", 1, TR::DebugCounter::Free);
+      result = OMR::Z::TreeEvaluator::fpMinMaxVectorHelper(node, cg);
+      }
+   else
+      {
+      result = OMR::Z::TreeEvaluator::xmaxxminHelper(node, cg);
+      }
+   return result;
    }
 
 TR::Register*
 OMR::Z::TreeEvaluator::dminEvaluator(TR::Node* node, TR::CodeGenerator* cg)
    {
-   return xmaxxminHelper(node, cg, TR::InstOpCode::CDBR, TR::InstOpCode::COND_BLR, TR::InstOpCode::LDR);
+   TR::Register * result = dminHelper(node, cg);
+   // load and test (result <- result) - sets quiet bit on NaN
+   generateRREInstruction(cg, TR::InstOpCode::LTDBR, node, result, result);
+   return result;
    }
 
 /**
@@ -731,6 +957,8 @@ OMR::Z::TreeEvaluator::returnEvaluator(TR::Node * node, TR::CodeGenerator * cg)
          break;
       case TR::Return:
          comp->setReturnInfo(TR_VoidReturn);
+         break;
+      default:
          break;
       }
 
@@ -2115,6 +2343,12 @@ void OMR::Z::TreeEvaluator::createDAACondDeps(TR::Node * node, TR::RegisterDepen
          TR::TreeEvaluator::addToRegDep(daaDeps, daaInstr->getRegisterOperand(2), false);
          break;
          }
+      case TR::Instruction::IsVRIl: // VTZ
+         {
+         TR::TreeEvaluator::addToRegDep(daaDeps, daaInstr->getRegisterOperand(1), false);
+         TR::TreeEvaluator::addToRegDep(daaDeps, daaInstr->getRegisterOperand(2), false);
+         break;
+         }
       case TR::Instruction::IsVRRg: // VTP
          {
          TR::TreeEvaluator::addToRegDep(daaDeps, daaInstr->getRegisterOperand(1), false);
@@ -2669,18 +2903,31 @@ OMR::Z::TreeEvaluator::dselectEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    TR::Register *resultReg = cg->gprClobberEvaluate(trueValueNode);
    TR::Register *conditionReg = cg->evaluate(conditionNode);
    TR::Register *falseValReg = cg->evaluate(falseValueNode);
-   if (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_S390_Z13) && node->getOpCode().isDouble())
+   if ((cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_S390_Z13) && node->getOpCode().isDouble())
+    || (cg->comp()->target().cpu.isAtLeast(OMR_PROCESSOR_S390_Z14) && node->getOpCode().isFloat()))
       {
       TR::Register *vectorSelReg = cg->allocateRegister(TR_VRF);
       TR::Register *tempReg = cg->allocateRegister(TR_FPR);
       TR::Register *vzeroReg = cg->allocateRegister(TR_VRF);
-      // Convert 32 Bit register to 64 Bit (Comparison Child of the select node is 32 bit)
-      generateRRInstruction(cg, TR::InstOpCode::LLGFR, node, conditionReg, conditionReg);
+      if (node->getOpCode().isDouble())
+         {
+         // Convert 32 Bit register to 64 Bit for Doubles (Comparison Child of the select node is 32 bit)
+         generateRRInstruction(cg, TR::InstOpCode::LLGFR, node, conditionReg, conditionReg);
+         }
+      else
+         {
+         // Shift left the 32 least significant bits for preserving the float representaion as the hardware only operates on the first 32 bits in a FPR
+         generateRSInstruction(cg, TR::InstOpCode::SLLG, node, conditionReg, 32);
+         }
       // convert to floating point
       generateRRInstruction(cg, TR::InstOpCode::LDGR, node, tempReg, conditionReg);
       // generate compare with zero
       generateVRIaInstruction(cg, TR::InstOpCode::VGBM, node, vzeroReg, 0, 0);
-      generateVRRcInstruction(cg, TR::InstOpCode::VFCE, node, vectorSelReg, tempReg, vzeroReg, 1, 0, 3);
+      // Mask values used for VFCE instruction:
+      // M4 - Floating-point-format control = getVectorElementSizeMask(node->getSize()) - gets the element size mask for doubles/floats respectively
+      // M5 - Single-Element-Control = 0x8, setting bit 0 to one, controlling the operation to take place only on the zero-indexed element in the vector
+      // M6 - Condition Code Set = 0, the Condition Code is not set and remains unchanged
+      generateVRRcInstruction(cg, TR::InstOpCode::VFCE, node, vectorSelReg, tempReg, vzeroReg, 0, 0x8, getVectorElementSizeMask(node->getSize()));
       // generate select - if condition == 0, vectorSelReg will contain all 1s, so false and true are swapped
       generateVRReInstruction(cg, TR::InstOpCode::VSEL, node, resultReg, falseValReg, resultReg, vectorSelReg);
       cg->stopUsingRegister(tempReg);

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "GCCode.hpp"
@@ -42,9 +42,7 @@ MM_GCCode::isExplicitGC() const
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_CRITICAL_REGIONS:
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_UNLOADING_CLASSES:
 	case J9MMCONSTANT_IMPLICIT_GC_COMPLETE_CONCURRENT:
-#if defined(OMR_GC_CONCURRENT_SCAVENGER)
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_ABORTED_SCAVENGE:
-#endif
 		explicitGC = false;
 		break;
 	case J9MMCONSTANT_EXPLICIT_GC_NATIVE_OUT_OF_MEMORY:
@@ -53,7 +51,7 @@ MM_GCCode::isExplicitGC() const
 	case J9MMCONSTANT_EXPLICIT_GC_SYSTEM_GC:
 #if defined(OMR_GC_IDLE_HEAP_MANAGER)
 	case J9MMCONSTANT_EXPLICIT_GC_IDLE_GC:
-#endif
+#endif /* defined(OMR_GC_IDLE_HEAP_MANAGER) */
 	case J9MMCONSTANT_EXPLICIT_GC_PREPARE_FOR_CHECKPOINT:
 		explicitGC = true;
 		break;
@@ -88,12 +86,10 @@ MM_GCCode::shouldAggressivelyCompact() const
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_CRITICAL_REGIONS:
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_UNLOADING_CLASSES:
 	case J9MMCONSTANT_IMPLICIT_GC_COMPLETE_CONCURRENT:
-#if defined(OMR_GC_CONCURRENT_SCAVENGER)
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_ABORTED_SCAVENGE:
-#endif
 #if defined(OMR_GC_IDLE_HEAP_MANAGER)
 	case J9MMCONSTANT_EXPLICIT_GC_IDLE_GC:
-#endif
+#endif /* defined(OMR_GC_IDLE_HEAP_MANAGER) */
 	case J9MMCONSTANT_EXPLICIT_GC_PREPARE_FOR_CHECKPOINT:
 		aggressivelyCompact = false;
 		break;
@@ -128,12 +124,10 @@ MM_GCCode::isOutOfMemoryGC() const
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_CRITICAL_REGIONS:
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_UNLOADING_CLASSES:
 	case J9MMCONSTANT_IMPLICIT_GC_COMPLETE_CONCURRENT:
-#if defined(OMR_GC_CONCURRENT_SCAVENGER)
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_ABORTED_SCAVENGE:
-#endif
 #if defined(OMR_GC_IDLE_HEAP_MANAGER)
 	case J9MMCONSTANT_EXPLICIT_GC_IDLE_GC:
-#endif
+#endif /* defined(OMR_GC_IDLE_HEAP_MANAGER) */
 	case J9MMCONSTANT_EXPLICIT_GC_PREPARE_FOR_CHECKPOINT:
 		OOM = false;
 		break;
@@ -162,7 +156,7 @@ MM_GCCode::isAggressiveGC() const
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_AGGRESSIVE:
 #if defined(OMR_GC_IDLE_HEAP_MANAGER)
 	case J9MMCONSTANT_EXPLICIT_GC_IDLE_GC:
-#endif
+#endif /* defined(OMR_GC_IDLE_HEAP_MANAGER) */
 	case J9MMCONSTANT_EXPLICIT_GC_PREPARE_FOR_CHECKPOINT:
 		aggressiveGC = true;
 		break;
@@ -172,9 +166,7 @@ MM_GCCode::isAggressiveGC() const
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_CRITICAL_REGIONS:
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_UNLOADING_CLASSES:
 	case J9MMCONSTANT_IMPLICIT_GC_COMPLETE_CONCURRENT:
-#if defined(OMR_GC_CONCURRENT_SCAVENGER)
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_ABORTED_SCAVENGE:
-#endif
 		aggressiveGC = false;
 		break;
 	default:
@@ -182,6 +174,44 @@ MM_GCCode::isAggressiveGC() const
 	}
 	
 	return aggressiveGC;
+}
+
+/**
+ * Determine if the GC is implicit aggressive.
+ * @return true if the GC code indicates an implicit aggressive GC
+ */
+bool
+MM_GCCode::isImplicitAggressiveGC() const
+{
+	bool implicitAggressiveGC = true;
+
+	switch (_gcCode) {
+	case J9MMCONSTANT_IMPLICIT_GC_AGGRESSIVE:
+	case J9MMCONSTANT_IMPLICIT_GC_EXCESSIVE:
+	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_AGGRESSIVE:
+		implicitAggressiveGC = true;
+		break;
+	case J9MMCONSTANT_EXPLICIT_GC_NATIVE_OUT_OF_MEMORY:
+	case J9MMCONSTANT_EXPLICIT_GC_RASDUMP_COMPACT:
+	case J9MMCONSTANT_EXPLICIT_GC_SYSTEM_GC:
+#if defined(OMR_GC_IDLE_HEAP_MANAGER)
+	case J9MMCONSTANT_EXPLICIT_GC_IDLE_GC:
+#endif /* defined(OMR_GC_IDLE_HEAP_MANAGER) */
+	case J9MMCONSTANT_EXPLICIT_GC_PREPARE_FOR_CHECKPOINT:
+	case J9MMCONSTANT_EXPLICIT_GC_NOT_AGGRESSIVE:
+	case J9MMCONSTANT_IMPLICIT_GC_DEFAULT:
+	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE:
+	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_CRITICAL_REGIONS:
+	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_UNLOADING_CLASSES:
+	case J9MMCONSTANT_IMPLICIT_GC_COMPLETE_CONCURRENT:
+	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_ABORTED_SCAVENGE:
+		implicitAggressiveGC = false;
+		break;
+	default:
+		Assert_MM_unreachable();
+	}
+
+	return implicitAggressiveGC;
 }
 
 /**
@@ -199,9 +229,7 @@ MM_GCCode::isPercolateGC() const
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_AGGRESSIVE:
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_CRITICAL_REGIONS:
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_UNLOADING_CLASSES:
-#if defined(OMR_GC_CONCURRENT_SCAVENGER)
 	case J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_ABORTED_SCAVENGE:
-#endif
 		percolateGC = true;
 		break;
 	case J9MMCONSTANT_EXPLICIT_GC_NATIVE_OUT_OF_MEMORY:
@@ -214,7 +242,7 @@ MM_GCCode::isPercolateGC() const
 	case J9MMCONSTANT_IMPLICIT_GC_COMPLETE_CONCURRENT:
 #if defined(OMR_GC_IDLE_HEAP_MANAGER)
 	case J9MMCONSTANT_EXPLICIT_GC_IDLE_GC:
-#endif
+#endif /* defined(OMR_GC_IDLE_HEAP_MANAGER) */
 	case J9MMCONSTANT_EXPLICIT_GC_PREPARE_FOR_CHECKPOINT:
 		percolateGC = false;
 		break;
@@ -233,4 +261,14 @@ bool
 MM_GCCode::isRASDumpGC() const
 {
 	return J9MMCONSTANT_EXPLICIT_GC_RASDUMP_COMPACT == _gcCode;
+}
+
+/**
+ * Determine if the GC should clear bits for objects marked as deleted.
+ * @return true if we should clear the heap (currently only at snapshot)
+ */
+bool
+MM_GCCode::shouldClearHeap() const
+{
+	return J9MMCONSTANT_EXPLICIT_GC_PREPARE_FOR_CHECKPOINT == _gcCode;
 }

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/VPConstraint.hpp"
@@ -781,12 +781,12 @@ TR::VPClassType *TR::VPUnresolvedClass::getArrayClass(OMR::ValuePropagation *vp)
 
 bool TR::VPUnresolvedClass::isReferenceArray(TR::Compilation *comp)
    {
-   return _sig[0] == '[' && (_sig[1] == '[' || _sig[1] == 'L' || _sig[1] == 'Q');
+   return _sig[0] == '[' && (_sig[1] == '[' || _sig[1] == 'L');
    }
 
 bool TR::VPUnresolvedClass::isPrimitiveArray(TR::Compilation *comp)
    {
-   return _sig[0] == '[' && _sig[1] != '[' && _sig[1] != 'L'  && _sig[1] != 'Q';
+   return _sig[0] == '[' && _sig[1] != '[' && _sig[1] != 'L';
    }
 
 bool TR::VPNullObject::isNullObject()
@@ -887,7 +887,6 @@ TR::VPConstraint *TR::VPConstraint::create(OMR::ValuePropagation *vp, const char
    switch (sig[0])
       {
       case 'L':
-      case 'Q':
       case '[':
          return TR::VPClassType::create(vp, sig, len, method, isFixedClass);
       case 'B':
@@ -1247,7 +1246,7 @@ TR::VPClassType *TR::VPClassType::create(OMR::ValuePropagation *vp, TR::SymbolRe
       }
 
    int32_t len;
-   char *name = TR::Compiler->cls.classNameChars(vp->comp(), symRef, len);
+   const char *name = TR::Compiler->cls.classNameChars(vp->comp(), symRef, len);
    TR_ASSERT(name, "can't get class name from symbol reference");
    char *sig = TR::Compiler->cls.classNameToSignature(name, len, vp->comp());
    //return TR::VPUnresolvedClass::create(vp, sig, len, symRef->getOwningMethod(vp->comp()));
@@ -1287,7 +1286,7 @@ TR::VPResolvedClass *TR::VPResolvedClass::create(OMR::ValuePropagation *vp, TR_O
          // An array class is fixed if the base class for the array is final
          //
          TR_OpaqueClassBlock * baseClass = vp->fe()->getLeafComponentClassFromArrayClass(klass);
-         if (baseClass && TR::Compiler->cls.isClassFinal(vp->comp(), baseClass))
+         if (baseClass && TR::Compiler->cls.isClassFinal(vp->comp(), baseClass) && vp->canArrayClassBeTrustedAsFixedClass(klass, baseClass))
             return TR::VPFixedClass::create(vp, klass);
          }
       else
@@ -1354,28 +1353,18 @@ TR::VPKnownObject *TR::VPKnownObject::create(OMR::ValuePropagation *vp, TR::Know
    //
    constraint = NULL;
 #ifdef J9_PROJECT_SPECIFIC
-      {
-      TR::VMAccessCriticalSection vpKnownObjectCriticalSection(vp->comp(),
-                                                                TR::VMAccessCriticalSection::tryToAcquireVMAccess);
 
-      if (vpKnownObjectCriticalSection.hasVMAccess())
-         {
-         TR_OpaqueClassBlock *clazz = TR::Compiler->cls.objectClass(vp->comp(), knot->getPointer(index));
-         TR_OpaqueClassBlock *jlClass = vp->fe()->getClassClassPointer(clazz);
-         if (isJavaLangClass)
-            {
-            TR_ASSERT(clazz == jlClass, "Use createForJavaLangClass only for instances of java/lang/Class");
-            clazz = TR::Compiler->cls.classFromJavaLangClass(vp->comp(), knot->getPointer(index));
-            }
-         else
-            {
-            // clazz is already right
-            TR_ASSERT(clazz != jlClass, "For java/lang/Class instances, caller needs to use createForJavaLangClass.");
-            }
-         constraint = new (vp->trStackMemory()) TR::VPKnownObject(clazz, vp->comp(), index, isJavaLangClass);
-         vp->addConstraint(constraint, hash);
-         }
-      }
+   bool matchJavaLangClass;
+   TR_OpaqueClassBlock *clazz = vp->comp()->fej9()->getObjectClassFromKnownObjectIndex
+      (vp->comp(), index, &matchJavaLangClass);
+   TR_ASSERT_FATAL(matchJavaLangClass == isJavaLangClass,
+      "Use createForJavaLangClass if and only if the object is an instance of java/lang/Class");
+
+   constraint = new (vp->trStackMemory()) TR::VPKnownObject(clazz,
+                                                            vp->comp(),
+                                                            index,
+                                                            isJavaLangClass);
+   vp->addConstraint(constraint, hash);
 #endif
    return constraint;
    }
@@ -3080,13 +3069,13 @@ void TR::VPClass::typeIntersect(TR::VPClassPresence* &presence, TR::VPClassType*
             ///   dumpOptDetails(vp->comp(), "type is classobject: %d\n", TR_yes);
             //
             // the following cases are due to the fact that for loadaddrs
-            // and ialoads<vft-symbol> vp keeps track of the underlying type ;
+            // and aloadis<vft-symbol> vp keeps track of the underlying type ;
             // but these are actually of type java/lang/Class. when confronted
             // with the intersection between a loadaddr (whose underlying type is A)
             // and an aload (whose actual type is java/lang/Class), vp cannot intersect
             // types (when it should succeed) causing it to do wrong things
             // like fold branches etc. to detect this scenario, loadaddrs and
-            // iaload<vft-symbols> are primed with a ClassObject property.
+            // aloadi<vft-symbols> are primed with a ClassObject property.
             //
             // case 1: VPClass wrapper intersects with a VPClass wrapper (i)
             //e.g. <fixedClass, classObject> with <resolvedClass, non-null>
@@ -3534,8 +3523,8 @@ TR::VPConstraint *TR::VPResolvedClass::intersect1(TR::VPConstraint *other, OMR::
             otherLen--;
             }
 
-         if (((*thisSig != 'L') && (*thisSig != '[') && (*thisSig != 'Q')) &&
-             ((*otherSig == 'L') || (*otherSig == '[') || (*otherSig == 'Q')))
+         if (((*thisSig != 'L') && (*thisSig != '[')) &&
+             ((*otherSig == 'L') || (*otherSig == '[')))
             return NULL;
 
          return this;
@@ -3628,7 +3617,7 @@ TR::VPConstraint *TR::VPFixedClass::intersect1(TR::VPConstraint *other, OMR::Val
             }
 
          // Test if thisSig is primitive or an array, and otherSig is any kind of reference type
-         if ((*thisSig != 'L') && (*thisSig != 'Q') && ((*otherSig == 'L') || (*otherSig == '[') || (*otherSig == 'Q')))
+         if ((*thisSig != 'L') && ((*otherSig == 'L') || (*otherSig == '[')))
             {
             // Test if thisSig is not an array, or otherSig is not a java/lang/Object array
             if (! ((*thisSig == '[') && (otherLen == 18 && !strncmp(otherSig, "Ljava/lang/Object;", 18))) )
@@ -3856,7 +3845,7 @@ TR::VPConstraint *TR::VPObjectLocation::intersect1(TR::VPConstraint *other, OMR:
    VPObjectLocationKind result =
       (VPObjectLocationKind)(_kind & otherInfo->_kind);
 
-   //FIXME: since loadaddrs (or ialoads of vft-symbols) are primed
+   //FIXME: since loadaddrs (or aloadis of vft-symbols) are primed
    //with a ClassObject property, we could intersect ClassObject with a HeapObject
    //Leaving this here for now, in all cases where we previously would
    //have had ClassObject (and where we now have a subset of ClassObject).
@@ -5115,35 +5104,177 @@ bool TR::VPMergedConstraints::mustBeNotEqual(TR::VPConstraint *other, OMR::Value
    }
 
 
-//FIXME: this is too conservative, can do more for non-fixed objects
 bool TR::VPClass::mustBeNotEqual(TR::VPConstraint *other, OMR::ValuePropagation *vp)
    {
    if (isNullObject() && other->isNonNullObject())
       return true;
+
    if (isNonNullObject() && other->isNullObject())
       return true;
 
-   if (getKnownObject() && other->getKnownObject() && isNonNullObject() && other->isNonNullObject())
-      return getKnownObject()->getIndex() != other->getKnownObject()->getIndex();
+   if (!isNonNullObject() && !other->isNonNullObject())
+      return false; // both could be null
 
-   TR::VPClass *otherClass = NULL;
-   if (other)
-      otherClass = other->asClass();
-  if (!_preexistence &&
-       !_arrayInfo && _type &&
-       _type->isFixedClass() && isNonNullObject() &&
-       other && otherClass &&
-       !otherClass->getArrayInfo() &&
-       !otherClass->isPreexistentObject() &&
-       otherClass->getClassType() && otherClass->getClassType()->isFixedClass() && otherClass->isNonNullObject() &&
-       (isClassObject() == TR_yes) &&
-       (other->isClassObject() == TR_yes))
+   // At this point either this or other is known to be non-null (or both are).
+   // We can return true if all possible combinations of non-null values are
+   // distinct, ignoring the possibility of a null. If at runtime one value is
+   // null, the other is necessarily non-null, so null doesn't interfere.
+
+   // Try to distinguish based on known object. If both are known objects, then
+   // we have an immediate result.
+   TR::VPKnownObject *thisKnownObject = getKnownObject();
+   if (thisKnownObject != NULL)
       {
-      if (_type->asFixedClass()->getClass() != otherClass->getClassType()->asFixedClass()->getClass())
-         return true;
+      TR::VPKnownObject *otherKnownObject = other->getKnownObject();
+      if (otherKnownObject != NULL)
+         return thisKnownObject->getIndex() != otherKnownObject->getIndex();
       }
 
-   return false;
+   // Try to distinguish based on heap location.
+   TR_YesNoMaybe thisIsHeapObj = isHeapObject();
+   TR_YesNoMaybe otherIsHeapObj = other->isHeapObject();
+   if (thisIsHeapObj != TR_maybe
+       && otherIsHeapObj != TR_maybe
+       && thisIsHeapObj != otherIsHeapObj)
+      {
+      // One is an object on the heap and the other is not.
+      return true;
+      }
+
+   // Try to distinguish based on stack location.
+   TR_YesNoMaybe thisIsStackObj = isStackObject();
+   TR_YesNoMaybe otherIsStackObj = other->isStackObject();
+   if (thisIsStackObj != TR_maybe
+       && otherIsStackObj != TR_maybe
+       && thisIsStackObj != otherIsStackObj)
+      {
+      // One is an object on the stack and the other is not.
+      return true;
+      }
+
+   // Try to distinguish based on class location.
+   TR_YesNoMaybe thisIsClassObj = isClassObject();
+   TR_YesNoMaybe otherIsClassObj = other->isClassObject();
+   if (thisIsClassObj != TR_maybe && otherIsClassObj != TR_maybe)
+      {
+      if (thisIsClassObj != otherIsClassObj)
+         return true; // one is a class and the other is not
+
+      // They're both classes or both not classes. If they're both classes, we
+      // might be able to distinguish them based on what kind.
+      if (thisIsClassObj == TR_yes)
+         {
+         TR_YesNoMaybe thisIsVMClass = isJ9ClassObject();
+         TR_YesNoMaybe otherIsVMClass = other->isJ9ClassObject();
+         if (thisIsVMClass != TR_maybe
+             && otherIsVMClass != TR_maybe
+             && thisIsVMClass != otherIsVMClass)
+            {
+            // One is a VM-internal class pointer and the other is not.
+            return true;
+            }
+
+         TR_YesNoMaybe thisIsHeapClass = isJavaLangClassObject();
+         TR_YesNoMaybe otherIsHeapClass = other->isJavaLangClassObject();
+         if (thisIsHeapClass != TR_maybe
+             && otherIsHeapClass != TR_maybe
+             && thisIsHeapClass != otherIsHeapClass)
+            {
+            // One is a language-level class object and the other is not.
+            return true;
+            }
+         }
+      }
+
+   // Try to distinguish based on array info.
+   TR::VPArrayInfo *thisArrayInfo = getArrayInfo();
+   if (thisArrayInfo != NULL)
+      {
+      TR::VPArrayInfo *otherArrayInfo = other->getArrayInfo();
+      if (otherArrayInfo != NULL)
+         {
+         int32_t thisElemSize = thisArrayInfo->elementSize();
+         int32_t otherElemSize = otherArrayInfo->elementSize();
+         if (thisElemSize != 0 && otherElemSize != 0 && thisElemSize != otherElemSize)
+            return true; // They're arrays with different element sizes.
+
+         int32_t thisLo = thisArrayInfo->lowBound();
+         int32_t thisHi = thisArrayInfo->highBound();
+         int32_t otherLo = otherArrayInfo->lowBound();
+         int32_t otherHi = otherArrayInfo->highBound();
+         if (thisHi < otherLo || otherHi < thisLo)
+            return true; // They're arrays with different lengths.
+         }
+      }
+
+   // From here on out, we're trying to distinguish based on class hierarchy.
+
+   if ((thisIsClassObj == TR_yes) != (otherIsClassObj == TR_yes))
+      {
+      // Can't compare type bounds. One constrains the runtime type of an
+      // object, and the other constrains the class that an object can
+      // represent reflectively.
+      return false;
+      }
+
+   TR_OpaqueClassBlock *thisClass = getClass();
+   TR_OpaqueClassBlock *otherClass = other->getClass();
+   if (thisClass == NULL || otherClass == NULL)
+      {
+      // At least one has no (resolved) class. Don't bother with symbolic type
+      // bounds without actual class pointers, i.e. VPUnresolvedClass. Usually
+      // we should have the class pointer, and the information we can get
+      // without it isn't very good anyway.
+      return false;
+      }
+
+   if (thisClass == otherClass)
+      return false; // No point continuing in this case. Trivially could be equal.
+
+   bool thisIsFixedClass = isFixedClass();
+   bool otherIsFixedClass = other->isFixedClass();
+   if (thisIsFixedClass && otherIsFixedClass)
+      return thisClass != otherClass;
+
+   if (thisIsFixedClass || otherIsFixedClass)
+      {
+      // Only one is a fixed-type constraint (or we'd have returned above).
+      TR_OpaqueClassBlock *fixedClass = NULL;
+      TR_OpaqueClassBlock *boundClass = NULL;
+      if (thisIsFixedClass)
+         {
+         fixedClass = thisClass;
+         boundClass = otherClass;
+         }
+      else
+         {
+         fixedClass = otherClass;
+         boundClass = thisClass;
+         }
+
+      return vp->fe()->isInstanceOf(fixedClass, boundClass, true, true) == TR_no;
+      }
+
+   // Neither type is fixed.
+   if (TR::Compiler->cls.isInterfaceClass(vp->comp(), thisClass))
+      {
+      if (other->getClassType()->isArray() == TR_yes)
+         return !getClassType()->isCloneableOrSerializable();
+      else
+         return false; // a subtype of otherClass could implement thisClass
+      }
+
+   if (TR::Compiler->cls.isInterfaceClass(vp->comp(), otherClass))
+      {
+      if (getClassType()->isArray() == TR_yes)
+         return !other->getClassType()->isCloneableOrSerializable();
+      else
+         return false; // a subtype of thisClass could implement otherClass
+      }
+
+   // Two unrelated non-interface classes can't have a common subtype.
+   return vp->fe()->isInstanceOf(thisClass, otherClass, true, true) == TR_no
+      && vp->fe()->isInstanceOf(otherClass, thisClass, true, true) == TR_no;
    }
 
 bool TR::VPNullObject::mustBeNotEqual(TR::VPConstraint *other, OMR::ValuePropagation *vp)
@@ -5947,7 +6078,7 @@ void TR::VPResolvedClass::print(TR::Compilation *comp, TR::FILE *outFile)
       len = static_cast<int32_t>(strlen(sig));
       }
 
-   trfprintf(outFile, "class %.*s", len, sig);
+   trfprintf(outFile, "class 0x%p %.*s", _class, len, sig);
    if (_typeHintClass)
       {
       trfprintf(outFile, " (hint 0x%p", _typeHintClass);

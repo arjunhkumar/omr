@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "z/codegen/BinaryCommutativeAnalyser.hpp"
@@ -175,8 +175,8 @@ TR_S390BinaryCommutativeAnalyser::genericAnalyser(TR::Node * root, TR::InstOpCod
    //
    //     (0)  BNDCHK
    //     (1)    l2i [node >= 0] (in GPR_0063)
-   //     (1)      ilload #155[00000000801188C8] Shadow[<array-size>]24
-   //     (2)        iaload #177[000000008012C5E0] Shadow[java/lang/ThreadGroup.childrenGroups
+   //     (1)      lloadi #155[00000000801188C8] Shadow[<array-size>]24
+   //     (2)        aloadi #177[000000008012C5E0] Shadow[java/lang/ThreadGroup.childrenGroups
    //     (1)          ==>aload at [000000008012DBE8] (in &GPR_0058)
    //     (1)    l2i (in GPR_0067)
    //     (2)      ==>i2l at [0000000080117A70]

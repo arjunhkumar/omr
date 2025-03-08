@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 # This configure.ac has been confirmed to work with Autoconf v2.63,
@@ -47,7 +47,7 @@ AC_ARG_VAR([exe_output_dir], [The output directory for executables. (Default: $t
 AC_ARG_VAR([OMR_HOST_OS], [The operating system where the package will run. One of: aix,linux,osx,win,zos])
 AC_ARG_VAR([OMR_HOST_ARCH], [The architecture of the CPU where the package will run. One of: aarch64,arm,ppc,riscv,s390,x86])
 AC_ARG_VAR([OMR_TARGET_DATASIZE], [Specifies whether the package will run in 32- or 64-bit mode. One of: 31,32,64])
-AC_ARG_VAR([OMR_TOOLCHAIN], [The toolchain used to build the package. One of: gcc,xlc,msvc])
+AC_ARG_VAR([OMR_TOOLCHAIN], [The toolchain used to build the package. One of: gcc,msvc,openxl,xlc])
 AC_ARG_VAR([OMR_TOOLS_CC], [The C compiler to use for building tools (can differ from CC).])
 AC_ARG_VAR([OMR_TOOLS_CXX], [The C++ compiler to use for building tools (can differ from CXX).])
 AC_ARG_VAR([OMR_CROSS_CONFIGURE],
@@ -229,8 +229,9 @@ then
 fi
 AS_CASE([$OMR_TOOLCHAIN],
 	[gcc],[],
-	[xlc],[],
 	[msvc],[],
+	[openxl],[],
+	[xlc],[],
 	[AC_MSG_ERROR([An invalid value was provided for OMR_TOOLCHAIN: $OMR_TOOLCHAIN])]
 )
 AC_MSG_RESULT([$OMR_TOOLCHAIN])
@@ -400,6 +401,7 @@ OMRCFG_DEFINE_FLAG_ON([OMR_GC_DEBUG_ASSERTS])
 OMRCFG_DEFINE_FLAG_ON([OMR_GC_LARGE_OBJECT_AREA])
 OMRCFG_DEFINE_FLAG_ON([OMR_GC_MINIMUM_OBJECT_SIZE])
 OMRCFG_DEFINE_FLAG_ON([OMR_GC_MODRON_STANDARD])
+OMRCFG_DEFINE_FLAG_ON([OMR_GC_SPARSE_HEAP_ALLOCATION])
 OMRCFG_DEFINE_FLAG_ON([OMR_GC_NON_ZERO_TLH])
 OMRCFG_DEFINE_FLAG_ON([OMR_GC_THREAD_LOCAL_HEAP])
 OMRCFG_DEFINE_FLAG_ON([OMR_INTERP_HAS_SEMAPHORES])
@@ -422,7 +424,6 @@ OMRCFG_DEFINE_FLAG_OFF([OMR_GC_MODRON_COMPACTION])
 OMRCFG_DEFINE_FLAG_OFF([OMR_GC_MODRON_CONCURRENT_MARK])
 OMRCFG_DEFINE_FLAG_OFF([OMR_GC_MODRON_SCAVENGER])
 OMRCFG_DEFINE_FLAG_OFF([OMR_GC_DOUBLE_MAP_ARRAYLETS])
-OMRCFG_DEFINE_FLAG_OFF([OMR_GC_DOUBLE_MAPPING_FOR_SPARSE_HEAP_ALLOCATION])
 OMRCFG_DEFINE_FLAG_OFF([OMR_GC_CONCURRENT_SCAVENGER])
 OMRCFG_DEFINE_FLAG_OFF([OMR_GC_CONCURRENT_SWEEP])
 OMRCFG_DEFINE_FLAG_OFF([OMR_GC_LEAF_BITS])

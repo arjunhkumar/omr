@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/ValuePropagation.hpp"
@@ -38,7 +38,6 @@
 #include "compile/VirtualGuard.hpp"
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
-#include "cs2/bitvectr.h"
 #include "env/CompilerEnv.hpp"
 #include "env/IO.hpp"
 #include "env/PersistentInfo.hpp"
@@ -1690,11 +1689,15 @@ TR_YesNoMaybe OMR::ValuePropagation::isCastClassObject(TR::VPClassType *type)
    }
 
 
-TR_YesNoMaybe OMR::ValuePropagation::isArrayCompTypeValueType(TR::VPConstraint *arrayConstraint)
+TR_YesNoMaybe OMR::ValuePropagation::isArrayNullRestricted(TR::VPConstraint *arrayConstraint)
    {
-   return TR::Compiler->om.areValueTypesEnabled() ? TR_maybe : TR_no;
+   return TR::Compiler->om.areFlattenableValueTypesEnabled() ? TR_maybe : TR_no;
    }
 
+TR_YesNoMaybe OMR::ValuePropagation::isArrayElementFlattened(TR::VPConstraint *arrayConstraint)
+   {
+   return (TR::Compiler->om.areFlattenableValueTypesEnabled() && TR::Compiler->om.isValueTypeArrayFlatteningEnabled()) ? TR_maybe : TR_no;
+   }
 
 bool OMR::ValuePropagation::isArrayStoreCheckNeeded(TR::Node *arrayRef, TR::Node *objectRef, bool &mustFail,
            TR_OpaqueClassBlock* &storeClassForCheck, TR_OpaqueClassBlock* &componentClassForCheck)
@@ -2028,8 +2031,8 @@ TR::VPConstraint *OMR::ValuePropagation::mergeDefConstraints(TR::Node *node, int
 
    if (node->getOpCodeValue() == TR::loadaddr)
       {
-      // A loadaddr (USE) can be defined by an iistore.  Merging those
-      // constraints (the ones on the iistore) in would be dangerous.
+      // A loadaddr (USE) can be defined by an istorei.  Merging those
+      // constraints (the ones on the istorei) in would be dangerous.
       // There's no real point in merging in constraints from other
       // loadaddr defs, so just return NULL.
       return NULL;
@@ -4985,7 +4988,7 @@ void OMR::ValuePropagation::setUnreachablePath(TR::CFGEdge *edge)
 void OMR::ValuePropagation::printStructureInfo(TR_Structure *s, bool starting, bool lastTimeThrough)
    {
    traceMsg(comp(), "\n%s ", starting ? "Starting " : "Stopping ");
-   char *type;
+   const char *type;
    bool isLoop = false;
    if (s->asRegion())
       {
@@ -7243,39 +7246,15 @@ bool OMR::ValuePropagation::isUnreliableSignatureType(
    return false;
    }
 
-bool OMR::ValuePropagation::checkAllUnsafeReferences(TR::Node *node, vcount_t visitCount)
+bool OMR::ValuePropagation::canArrayClassBeTrustedAsFixedClass(TR_OpaqueClassBlock *arrayClass, TR_OpaqueClassBlock *componentClass)
    {
-   if (node->getVisitCount() == visitCount)
-      return true;
-
-   node->setVisitCount(visitCount);
-
-   if (node->getOpCode().hasSymbolReference() &&
-       node->getSymbol()->isUnsafeShadowSymbol())
-      {
-      if (_unsafeArrayAccessNodes->get(node->getGlobalIndex()))
-         {
-         comp()->getSymRefTab()->aliasBuilder.unsafeArrayElementSymRefs().set(node->getSymbolReference()->getReferenceNumber());
-         }
-      else
-         {
-         if (trace())
-            traceMsg(comp(), "Node is unsafe but not an array access %p \n", node);
-         return false;
-         }
-      }
-
-   int32_t childNum;
-   for (childNum=0; childNum < node->getNumChildren(); childNum++)
-      {
-      if (!checkAllUnsafeReferences(node->getChild(childNum), visitCount))
-         return false;
-      }
-
    return true;
    }
 
-
+bool OMR::ValuePropagation::canClassBeTrustedAsFixedClass(TR::SymbolReference *symRef, TR_OpaqueClassBlock *classObject)
+   {
+   return true;
+   }
 
 void OMR::ValuePropagation::doDelayedTransformations()
    {
@@ -7317,7 +7296,6 @@ void OMR::ValuePropagation::doDelayedTransformations()
    for (converterCallTree = convIt.getFirst();
 		   converterCallTree; converterCallTree = convIt.getNext())
       {
-
       transformConverterCall(converterCallTree);
       }
    _converterCalls.deleteAll();
@@ -7388,6 +7366,33 @@ void OMR::ValuePropagation::doDelayedTransformations()
          transformRTMultiLeafArrayCopy(rtArrayCopyTree);
          }
       _needMultiLeafArrayCopy.deleteAll();
+      }
+
+   if (TR::Compiler->om.areFlattenableValueTypesEnabled())
+      {
+      ListIterator<TR_NeedRuntimeTestNullRestrictedArrayCopy> tt(&_needRuntimeTestNullRestrictedArrayCopy);
+      TR_NeedRuntimeTestNullRestrictedArrayCopy *nullRestrictedArrayCopyTree;
+
+      for (nullRestrictedArrayCopyTree = tt.getFirst();
+           nullRestrictedArrayCopyTree; nullRestrictedArrayCopyTree = tt.getNext())
+         {
+         if (trace())
+            {
+            TR::CFG *cfg = comp()->getFlowGraph();
+            comp()->dumpMethodTrees("Trees before transformNullRestrictedArrayCopy");
+            comp()->getDebug()->print(comp()->getOutFile(), cfg);
+            }
+
+         transformNullRestrictedArrayCopy(nullRestrictedArrayCopyTree);
+
+         if (trace())
+            {
+            TR::CFG *cfg = comp()->getFlowGraph();
+            comp()->dumpMethodTrees("Trees after transformNullRestrictedArrayCopy");
+            comp()->getDebug()->print(comp()->getOutFile(), cfg);
+            }
+         }
+      _needRuntimeTestNullRestrictedArrayCopy.deleteAll();
       }
 #endif
 
@@ -7615,7 +7620,7 @@ void OMR::ValuePropagation::doDelayedTransformations()
                               callUnreachable = false;
 
                            if (trace())
-                              traceMsg(comp(), "typeCompatibleStatus [%p] %d\n", guardNode, typeCompatibleStatus);
+                              traceMsg(comp(), "typeCompatibleStatus [%p] %s\n", guardNode, comp()->getDebug()->getName(typeCompatibleStatus));
                            }
                         else
                            {
@@ -8044,31 +8049,6 @@ void OMR::ValuePropagation::doDelayedTransformations()
       }
 
    _classesToCheckInit.setFirst(0);
-
-   comp()->getSymRefTab()->aliasBuilder.unsafeArrayElementSymRefs().empty();
-
-   if (!_unsafeArrayAccessNodes->isEmpty())
-      {
-      vcount_t visitCount = comp()->incVisitCount();
-      TR::TreeTop *curTree = comp()->getStartTree();
-      while (curTree)
-         {
-         if (curTree->getNode() &&
-            !checkAllUnsafeReferences(curTree->getNode(), visitCount))
-            {
-            comp()->getSymRefTab()->aliasBuilder.unsafeArrayElementSymRefs().empty();
-            break;
-            }
-         curTree = curTree->getNextTreeTop();
-         }
-      }
-
-   if (trace())
-      {
-      traceMsg(comp(), "Unsafe references that are only used to access array elements: ");
-      comp()->getSymRefTab()->aliasBuilder.unsafeArrayElementSymRefs().print(comp());
-      traceMsg(comp(), "\n");
-      }
    }
 
 TR_OpaqueClassBlock *OMR::ValuePropagation::findLikelySubtype(TR_OpaqueClassBlock *klass)

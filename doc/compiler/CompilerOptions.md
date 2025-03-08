@@ -10,14 +10,14 @@ is available at https://www.apache.org/licenses/LICENSE-2.0.
 This Source Code may also be made available under the following
 Secondary Licenses when the conditions for such availability set
 forth in the Eclipse Public License, v. 2.0 are satisfied: GNU
-General Public License, version 2 with the GNU Classpath 
+General Public License, version 2 with the GNU Classpath
 Exception [1] and GNU General Public License, version 2 with the
 OpenJDK Assembly Exception [2].
 
 [1] https://www.gnu.org/software/classpath/license.html
 [2] https://openjdk.org/legal/assembly-exception.html
 
-SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 -->
 
 # OMR Compiler Options
@@ -103,9 +103,9 @@ This section contains a subset of options available for controlling the runtime
 behavior of the compiler. This section does not exhaustively list all the options
 or their categories. To see all of the available options to control the compiler,
 please see the options listed in
-[`<omr-root-dir>/compiler/control/OMROptions.cpp`](https://github.com/eclipse/omr/blob/e2f65411e67d21ef04e2062a8945e604d82cb19e/compiler/control/OMROptions.cpp#L98)
-and 
-[`<omr-root-dir>/compiler/env/FEBase.cpp`](https://github.com/eclipse/omr/blob/e2f65411e67d21ef04e2062a8945e604d82cb19e/compiler/env/FEBase.cpp#L235)
+[`<omr-root-dir>/compiler/control/OMROptions.cpp`](https://github.com/eclipse-omr/omr/blob/e2f65411e67d21ef04e2062a8945e604d82cb19e/compiler/control/OMROptions.cpp#L98)
+and
+[`<omr-root-dir>/compiler/env/OMRFrontEnd.cpp`](https://github.com/eclipse-omr/omr/blob/8b39ee4620900920d736ef26031f10a1a7ca7bca/compiler/env/OMRFrontEnd.cpp#L198)
 
 The purpose of listing the options in this document is to give you an insight
 into the level of control you have over the compiler through the options rather
@@ -132,10 +132,10 @@ options, etc).
 | disableCFGSimplification                         | disable Control Flow Graph simplification                                       |
 | disableDeadTreeElimination                       | disable dead tree elimination                                                   |
 | disableGlobalDSE                                 | disable global dead store elimination                                           |
+| disableGLU                                       | disable general loop unroller                                                   |
 | disableGRA                                       | disable IL based global register allocator                                      |
 | disableInlining                                  | disable IL inlining                                                             |
 | disableLiveRegisterAnalysis                      | disable live register analysis                                                  |
-| disableLoopUnroller                              | disable loop unroller                                                           |
 | disableOpts={<em>regex</em>}                     | list of optimizations to disable                                                |
 | disableOptTransformations={<em>regex</em>}       | list of optimizer transformations to disable                                    |
 | disableTreeCleansing                             | disable tree cleansing                                                          |
@@ -194,7 +194,6 @@ options, etc).
 | debugOnEntry                               | invoke the debugger at the entry of a method                                                                                              |
 | exclude=<em>xxx</em>                       | do not compile methods beginning with <em>xxx</em>                                                                                        |
 | limit=<em>xxx</em>                         | only compile methods beginning with <em>xxx</em>                                                                                          |
-| maskAddresses                              | remove addresses from trace file                                                                                                          |
 | noRecompile                                | do not recompile even when counts allow it                                                                                                |
 | stopOnFailure                              | stop compilation if exceed memory threshold                                                                                               |
 | tlhPrefetch                                | enable software prefetch on allocation for X86                                                                                            |

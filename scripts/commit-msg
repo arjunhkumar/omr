@@ -18,14 +18,14 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 # This script is intended to be used under omr_repo_dir/.git/hooks to check
 # each git commit message against OMR contributing guidelines. The script
 # needs to be executable and it will be invoked when a 'git commit' command
 # is issued. OMR contributing guidelines can be found at:
-# https://github.com/eclipse/omr/blob/master/CONTRIBUTING.md#commit-guidelines
+# https://github.com/eclipse-omr/omr/blob/master/CONTRIBUTING.md#commit-guidelines
 
 message_file = ARGV[0]
 message = File.read(message_file)
@@ -103,7 +103,7 @@ end
 # display results
 if (state == "failure")
   puts "FAILED: #{description}"
-  puts "Please see guidelines: https://github.com/eclipse/omr/blob/master/CONTRIBUTING.md#commit-guidelines\n"
+  puts "Please see guidelines: https://github.com/eclipse-omr/omr/blob/master/CONTRIBUTING.md#commit-guidelines\n"
   exit 1
 end
 

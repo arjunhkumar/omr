@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdlib.h>
@@ -134,6 +134,16 @@ public:
    virtual size_t getSize() { return _size; }
 
    void clearSymRefs();
+   void freeFields()
+      {
+      FieldInfo *f=_firstField;
+      while (f)
+         {
+         FieldInfo *n = f->_next;
+         jitPersistentFree(f);
+         f = n;
+         }
+      }
 
 protected:
    FieldInfo * findField(const char *fieldName);
@@ -173,6 +183,16 @@ public:
    virtual size_t getSize() { return _size; }
 
    void clearSymRefs();
+   void freeFields()
+      {
+      FieldInfo *f=_firstField;
+      while (f)
+         {
+         FieldInfo *n = f->_next;
+         jitPersistentFree(f);
+         f = n;
+         }
+      }
 
 protected:
    FieldInfo *  findField(const char *fieldName);
@@ -452,6 +472,7 @@ OMR::TypeDictionary::MemoryManager::~MemoryManager()
 
 OMR::TypeDictionary::TypeDictionary() :
    _client(0),
+   _pointersByName(str_comparator, trMemory()->heapMemoryRegion()),
    _structsByName(str_comparator, trMemory()->heapMemoryRegion()),
    _unionsByName(str_comparator, trMemory()->heapMemoryRegion())
    {
@@ -506,12 +527,68 @@ OMR::TypeDictionary::TypeDictionary() :
       }
    }
 
+// Copy constructor is private but it must be defined
+// to avoid undefined behaviour, since we can't use `delete`
+OMR::TypeDictionary::TypeDictionary(const TypeDictionary &src) :
+   _client(0),
+   _pointersByName(str_comparator, trMemory()->heapMemoryRegion()),
+   _structsByName(str_comparator, trMemory()->heapMemoryRegion()),
+   _unionsByName(str_comparator, trMemory()->heapMemoryRegion())
+   {}
+
 OMR::TypeDictionary::~TypeDictionary() throw()
    {
    // Cleanup allocations in _memoryRegion *before* its destroyed in
    // the TypeDictionary::MemoryManager destructor
+   for (auto it=_pointersByName.begin(); it != _pointersByName.end();it++)
+      {
+      TR::IlType *t = it->second;
+      jitPersistentFree(static_cast<OMR::PointerType *>(t));
+      }
+   for (auto it=_structsByName.begin(); it != _structsByName.end();it++)
+      {
+      StructType *t = it->second;
+      t->freeFields();
+      jitPersistentFree(t);
+      }
    _structsByName.clear();
+   for (auto it=_unionsByName.begin(); it != _unionsByName.end();it++)
+      {
+      UnionType *t = it->second;
+      t->freeFields();
+      jitPersistentFree(t);
+      }
    _unionsByName.clear();
+
+   jitPersistentFree(pVectorDouble);
+   jitPersistentFree(pVectorFloat);
+   jitPersistentFree(pVectorInt64);
+   jitPersistentFree(pVectorInt32);
+   jitPersistentFree(pVectorInt16);
+   jitPersistentFree(pVectorInt8);
+   jitPersistentFree(pAddress);
+   jitPersistentFree(pDouble);
+   jitPersistentFree(pFloat);
+   jitPersistentFree(pInt64);
+   jitPersistentFree(pInt32);
+   jitPersistentFree(pInt16);
+   jitPersistentFree(pInt8);
+   jitPersistentFree(pNoType);
+
+   jitPersistentFree(VectorDouble);
+   jitPersistentFree(VectorFloat);
+   jitPersistentFree(VectorInt64);
+   jitPersistentFree(VectorInt32);
+   jitPersistentFree(VectorInt16);
+   jitPersistentFree(VectorInt8);
+   jitPersistentFree(Address);
+   jitPersistentFree(Double);
+   jitPersistentFree(Float);
+   jitPersistentFree(Int64);
+   jitPersistentFree(Int32);
+   jitPersistentFree(Int16);
+   jitPersistentFree(Int8);
+   jitPersistentFree(NoType);
    }
 
 TR::IlType *
@@ -611,7 +688,9 @@ OMR::TypeDictionary::PointerTo(const char *structName)
 TR::IlType *
 OMR::TypeDictionary::PointerTo(TR::IlType *baseType)
    {
-   return new (PERSISTENT_NEW) OMR::PointerType(baseType);
+   OMR::PointerType *ptrType = new (PERSISTENT_NEW) OMR::PointerType(baseType);
+   _pointersByName.insert(std::make_pair(ptrType->getName(), ptrType));
+   return ptrType;
    }
 
 TR::IlReference *

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/RegisterPair.hpp"
@@ -60,10 +60,10 @@ OMR::RegisterPair::getLowOrder()
    }
 
 TR::Register *
-OMR::RegisterPair::setLowOrder(TR::Register *lo, TR::CodeGenerator *codeGen)
+OMR::RegisterPair::setLowOrder(TR::Register *lo, TR::CodeGenerator *cg)
    {
-   if (!lo->isLive() && codeGen->getLiveRegisters(lo->getKind())!=NULL)
-      codeGen->getLiveRegisters(lo->getKind())->addRegister(lo);
+   if (!lo->isLive() && cg->getLiveRegisters(lo->getKind())!=NULL)
+      cg->getLiveRegisters(lo->getKind())->addRegister(lo);
 
    return (_lowOrder = lo);
    }
@@ -75,10 +75,10 @@ OMR::RegisterPair::getHighOrder()
    }
 
 TR::Register *
-OMR::RegisterPair::setHighOrder(TR::Register *ho, TR::CodeGenerator *codeGen)
+OMR::RegisterPair::setHighOrder(TR::Register *ho, TR::CodeGenerator *cg)
    {
-   if (!ho->isLive() && codeGen->getLiveRegisters(ho->getKind())!=NULL)
-      codeGen->getLiveRegisters(ho->getKind())->addRegister(ho);
+   if (!ho->isLive() && cg->getLiveRegisters(ho->getKind())!=NULL)
+      cg->getLiveRegisters(ho->getKind())->addRegister(ho);
 
    return (_highOrder = ho);
    }

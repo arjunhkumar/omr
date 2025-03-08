@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <string.h>
@@ -54,26 +54,37 @@ omrport_control(struct OMRPortLibrary *portLibrary, const char *key, uintptr_t v
 		return 0;
 	}
 #if defined(OMR_ENV_DATA64)
-	if (!strcmp(OMRPORT_CTLDATA_ALLOCATE32_COMMIT_SIZE, key)) {
+	if (0 == strcmp(OMRPORT_CTLDATA_ALLOCATE32_COMMIT_SIZE, key)) {
 		if (0 != value) {
-			/* CommitSize is immutable. It can only be set once. */
-			if (0 == PPG_mem_mem32_subAllocHeapMem32.suballocator_commitSize) {
-				/* Round up the commit size to the page size and set it to global variable */
-				uintptr_t pageSize = portLibrary->vmem_supported_page_sizes(portLibrary)[0];
-				uintptr_t roundedCommitSize = pageSize * (value / pageSize);
-				if (roundedCommitSize < value) {
-					roundedCommitSize += pageSize;
-				}
-				PPG_mem_mem32_subAllocHeapMem32.suballocator_commitSize = roundedCommitSize;
-			} else {
-				return 1;
+			/* Round up the commit size to the page size and set it to global variable. */
+			uintptr_t pageSize = portLibrary->vmem_supported_page_sizes(portLibrary)[0];
+			uintptr_t roundedCommitSize = pageSize * (value / pageSize);
+			if (roundedCommitSize < value) {
+				roundedCommitSize += pageSize;
 			}
+			PPG_mem_mem32_subAllocHeapMem32.suballocator_commitSize = roundedCommitSize;
 		} else {
 			return (int32_t)PPG_mem_mem32_subAllocHeapMem32.suballocator_commitSize;
 		}
 		return 0;
+	} else if (0 == strcmp(OMRPORT_CTLDATA_ALLOCATE32_INCREMENT_SIZE, key)) {
+		if (0 != value) {
+			/* Round up the increment size to the page size and set it to global variable. */
+			uintptr_t pageSize = portLibrary->vmem_supported_page_sizes(portLibrary)[0];
+			uintptr_t roundedIncrementSize = pageSize * (value / pageSize);
+			if (roundedIncrementSize < value) {
+				roundedIncrementSize += pageSize;
+			}
+			PPG_mem_mem32_subAllocHeapMem32.suballocator_incrementSize = roundedIncrementSize;
+		} else {
+			return (int32_t)PPG_mem_mem32_subAllocHeapMem32.suballocator_incrementSize;
+		}
+		return 0;
+	} else if (0 == strcmp(OMRPORT_CTLDATA_ALLOCATE32_QUICK_ALLOC, key)) {
+		PPG_mem_mem32_subAllocHeapMem32.suballocator_quickAlloc = (0 != value) ? TRUE : FALSE;
+		return 0;
 	}
-#endif
+#endif /* defined(OMR_ENV_DATA64) */
 
 #if defined(OMR_RAS_TDF_TRACE)
 	if (!strcmp(OMRPORT_CTLDATA_TRACE_START, key) && value) {
@@ -325,6 +336,13 @@ omrport_control(struct OMRPortLibrary *portLibrary, const char *key, uintptr_t v
 		return 0;
 	}
 #endif /* defined(PPG_criuSupportFlags) */
+
+#if defined(PPG_mem32BitFlags)
+	if (0 == strcmp(OMRPORT_CTLDATA_MEM_32BIT, key)) {
+		PPG_mem32BitFlags = value;
+		return 0;
+	}
+#endif /* defined(PPG_mem32BitFlags) */
 
 	return 1;
 }

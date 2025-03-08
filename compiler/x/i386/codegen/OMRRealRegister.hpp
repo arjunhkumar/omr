@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_X86_I386_REAL_REGISTER_INCL
@@ -216,11 +216,11 @@ class OMR_EXTENSIBLE RealRegister : public OMR::X86::RealRegister
       *evex = (*evex & 0xf8) | (0x7 & regNum) | (zero ? 0x80 : 0);
       }
 
-   void setSourceRegisterFieldInEVEX(uint8_t *opcodeByte)
+   void setSourceRegisterFieldInEVEX(uint8_t *evexP0)
       {
-      uint8_t regNum = ((_fullRegisterBinaryEncodings[_registerNumber].needsRexForByte << 3) | _fullRegisterBinaryEncodings[_registerNumber].id);
+      uint8_t regNum = ((_fullRegisterBinaryEncodings[_registerNumber].needsRexPlusRXB << 3) | _fullRegisterBinaryEncodings[_registerNumber].id);
       uint8_t bits = 0;
-      *opcodeByte &= 0x9F;
+      *evexP0 &= 0x9F;
 
       if (regNum & 0x10)
          {
@@ -232,29 +232,29 @@ class OMR_EXTENSIBLE RealRegister : public OMR::X86::RealRegister
          bits |= 0x2;
          }
 
-      *opcodeByte |= (~bits & 0x6) << 4;
+      *evexP0 |= (~bits & 0x6) << 4;
       }
 
-   void setSource2ndRegisterFieldInEVEX(uint8_t *opcodeByte)
+   void setSource2ndRegisterFieldInEVEX(uint8_t *evexP1)
       {
-      uint8_t regNum = ((_fullRegisterBinaryEncodings[_registerNumber].needsRexForByte << 3) | _fullRegisterBinaryEncodings[_registerNumber].id);
+      uint8_t regNum = ((_fullRegisterBinaryEncodings[_registerNumber].needsRexPlusRXB << 3) | _fullRegisterBinaryEncodings[_registerNumber].id);
 
-      *opcodeByte &= 0x87; // zero out vvvv bits
-      *opcodeByte |= (~(regNum << 3)) & 0x78;
-      uint8_t *evexP1 = opcodeByte + 1;
-      *evexP1 &= 0xf7;
+      *evexP1 &= 0x87; // zero out vvvv bits
+      *evexP1 |= (~(regNum << 3)) & 0x78;
+      uint8_t *evexP2 = evexP1 + 1;
+      *evexP2 &= 0xf7;
 
       if (!(regNum & 0x10))
          {
-         *evexP1 |= 0x8;
+         *evexP2 |= 0x8;
          }
       }
 
-   void setTargetRegisterFieldInEVEX(uint8_t *opcodeByte)
+   void setTargetRegisterFieldInEVEX(uint8_t *evexP0)
       {
-      uint8_t regNum = ((_fullRegisterBinaryEncodings[_registerNumber].needsRexForByte << 3) | _fullRegisterBinaryEncodings[_registerNumber].id);
+      uint8_t regNum = ((_fullRegisterBinaryEncodings[_registerNumber].needsRexPlusRXB << 3) | _fullRegisterBinaryEncodings[_registerNumber].id);
       uint8_t bits = 0;
-      *opcodeByte &= 0x6F;
+      *evexP0 &= 0x6F;
 
       if (regNum & 0x10)
          {
@@ -266,7 +266,7 @@ class OMR_EXTENSIBLE RealRegister : public OMR::X86::RealRegister
          bits |= 0x8;
          }
 
-      *opcodeByte |= (~bits & 0x9) << 4;
+      *evexP0 |= (~bits & 0x9) << 4;
       }
 
    /** \brief
@@ -277,7 +277,7 @@ class OMR_EXTENSIBLE RealRegister : public OMR::X86::RealRegister
    */
    void setRegisterFieldInVEX(uint8_t *opcodeByte)
       {
-      *opcodeByte ^= ((_fullRegisterBinaryEncodings[_registerNumber].needsRexForByte << 3) | _fullRegisterBinaryEncodings[_registerNumber].id) << 3; // vvvv is in bits 3-6 of last byte of VEX
+      *opcodeByte ^= ((_fullRegisterBinaryEncodings[_registerNumber].needsRexPlusRXB << 3) | _fullRegisterBinaryEncodings[_registerNumber].id) << 3; // vvvv is in bits 3-6 of last byte of VEX
       }
 
    void setRegisterFieldInModRM(uint8_t *modRMByte)

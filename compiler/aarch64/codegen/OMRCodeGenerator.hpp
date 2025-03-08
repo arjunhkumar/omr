@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_ARM64_CODEGENERATOR_INCL
@@ -83,6 +83,20 @@ extern TR::Instruction *loadConstant32(TR::CodeGenerator *cg, TR::Node *node, in
  */
 extern TR::Instruction *loadConstant64(TR::CodeGenerator *cg, TR::Node *node, int64_t value, TR::Register *trgReg, TR::Instruction *cursor = NULL);
 
+/**
+ * @brief Generates instructions for loading the specified constant value into a register
+ *
+ * @param cg            : CodeGenerator
+ * @param isRelocatable : Generates relocatable code if true
+ * @param node          : node
+ * @param value         : integer value
+ * @param trgReg        : target register
+ * @param cursor        : instruction cursor
+ * @param typeAddress   : type of address
+ * @return instruction cursor
+ */
+extern TR::Instruction *loadAddressConstant(TR::CodeGenerator *cg, bool isRelocatable, TR::Node *node, intptr_t value, TR::Register *trgReg, TR::Instruction *cursor=NULL, int16_t typeAddress=-1);
+
 extern TR::Instruction *loadAddressConstant(TR::CodeGenerator *cg, TR::Node *node, intptr_t value, TR::Register *trgReg, TR::Instruction *cursor=NULL, bool isPicSite=false, int16_t typeAddress=-1);
 
 /* @brief Generates instruction for loading address constant to register using constant data snippet
@@ -105,7 +119,7 @@ extern TR::Instruction *loadAddressConstantInSnippet(TR::CodeGenerator *cg, TR::
  * @param[in] srcReg : source register
  * @param[in] value : value to be added
  */
-TR::Instruction *addConstant64(TR::CodeGenerator *cg, TR::Node *node, TR::Register *trgReg, TR::Register *srcReg, int64_t value);
+void addConstant64(TR::CodeGenerator *cg, TR::Node *node, TR::Register *trgReg, TR::Register *srcReg, int64_t value);
 
 /**
  * @brief Generates instructions for adding 32-bit integer value to a register
@@ -115,7 +129,7 @@ TR::Instruction *addConstant64(TR::CodeGenerator *cg, TR::Node *node, TR::Regist
  * @param[in] srcReg : source register
  * @param[in] value : value to be added
  */
-TR::Instruction *addConstant32(TR::CodeGenerator *cg, TR::Node *node, TR::Register *trgReg, TR::Register *srcReg, int32_t value);
+void addConstant32(TR::CodeGenerator *cg, TR::Node *node, TR::Register *trgReg, TR::Register *srcReg, int32_t value);
 
 /**
  * @brief Helper function for encoding immediate value of logic instructions.
@@ -540,6 +554,16 @@ public:
     * @return true if supported, false otherwise
     */
    bool canTransformUnsafeCopyToArrayCopy();
+
+   /**
+    * @brief Answers whether a method call is implemented using an internal runtime
+    *           helper routine (ex. a j2iTransition)
+    *
+    * @param[in] sym : The symbol holding the call information
+    *
+    * @return : true if the call is represented by a helper; false otherwise.
+    */
+   bool callUsesHelperImplementation(TR::Symbol *sym) { return false; }
 
    /**
     * @brief Generates instructions for incrementing debug counter

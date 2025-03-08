@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -335,6 +335,8 @@ static OMRPortLibrary MainPortLibraryTable = {
 	omrsysinfo_cgroup_subsystem_iterator_metricKey, /* sysinfo_cgroup_subsystem_iterator_metricKey */
 	omrsysinfo_cgroup_subsystem_iterator_next, /* sysinfo_cgroup_subsystem_iterator_next */
 	omrsysinfo_cgroup_subsystem_iterator_destroy, /* sysinfo_cgroup_subsystem_iterator_destroy */
+	omrsysinfo_get_process_start_time, /* sysinfo_get_process_start_time */
+	omrsysinfo_get_number_context_switches, /* sysinfo_get_number_context_switches */
 	omrport_init_library, /* port_init_library */
 	omrport_startup_library, /* port_startup_library */
 	omrport_create_library, /* port_create_library */

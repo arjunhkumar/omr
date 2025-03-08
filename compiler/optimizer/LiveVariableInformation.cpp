@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stddef.h>
@@ -26,7 +26,6 @@
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
 #include "cs2/allocator.h"
-#include "cs2/sparsrbit.h"
 #include "env/TRMemory.hpp"
 #include "il/AliasSetInterface.hpp"
 #include "il/AutomaticSymbol.hpp"
@@ -64,16 +63,27 @@ TR_LiveVariableInformation::TR_LiveVariableInformation(TR::Compilation   *c,
    {
    _traceLiveVariableInfo = comp()->getOption(TR_TraceLiveness);
 
-   if (traceLiveVarInfo())
-      traceMsg(comp(), "Collecting live variable information\n");
-
    // Find the number of locals and assign an index to each
    //
    _numLocals = 0;
    _includeParms = includeParms;
    _splitLongs = splitLongs;
 
-   if (includeParms)
+   _localObjects = NULL;
+   _cachedRegularGenSetInfo = NULL;
+   _cachedRegularKillSetInfo = NULL;
+   _cachedExceptionGenSetInfo = NULL;
+   _cachedExceptionKillSetInfo = NULL;
+
+   _haveCachedGenAndKillSets = false;
+   _liveCommonedLoads = NULL;
+   }
+
+void TR_LiveVariableInformation::collectLiveVariableInformation()
+   {
+   if (traceLiveVarInfo())
+      traceMsg(comp(), "Collecting live variable information\n");
+   if (_includeParms)
       {
       TR::ParameterSymbol *p;
       ListIterator<TR::ParameterSymbol> parms(&comp()->getMethodSymbol()->getParameterList());
@@ -82,7 +92,7 @@ TR_LiveVariableInformation::TR_LiveVariableInformation(TR::Compilation   *c,
          if (traceLiveVarInfo())
             traceMsg(comp(), "#%2d : is a parm symbol at %p\n", _numLocals, p);
 
-         if (p->getType().isInt64() && splitLongs)
+         if (p->getType().isInt64() && _splitLongs)
             {
             p->setLiveLocalIndex(_numLocals, comp()->fe());
             _numLocals += 2;
@@ -99,7 +109,7 @@ TR_LiveVariableInformation::TR_LiveVariableInformation(TR::Compilation   *c,
       if (traceLiveVarInfo())
          traceMsg(comp(), "Local #%2d is symbol at %p\n",_numLocals,p);
 
-      if (p->getType().isInt64() && splitLongs)
+      if (p->getType().isInt64() && _splitLongs)
          {
          p->setLiveLocalIndex(_numLocals, comp()->fe());
          _numLocals += 2;
@@ -108,7 +118,7 @@ TR_LiveVariableInformation::TR_LiveVariableInformation(TR::Compilation   *c,
          p->setLiveLocalIndex(_numLocals++, comp()->fe());
       }
 
-    if (traceLiveVarInfo())
+   if (traceLiveVarInfo())
       traceMsg(comp(), "Finished collecting live variable information: %d locals found\n", _numLocals);
 
    _localObjects = NULL;

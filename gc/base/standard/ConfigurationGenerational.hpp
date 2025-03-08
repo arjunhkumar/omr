@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -74,13 +74,14 @@ public:
 
 #if defined(J9VM_OPT_CRIU_SUPPORT)
 	/**
-	 * Startup GC threads on restore.
+	 * Reinitialize Scavenger specific related thread counts:
+	 *  - concurrent thread count
+	 *  - recommended thread count (Adaptive Threading)
 	 *
 	 * @param[in] env the current environment.
-	 * @return bool indicating if the restore thread count was
-	 * successfully set and accommodated (thread pool resized).
+	 * @return boolean indicating whether the configuration was successfully updated.
 	 */
-	virtual bool reinitializeGCThreadCountForRestore(MM_EnvironmentBase* env);
+	virtual bool reinitializeForRestore(MM_EnvironmentBase* env);
 #endif /* defined(J9VM_OPT_CRIU_SUPPORT) */
 
 	MM_ConfigurationGenerational(MM_EnvironmentBase *env)

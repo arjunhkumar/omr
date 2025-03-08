@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 #ifndef omrcgroup_h
 #define omrcgroup_h
@@ -36,6 +36,7 @@ typedef struct OMRCgroupMemoryInfo {
 	uint64_t memoryUsage; /**< current memory usage in bytes (as in memory.usage_in_bytes file)*/
 	uint64_t memoryAndSwapLimit; /**< memory + swap limit in bytes (as in memory.memsw.limit_in_bytes file)*/
 	uint64_t memoryAndSwapUsage; /**< current memory + swap usage in bytes (as in memory.memsw.usage_in_bytes file) */
+	uint64_t swappiness; /**< indicates kernel aggressiveness (0-100) in swapping memory pages for cgroups, and is not supported on cgroups V2 */
 	uint64_t cached; /**< page cache memory (as in memory.stat file)*/
 } OMRCgroupMemoryInfo;
 

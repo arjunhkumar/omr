@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/X86Instruction.hpp"
@@ -1169,6 +1169,18 @@ TR::X86RegImmSymInstruction::autoSetReloKind()
    else if (symbol->isRecompQueuedFlag())
       {
       setReloKind(TR_RecompQueuedFlag);
+      }
+   else if (symbol->isEnterEventHookAddress() || symbol->isExitEventHookAddress())
+      {
+      setReloKind(TR_MethodEnterExitHookAddress);
+      }
+   else if (symbol->isCallSiteTableEntry())
+      {
+      setReloKind(TR_CallsiteTableEntryAddress);
+      }
+   else if (symbol->isMethodTypeTableEntry())
+      {
+      setReloKind(TR_MethodTypeTableEntryAddress);
       }
    }
 
@@ -4460,6 +4472,12 @@ TR::AMD64RegImm64SymInstruction::autoSetReloKind()
       setReloKind(TR_BlockFrequency);
    else if (symbol->isRecompQueuedFlag())
       setReloKind(TR_RecompQueuedFlag);
+   else if (symbol->isEnterEventHookAddress() || symbol->isExitEventHookAddress())
+      setReloKind(TR_MethodEnterExitHookAddress);
+   else if (symbol->isCallSiteTableEntry() && !getSymbolReference()->isUnresolved())
+      setReloKind(TR_CallsiteTableEntryAddress);
+   else if (symbol->isMethodTypeTableEntry() && !getSymbolReference()->isUnresolved())
+      setReloKind(TR_MethodTypeTableEntryAddress);
    else
       setReloKind(-1);
    }
@@ -4945,7 +4963,6 @@ TR::X86RegRegRegInstruction  *
 generateRegRegRegInstruction(TR::InstOpCode::Mnemonic op, TR::Node * node, TR::Register * reg1, TR::Register * reg2, TR::Register * reg3, TR::CodeGenerator *cg, OMR::X86::Encoding encoding)
    {
    TR_ASSERT_FATAL(encoding != OMR::X86::Legacy, "Cannot use legacy SSE encoding for 3-operand instruction");
-   TR_ASSERT_FATAL(encoding == OMR::X86::Default ? cg->comp()->target().cpu.supportsAVX() : true, "Cannot use legacy SSE encoding for 3-operand instruction");
 
    return new (cg->trHeapMemory()) TR::X86RegRegRegInstruction(op, node, reg1, reg2, reg3, cg, encoding);
    }
@@ -5126,7 +5143,7 @@ generateRegRegRegInstruction(TR::InstOpCode::Mnemonic            op,
                              OMR::X86::Encoding               encoding)
    {
    TR_ASSERT_FATAL(encoding != OMR::X86::Legacy, "Cannot use legacy SSE encoding for 3-operand instruction");
-   TR_ASSERT_FATAL(encoding == OMR::X86::Default ? cg->comp()->target().cpu.supportsAVX() : true, "Cannot use legacy SSE encoding for 3-operand instruction");
+
    return new (cg->trHeapMemory()) TR::X86RegRegRegInstruction(op, node, reg1, reg2, reg3, cond, cg, encoding);
    }
 
@@ -5134,7 +5151,7 @@ TR::X86RegRegMemInstruction  *
 generateRegRegMemInstruction(TR::InstOpCode::Mnemonic op, TR::Node * node, TR::Register * reg1, TR::Register * reg2, TR::MemoryReference  * mr, TR::CodeGenerator *cg, OMR::X86::Encoding encoding)
    {
    TR_ASSERT_FATAL(encoding != OMR::X86::Legacy, "Cannot use legacy SSE encoding for 3-operand instruction");
-   TR_ASSERT_FATAL(encoding == OMR::X86::Default ? cg->comp()->target().cpu.supportsAVX() : true, "Cannot use legacy SSE encoding for 3-operand instruction");
+
    return new (cg->trHeapMemory()) TR::X86RegRegMemInstruction(op, node, reg1, reg2, mr, cg, encoding);
    }
 
@@ -5149,7 +5166,7 @@ generateRegRegMemInstruction(TR::InstOpCode::Mnemonic                     op,
                              OMR::X86::Encoding encoding)
    {
    TR_ASSERT_FATAL(encoding != OMR::X86::Legacy, "Cannot use legacy SSE encoding for 3-operand instruction");
-   TR_ASSERT_FATAL(encoding == OMR::X86::Default ? cg->comp()->target().cpu.supportsAVX() : true, "Cannot use legacy SSE encoding for 3-operand instruction");
+
    return new (cg->trHeapMemory()) TR::X86RegRegMemInstruction(op, node, reg1, reg2, mr, cond, cg, encoding);
    }
 

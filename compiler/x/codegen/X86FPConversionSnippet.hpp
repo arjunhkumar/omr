@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef IA32FPCONVERSIONSNIPPET_INCL
@@ -42,12 +42,12 @@ class X86FPConversionSnippet : public TR::X86RestartSnippet
 
    public:
 
-   X86FPConversionSnippet(TR::CodeGenerator   *codeGen,
+   X86FPConversionSnippet(TR::CodeGenerator   *cg,
                           TR::Node            *node,
                           TR::LabelSymbol      *restartlab,
                           TR::LabelSymbol      *snippetlab,
                           TR::SymbolReference *helperSymRef)
-      : TR::X86RestartSnippet(codeGen, node, restartlab, snippetlab, helperSymRef->canCauseGC()),
+      : TR::X86RestartSnippet(cg, node, restartlab, snippetlab, helperSymRef->canCauseGC()),
            _helperSymRef(helperSymRef)
       {
       // The code generation for this snippet does not allow a proper GC map
@@ -76,8 +76,8 @@ class X86FPConvertToIntSnippet  : public TR::X86FPConversionSnippet
                             TR::LabelSymbol            *snippetlab,
                             TR::SymbolReference       *helperSymRef,
                             TR::X86RegInstruction     *convertInstr,
-                            TR::CodeGenerator *codeGen)
-      : TR::X86FPConversionSnippet(codeGen, convertInstr->getNode(), restartlab, snippetlab, helperSymRef),
+                            TR::CodeGenerator *cg)
+      : TR::X86FPConversionSnippet(cg, convertInstr->getNode(), restartlab, snippetlab, helperSymRef),
            _convertInstruction(convertInstr) {}
 
    TR::X86RegInstruction  * getConvertInstruction() {return _convertInstruction;}
@@ -118,8 +118,8 @@ class X86FPConvertToLongSnippet  : public TR::X86FPConversionSnippet
                              TR::Node                           *node,
                              TR::X86RegMemInstruction           *loadHighInstr,
                              TR::X86RegMemInstruction           *loadLowInstr,
-                             TR::CodeGenerator *codeGen)
-      : TR::X86FPConversionSnippet(codeGen, node, restartlab, snippetlab, helperSymRef),
+                             TR::CodeGenerator *cg)
+      : TR::X86FPConversionSnippet(cg, node, restartlab, snippetlab, helperSymRef),
            _loadHighInstruction(loadHighInstr),
            _loadLowInstruction(loadLowInstr),
            _lowRegister(0),

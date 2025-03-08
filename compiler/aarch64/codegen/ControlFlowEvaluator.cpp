@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/ARM64ConditionCode.hpp"
@@ -155,6 +155,11 @@ static TR::Instruction *ificmpHelper(TR::Node *node, TR::ARM64ConditionCode cc, 
    TR::RegisterDependencyConditions *deps;
    bool secondChildNeedsRelocation = cg->profiledPointersRequireRelocation() && (secondChild->getOpCodeValue() == TR::aconst) &&
                                        (secondChild->isClassPointerConstant() || secondChild->isMethodPointerConstant());
+   TR_ResolvedMethod *method = comp->getCurrentMethod();
+   bool secondChildNeedsPicSite = (secondChild->getOpCodeValue() == TR::aconst) &&
+                                    ((secondChild->isClassPointerConstant() && cg->fe()->isUnloadAssumptionRequired(reinterpret_cast<TR_OpaqueClassBlock *>(secondChild->getAddress()), method)) ||
+                                     (secondChild->isMethodPointerConstant() && cg->fe()->isUnloadAssumptionRequired(
+                                      cg->fe()->createResolvedMethod(cg->trMemory(), reinterpret_cast<TR_OpaqueMethodBlock *>(secondChild->getAddress()), method)->classOfMethod(), method)));
 
 #ifdef J9_PROJECT_SPECIFIC
 if (secondChildNeedsRelocation)
@@ -226,7 +231,7 @@ if (secondChildNeedsRelocation)
          }
       }
 
-   if ((!secondChildNeedsRelocation) && secondChild->getOpCode().isLoadConst() && secondChild->getRegister() == NULL)
+   if ((!secondChildNeedsRelocation) && (!secondChildNeedsPicSite) && secondChild->getOpCode().isLoadConst() && secondChild->getRegister() == NULL)
       {
       int64_t value = is64bit ? secondChild->getLongInt() : secondChild->getInt();
       if (constantIsUnsignedImm12(value) || constantIsUnsignedImm12(-value) ||
@@ -803,6 +808,83 @@ OMR::ARM64::TreeEvaluator::lminEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    return commonMinMaxEvaluator(node, true, TR::CC_LT, cg);
    }
 
+static TR::ARM64ConditionCode
+getConditionCodeFromOpCode(TR::ILOpCodes op) {
+   switch (op)
+      {
+      /* -- Signed ops -- */
+      case TR::bcmpeq:
+      case TR::scmpeq:
+      case TR::icmpeq:
+      case TR::lcmpeq:
+      case TR::acmpeq:
+         return TR::CC_EQ;
+
+      case TR::bcmpne:
+      case TR::scmpne:
+      case TR::icmpne:
+      case TR::lcmpne:
+      case TR::acmpne:
+         return TR::CC_NE;
+
+      case TR::bcmplt:
+      case TR::scmplt:
+      case TR::icmplt:
+      case TR::lcmplt:
+         return TR::CC_LT;
+
+      case TR::bcmpge:
+      case TR::scmpge:
+      case TR::icmpge:
+      case TR::lcmpge:
+         return TR::CC_GE;
+
+      case TR::bcmpgt:
+      case TR::scmpgt:
+      case TR::icmpgt:
+      case TR::lcmpgt:
+         return TR::CC_GT;
+
+      case TR::bcmple:
+      case TR::scmple:
+      case TR::icmple:
+      case TR::lcmple:
+         return TR::CC_LE;
+
+      /* -- Unsigned ops -- */
+      case TR::bucmplt:
+      case TR::sucmplt:
+      case TR::iucmplt:
+      case TR::lucmplt:
+      case TR::acmplt:
+         return TR::CC_CC;
+
+      case TR::bucmpge:
+      case TR::sucmpge:
+      case TR::iucmpge:
+      case TR::lucmpge:
+      case TR::acmpge:
+         return TR::CC_CS;
+
+      case TR::bucmpgt:
+      case TR::sucmpgt:
+      case TR::iucmpgt:
+      case TR::lucmpgt:
+      case TR::acmpgt:
+         return TR::CC_HI;
+
+      case TR::bucmple:
+      case TR::sucmple:
+      case TR::iucmple:
+      case TR::lucmple:
+      case TR::acmple:
+         return TR::CC_LS;
+
+      default:
+         return TR::CC_Illegal;
+      }
+}
+
 // also handles lselect, bselect, sselect, aselect
 TR::Register *
 OMR::ARM64::TreeEvaluator::iselectEvaluator(TR::Node *node, TR::CodeGenerator *cg)
@@ -811,7 +893,6 @@ OMR::ARM64::TreeEvaluator::iselectEvaluator(TR::Node *node, TR::CodeGenerator *c
    TR::Node *trueNode = node->getChild(1);
    TR::Node *falseNode = node->getChild(2);
 
-   TR::Register *condReg = cg->evaluate(condNode);
    TR::Register *trueReg = cg->evaluate(trueNode);
    TR::Register *falseReg = cg->evaluate(falseNode);
    TR::Register *resultReg = trueReg;
@@ -839,11 +920,32 @@ OMR::ARM64::TreeEvaluator::iselectEvaluator(TR::Node *node, TR::CodeGenerator *c
       resultReg = (node->getOpCodeValue() == TR::aselect) ? cg->allocateCollectedReferenceRegister() : cg->allocateRegister();
       }
 
-   generateCompareImmInstruction(cg, node, condReg, 0, true); // 64-bit compare
-   generateCondTrg1Src2Instruction(cg, TR::InstOpCode::cselx, node, resultReg, trueReg, falseReg, TR::CC_NE);
+   TR::ARM64ConditionCode cc = getConditionCodeFromOpCode(condNode->getOpCodeValue());
+   if (cc != TR::CC_Illegal &&
+       condNode->getReferenceCount() == 1 && condNode->getRegister() == NULL)
+      {
+      TR::Node *cmp1Node = condNode->getChild(0);
+      TR::Node *cmp2Node = condNode->getChild(1);
+      TR::Register *cmp1Reg = cg->evaluate(cmp1Node);
+      TR::Register *cmp2Reg = cg->evaluate(cmp2Node);
+      bool is64bit = (TR::DataType::getSize(cmp1Node->getDataType()) == 8);
+
+      generateCompareInstruction(cg, node, cmp1Reg, cmp2Reg, is64bit);
+      generateCondTrg1Src2Instruction(cg, TR::InstOpCode::cselx, node, resultReg, trueReg, falseReg, cc);
+
+      cg->recursivelyDecReferenceCount(condNode);
+      }
+   else
+      {
+      TR::Register *condReg = cg->evaluate(condNode);
+
+      generateCompareImmInstruction(cg, node, condReg, 0, true); // 64-bit compare
+      generateCondTrg1Src2Instruction(cg, TR::InstOpCode::cselx, node, resultReg, trueReg, falseReg, TR::CC_NE);
+
+      cg->decReferenceCount(condNode);
+      }
 
    node->setRegister(resultReg);
-   cg->decReferenceCount(condNode);
    cg->decReferenceCount(trueNode);
    cg->decReferenceCount(falseNode);
 

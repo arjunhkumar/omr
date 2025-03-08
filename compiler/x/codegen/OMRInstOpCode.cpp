@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/OMRInstOpCode.hpp"
@@ -30,38 +30,70 @@ const OMR::X86::InstOpCode::OpCodeMetaData OMR::X86::InstOpCode::metadata[NumOpC
  // Heuristics for X87 second byte opcode
  // It could be eliminated if GCC/MSVC fully support initializer list
 #define X87_________________(x) ((uint8_t)((x & 0xE0) >> 5)), ((uint8_t)((x & 0x18) >> 3)), (uint8_t)(x & 0x07)
-#define BINARY(...) {__VA_ARGS__}
-#define PROPERTY0(...) __VA_ARGS__
-#define PROPERTY1(...) __VA_ARGS__
-#define FEATURES(...) __VA_ARGS__
+#define BINARY(...) _
+#define PROPERTY0(value) +0
+#define PROPERTY1(value) +0
+#define PROPERTY2(value) +0
+#define FEATURES(value) +0
 
-// see compiler/x/codegen/OMRInstruction.hpp for structural information.
-const OMR::X86::InstOpCode::OpCode_t OMR::X86::InstOpCode::_binaries[] =
-   {
-#define INSTRUCTION(name, mnemonic, binary, property0, property1, features) binary
-#include "codegen/X86Ops.ins"
-#undef INSTRUCTION
-   };
+#define GET_MACRO(_1,_2,_3,_4,NAME,...) NAME
+
+#define INSTRUCTION_4(name, mnemonic, binary, a, b, c, d) a b c d
+#define INSTRUCTION_3(name, mnemonic, binary, a, b, c) a b c
+#define INSTRUCTION_2(name, mnemonic, binary, a, b) a b
+#define INSTRUCTION_1(name, mnemonic, binary, a) a
+#define INSTRUCTION_0(name, mnemonic, binary) 0
+
+#define EXPAND(...) __VA_ARGS__
+#define INSTRUCTION(name, mnemonic, binary, ...) EXPAND(GET_MACRO(__VA_ARGS__, INSTRUCTION_4, INSTRUCTION_3, INSTRUCTION_2, INSTRUCTION_1, INSTRUCTION_0)(name, mnemonic, binary, __VA_ARGS__)) + 0
 
 const uint32_t OMR::X86::InstOpCode::_properties[] =
    {
-#define INSTRUCTION(name, mnemonic, binary, property0, property1, features) property0
+#undef PROPERTY0
+#define PROPERTY0(value) value
 #include "codegen/X86Ops.ins"
-#undef INSTRUCTION
+#undef PROPERTY0
+#define PROPERTY0(value) +0
    };
 
 const uint32_t OMR::X86::InstOpCode::_properties1[] =
    {
-#define INSTRUCTION(name, mnemonic, binary, property0, property1, features) property1
+#undef PROPERTY1
+#define PROPERTY1(value) +value
 #include "codegen/X86Ops.ins"
-#undef INSTRUCTION
+#undef PROPERTY1
+#define PROPERTY1(value) +0
+   };
+
+const uint32_t OMR::X86::InstOpCode::_properties2[] =
+   {
+#undef PROPERTY2
+#define PROPERTY2(value) +value
+#include "codegen/X86Ops.ins"
+#undef PROPERTY2
+#define PROPERTY2(value) +0
    };
 
 const uint32_t OMR::X86::InstOpCode::_features[] =
    {
-#define INSTRUCTION(name, mnemonic, binary, property0, property1, features) features
+#undef FEATURES
+#define FEATURES(value) +value
+#include "codegen/X86Ops.ins"
+#undef FEATURES
+#define FEATURES(value) +0
+   };
+
+#undef INSTRUCTION
+
+// see compiler/x/codegen/OMRInstruction.hpp for structural information.
+const OMR::X86::InstOpCode::OpCode_t OMR::X86::InstOpCode::_binaries[] =
+   {
+#define INSTRUCTION(name, mnemonic, binary, ...) binary
+#undef BINARY
+#define BINARY(...) {__VA_ARGS__}
 #include "codegen/X86Ops.ins"
 #undef INSTRUCTION
+#undef BINARY
    };
 
 void OMR::X86::InstOpCode::trackUpperBitsOnReg(TR::Register *reg, TR::CodeGenerator *cg)
@@ -86,7 +118,7 @@ template <typename TBuffer> typename TBuffer::cursor_t OMR::X86::InstOpCode::OpC
 
    if (encoding == OMR::X86::Default)
       {
-      enc = comp->target().cpu.supportsAVX() ? vex_l : OMR::X86::Legacy;
+      enc = (comp->target().cpu.supportsAVX() || vex_l == VEX_LZ) ? vex_l : OMR::X86::Legacy;
       }
 
    TBuffer buffer(cursor);
@@ -103,11 +135,9 @@ template <typename TBuffer> typename TBuffer::cursor_t OMR::X86::InstOpCode::OpC
    TR::Instruction::REX rex(rexbits);
    rex.W = rex_w;
 
-   TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.supportsAVX() == TR::CodeGenerator::getX86ProcessorInfo().supportsAVX(), "supportsAVX() failed\n");
-
    if (enc != VEX_L___)
       {
-      if (enc >> 2)
+      if (enc >> 2 && enc != VEX_LZ)
          {
          TR::Instruction::EVEX vex(rex, modrm_opcode);
          vex.mm = escape;
@@ -147,6 +177,14 @@ template <typename TBuffer> typename TBuffer::cursor_t OMR::X86::InstOpCode::OpC
             buffer.append('\xf2');
             break;
          case PREFIX_F3:
+            buffer.append('\xf3');
+            break;
+         case PREFIX_66_F2:
+            buffer.append('\x66');
+            buffer.append('\xf2');
+            break;
+         case PREFIX_66_F3:
+            buffer.append('\x66');
             buffer.append('\xf3');
             break;
          default:

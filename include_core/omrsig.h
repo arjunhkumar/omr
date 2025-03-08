@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <signal.h>
@@ -44,9 +44,7 @@ typedef void (*sighandler_t)(int sig);
 typedef void (*sighandler_t)(int sig);
 #define __THROW
 #elif defined(OMR_OS_WINDOWS)
-/* Use sig_handler_t instead of sighandler_t for Windows. Define it for compatibility. */
-#define sig_handler_t sighandler_t
-typedef void (__cdecl *sighandler_t)(int signum);
+typedef void (__cdecl *sighandler_t)(int sig);
 #define __THROW
 #endif /* defined(OMR_OS_WINDOWS) */
 

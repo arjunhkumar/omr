@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -307,6 +307,32 @@ MM_TLHAllocationInterface::restartCache(MM_EnvironmentBase *env)
 #if defined(OMR_GC_NON_ZERO_TLH)
 	_tlhAllocationSupportNonZero.restart(env);
 #endif /* defined(OMR_GC_NON_ZERO_TLH) */
+}
+
+uintptr_t
+MM_TLHAllocationInterface::getRemainingCacheSize(bool nonZero)
+{
+#if defined(OMR_GC_NON_ZERO_TLH)
+	if (nonZero) {
+		return _tlhAllocationSupportNonZero.getRemainingSize();
+	} else
+#endif /* defined(OMR_GC_NON_ZERO_TLH) */
+	{
+		return _tlhAllocationSupport.getRemainingSize();
+	}
+}
+
+uintptr_t
+MM_TLHAllocationInterface::getRefreshCacheSize(bool nonZero)
+{
+#if defined(OMR_GC_NON_ZERO_TLH)
+	if (nonZero) {
+		return _tlhAllocationSupportNonZero.getRefreshSize();
+	} else
+#endif /* defined(OMR_GC_NON_ZERO_TLH) */
+	{
+		return _tlhAllocationSupport.getRefreshSize();
+	}
 }
 
 #endif /* OMR_GC_THREAD_LOCAL_HEAP */

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -26,6 +26,9 @@
  * @brief Dump formatting
  */
 
+#if defined(__open_xl__)
+#define _EXT
+#endif /* defined(__open_xl__) */
 
 #include <errno.h>
 #include <stdio.h>
@@ -37,7 +40,9 @@
 #include <time.h>
 #include <pwd.h>
 #include <ctest.h>
+#include "omrgetjobname.h"
 #include "omrport.h"
+#include "omrportpriv.h"
 #if defined(J9ZOS390) && !defined(OMR_EBCDIC)
 #include "atoe.h"
 #endif
@@ -183,7 +188,7 @@ tdump_wrapper(struct OMRPortLibrary *portLibrary, char *filename, char *dsnName)
 	BOOLEAN filenameSpecified = TRUE;
 	uint32_t returnCode;
 	uint32_t reasonCode;
-	intptr_t err;
+	intptr_t err = 1;
 
 	if (NULL == filename) {
 		return 1;
@@ -264,8 +269,10 @@ tdump_wrapper(struct OMRPortLibrary *portLibrary, char *filename, char *dsnName)
 #if !defined(OMR_EBCDIC)
 	/* Convert filename into EBCDIC... */
 	dsnName = a2e_func(filename, strlen(filename) + 1);
-	err = tdump(portLibrary, filename, dsnName, &returnCode, &reasonCode);
-	free(dsnName);
+	if (NULL != dsnName) {
+		err = tdump(portLibrary, filename, dsnName, &returnCode, &reasonCode);
+		free(dsnName);
+	}
 #else /* !defined(OMR_EBCDIC) */
 	err = tdump(portLibrary, filename, filename, &returnCode, &reasonCode);
 #endif /* !defined(OMR_EBCDIC) */
@@ -281,8 +288,12 @@ tdump_wrapper(struct OMRPortLibrary *portLibrary, char *filename, char *dsnName)
 #if !defined(OMR_EBCDIC)
 				/* Convert filename into EBCDIC... */
 				dsnName = a2e_func(filename, strlen(filename) + 1);
-				retVal = tdump_wrapper(portLibrary, filename, dsnName);
-				free(dsnName);
+				if (NULL != dsnName) {
+					retVal = tdump_wrapper(portLibrary, filename, dsnName);
+					free(dsnName);
+				} else {
+					retVal = 1;
+				}
 #else /* !defined(OMR_EBCDIC) */
 				retVal = tdump_wrapper(portLibrary, filename, filename);
 #endif /* !defined(OMR_EBCDIC) */
@@ -332,6 +343,9 @@ tdump(struct OMRPortLibrary *portLibrary, char *asciiLabel, char *ebcdicLabel, u
 		unsigned char len;
 		char dsn[256];
 	} *dsnPattern31;
+
+	/* Defined in omrgenerate_ieat_dump.s. */
+	extern void _TDUMP(struct ioparms_t *ioparms, struct dsn_pattern_t *dsn_pattern);
 
 	/* _TDUMP subroutine expects 31 bit addresses */
 	ioParms31 = __malloc31(sizeof(*ioParms31));

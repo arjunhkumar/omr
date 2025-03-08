@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "ParallelHeapWalker.hpp"
@@ -147,7 +147,7 @@ MM_ParallelHeapWalker::allObjectsDoParallel(MM_EnvironmentBase *env, MM_HeapWalk
  * otherwise walk all objects in the heap in a single threaded linear fashion.
  */
 void
-MM_ParallelHeapWalker::allObjectsDo(MM_EnvironmentBase *env, MM_HeapWalkerObjectFunc function, void *userData, uintptr_t walkFlags, bool parallel, bool prepareHeapForWalk)
+MM_ParallelHeapWalker::allObjectsDo(MM_EnvironmentBase *env, MM_HeapWalkerObjectFunc function, void *userData, uintptr_t walkFlags, bool parallel, bool prepareHeapForWalk, bool includeDeadObjects)
 {
 	if (parallel) {
 		GC_OMRVMInterface::flushCachesForWalk(env->getOmrVM());
@@ -158,7 +158,7 @@ MM_ParallelHeapWalker::allObjectsDo(MM_EnvironmentBase *env, MM_HeapWalkerObject
 		MM_ParallelObjectDoTask objectDoTask(env, this, function, userData, walkFlags, parallel);
 		env->getExtensions()->dispatcher->run(env, &objectDoTask);
 	} else {
-		MM_HeapWalker::allObjectsDo(env, function, userData, walkFlags, parallel, prepareHeapForWalk);
+		MM_HeapWalker::allObjectsDo(env, function, userData, walkFlags, parallel, prepareHeapForWalk, includeDeadObjects);
 	}
 }
 

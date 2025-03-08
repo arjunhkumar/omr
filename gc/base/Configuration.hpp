@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(CONFIGURATION_HPP_)
@@ -106,10 +106,10 @@ public:
 	virtual MM_MemorySpace* createDefaultMemorySpace(MM_EnvironmentBase* env, MM_Heap* heap, MM_InitializationParameters* parameters) = 0;
 	MM_EnvironmentBase* createEnvironment(MM_GCExtensionsBase* extensions, OMR_VMThread* vmThread);
 	virtual J9Pool* createEnvironmentPool(MM_EnvironmentBase* env) = 0;
-	virtual MM_ParallelDispatcher* createParallelDispatcher(MM_EnvironmentBase *env, omrsig_handler_fn handler, void* handler_arg, uintptr_t defaultOSStackSize);
+	virtual MM_ParallelDispatcher* createParallelDispatcher(MM_EnvironmentBase* env, omrsig_handler_fn handler, void* handler_arg, uintptr_t defaultOSStackSize);
 
-	bool initializeHeapRegionDescriptor(MM_EnvironmentBase *env, MM_HeapRegionDescriptor *region) { return _delegate.initializeHeapRegionDescriptorExtension(env, region); }
-	void teardownHeapRegionDescriptor(MM_EnvironmentBase *env, MM_HeapRegionDescriptor *region) { _delegate.teardownHeapRegionDescriptorExtension(env, region); }
+	bool initializeHeapRegionDescriptor(MM_EnvironmentBase* env, MM_HeapRegionDescriptor* region) { return _delegate.initializeHeapRegionDescriptorExtension(env, region); }
+	void teardownHeapRegionDescriptor(MM_EnvironmentBase* env, MM_HeapRegionDescriptor* region) { _delegate.teardownHeapRegionDescriptorExtension(env, region); }
 
 	MMINLINE MM_GCWriteBarrierType getBarrierType() { return _writeBarrierType; }
 
@@ -131,7 +131,7 @@ public:
 	 * Delegated method to determine when to start tracking heap fragmentation, which should be inhibited
 	 * until the heap has grown to a stable operational size.
 	 */
-	MMINLINE bool canCollectFragmentationStats(MM_EnvironmentBase *env) { return _delegate.canCollectFragmentationStats(env); }
+	MMINLINE bool canCollectFragmentationStats(MM_EnvironmentBase* env) { return _delegate.canCollectFragmentationStats(env); }
 
 	/**
 	 * Called once during startup to indicate that the default memory space has been allocated.
@@ -144,26 +144,38 @@ public:
 
 	virtual void kill(MM_EnvironmentBase* env);
 
-	/* Number of GC threads supported based on hardware and dispatcher's max. */
-	virtual uintptr_t supportedGCThreadCount(MM_EnvironmentBase* env);
+	/* Default number of GC threads based on h/w, os and container limits */
+	virtual uintptr_t defaultGCThreadCount(MM_EnvironmentBase* env);
+
+	/**
+	 * Sets the number of gc threads
+	 *
+	 * @param env[in] - the current environment
+	 */
+	virtual void initializeGCThreadCount(MM_EnvironmentBase* env);
+
+	/**
+	 * Initialize GC parameters that are uninitialized and dependent on the number of GC threads:
+	 *
+	 * MM_GCExtensionsBase::packetListSplit
+	 * MM_GCExtensionsBase::cacheListSplit
+	 * MM_GCExtensionsBase::splitFreeListSplitAmount
+	 *
+	 * @param[in] env the current environment
+	 */
+	void initializeGCParameters(MM_EnvironmentBase* env);
 
 #if defined(J9VM_OPT_CRIU_SUPPORT)
 	/**
-	 * Shutdown GC threads on checkpoint.
+	 * Update the configuration to reflect the restore environment and parameters.
 	 *
-	 * @param[in] env the current environment
-	 * @return void
-	 */
-	virtual void adjustGCThreadCountForCheckpoint(MM_EnvironmentBase* env);
-
-	/**
-	 * Startup GC threads on restore.
+	 * The standard configurations are currently the only configurations that support
+	 * CRIU and are therefore expected to implement this method.
 	 *
-	 * @param[in] env the current environment
-	 * @return bool indicating if the restore thread count was
-	 * successfully set and accommodated (thread pool resized).
+	 * @param[in] env the current environment.
+	 * @return boolean indicating whether the configuration was successfully updated.
 	 */
-	virtual bool reinitializeGCThreadCountForRestore(MM_EnvironmentBase* env);
+	virtual bool reinitializeForRestore(MM_EnvironmentBase* env);
 #endif /* defined(J9VM_OPT_CRIU_SUPPORT) */
 
 	MM_Configuration(MM_EnvironmentBase* env, MM_GCPolicy gcPolicy, MM_AlignmentType alignmentType, uintptr_t defaultRegionSize, uintptr_t defaultArrayletLeafSize, MM_GCWriteBarrierType writeBarrierType, MM_GCAllocationType allocationType)
@@ -204,27 +216,7 @@ protected:
 	 * @return whether NUMAMAnager was initialized or not.  False implies startup failure.
 	 */
 	virtual bool initializeNUMAManager(MM_EnvironmentBase* env);
-	
-	/**
-	 * Sets the number of gc threads
-	 *
-	 * @param env[in] - the current environment
-	 */
-	virtual void initializeGCThreadCount(MM_EnvironmentBase* env);
-	
 private:
-
-	/**
-	 * Sets GC parameters that are dependent on the number of gc threads (if not previously initialized):
-	 *
-	 * MM_GCExtensionsBase::packetListSplit
-	 * MM_GCExtensionsBase::cacheListSplit
-	 * MM_GCExtensionsBase::splitFreeListSplitAmount
-	 *
-	 * @param env[in] - the current environment
-	 */
-	void initializeGCParameters(MM_EnvironmentBase* env);
-
 	uintptr_t getAlignment(MM_GCExtensionsBase* extensions, MM_AlignmentType type);
 	bool initializeRegionSize(MM_EnvironmentBase* env);
 	bool initializeArrayletLeafSize(MM_EnvironmentBase* env);

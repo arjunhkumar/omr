@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(OMRPORT_H_)
@@ -228,6 +228,10 @@
 #define OMRPORT_VMEM_MEMORY_MODE_SHARE_FILE_OPEN 0x000000200
 #define OMRPORT_VMEM_MEMORY_MODE_MMAP_HUGE_PAGES 0x000000400
 #define OMRPORT_VMEM_MEMORY_MODE_DOUBLE_MAP_AVAILABLE 0x000000800
+/* If OMRPORT_VMEM_MEMORY_MODE_SHARE_TMP_FILE_OPEN is set,
+ * then OMRPORT_VMEM_MEMORY_MODE_SHARE_FILE_OPEN must be set as well.
+ */
+#define OMRPORT_VMEM_MEMORY_MODE_SHARE_TMP_FILE_OPEN 0x000001000
 #define OMRPORT_VMEM_ALLOCATE_TOP_DOWN 0x00000020
 #define OMRPORT_VMEM_ALLOCATE_PERSIST 0x00000040
 #define OMRPORT_VMEM_NO_AFFINITY 0x00000080
@@ -748,6 +752,11 @@ typedef struct J9MemoryInfo {
 	 * When not in a cgroup, this will be identical to 'buffered' field above.
 	 */
 	uint64_t hostBuffered;
+	/* The default setting for this kernel parameter of swappiness is 60. Value of 0 disables swap.
+	 * Lower swappiness values would keep more pages in memory instead of putting them in swap space.
+	 * Higher values will provide more I/O cache and lower values will wait longer to swap out idle application.
+	 */
+	uint64_t swappiness;
 } J9MemoryInfo;
 
 #define OMRPORT_MEMINFO_NOT_AVAILABLE ((uint64_t) -1)
@@ -833,6 +842,9 @@ typedef struct J9ProcessorInfos {
 #define OMRPORT_SL_ZOS_31BIT_TARGET_MASK 0xFFFFFFFF /* Mask used to convert 31-bit tagged handles/addresses to proper values. */
 #endif /* defined(J9ZOS39064) */
 
+/* Supported on Linux/OSX/Unix/Windows platforms. */
+#define OMRPORT_SLOPEN_NO_LOAD 32
+
 #define OMRPORT_ARCH_X86       "x86"
 #define OMRPORT_ARCH_PPC       "ppc" 				/* in line with IBM JDK 1.22 and above for AIX and Linux/PPC */
 #define OMRPORT_ARCH_PPC64     "ppc64"
@@ -865,6 +877,8 @@ typedef struct J9ProcessorInfos {
 #define OMRPORT_CTLDATA_MEM_CATEGORIES_SET  "MEM_CATEGORIES_SET"
 #define OMRPORT_CTLDATA_AIX_PROC_ATTR  "AIX_PROC_ATTR"
 #define OMRPORT_CTLDATA_ALLOCATE32_COMMIT_SIZE  "ALLOCATE32_COMMIT_SIZE"
+#define OMRPORT_CTLDATA_ALLOCATE32_INCREMENT_SIZE  "ALLOCATE32_INCREMENT_SIZE"
+#define OMRPORT_CTLDATA_ALLOCATE32_QUICK_ALLOC  "ALLOCATE32_QUICK_ALLOC"
 #define OMRPORT_CTLDATA_NOSUBALLOC32BITMEM  "NOSUBALLOC32BITMEM"
 #define OMRPORT_CTLDATA_VMEM_ADVISE_OS_ONFREE  "VMEM_ADVISE_OS_ONFREE"
 #define OMRPORT_CTLDATA_VECTOR_REGS_SUPPORT_ON  "VECTOR_REGS_SUPPORT_ON"
@@ -873,6 +887,10 @@ typedef struct J9ProcessorInfos {
 #define OMRPORT_CTLDATA_VMEM_PERFORM_FULL_MEMORY_SEARCH  "VMEM_PERFORM_FULL_SEARCH"
 #define OMRPORT_CTLDATA_VMEM_HUGE_PAGES_MMAP_ENABLED "VMEM_HUGE_PAGES_MMAP_ENABLED"
 #define OMRPORT_CTLDATA_CRIU_SUPPORT_FLAGS "CRIU_SUPPORT_FLAGS"
+#define OMRPORT_CTLDATA_MEM_32BIT "MEM_32BIT_FLAGS"
+
+/* OMRPORT_CTLDATA_MEM_32BIT Flags */
+#define OMRPORT_MEM_32BIT_FLAGS_TMP_FILE_BACKED_VMEM 0x1
 
 /* CRIU support is enabled, a checkpoint could be taken
  * if current VM is not from a final restoration.
@@ -904,6 +922,12 @@ typedef struct J9ProcessorInfos {
 #define OMRPORT_MMAP_SYNC_WAIT  0x80
 #define OMRPORT_MMAP_SYNC_ASYNC  0x100
 #define OMRPORT_MMAP_SYNC_INVALIDATE  0x200
+#if defined(J9ZOS39064)
+#define OMRPORT_MMAP_FLAG_ZOS_64BIT  0x400
+#endif /* defined(J9ZOS39064) */
+#if defined(J9ZOS390)
+#define OMRPORT_MMAP_FLAG_ZOS_READ_MAPFILE  0x800
+#endif /* defined(J9ZOS390) */
 
 /* Signal classification bits. */
 #define OMRPORT_SIG_FLAG_MAY_RETURN             ((uint32_t)0x01)
@@ -1423,36 +1447,45 @@ typedef enum OMRProcessorArchitecture {
 	OMR_PROCESSOR_PPC_P8,
 	OMR_PROCESSOR_PPC_P9,
 	OMR_PROCESSOR_PPC_P10,
-	OMR_PROCESSOR_PPC_LAST = OMR_PROCESSOR_PPC_P10,
+	OMR_PROCESSOR_PPC_P11,
+	OMR_PROCESSOR_PPC_LAST = OMR_PROCESSOR_PPC_P11,
 
 	// X86 Processors
+	//
+	// These processors should be ordered by ascending microarchitectural release
 	OMR_PROCESSOR_X86_FIRST,
 	OMR_PROCESSOR_X86_UNKNOWN = OMR_PROCESSOR_X86_FIRST,
 	OMR_PROCESSOR_X86_INTEL_FIRST,
-	OMR_PROCESSOR_X86_INTELPENTIUM = OMR_PROCESSOR_X86_INTEL_FIRST,
-	OMR_PROCESSOR_X86_INTELP6,
-	OMR_PROCESSOR_X86_INTELPENTIUM4,
-	OMR_PROCESSOR_X86_INTELCORE2,
-	OMR_PROCESSOR_X86_INTELTULSA,
-	OMR_PROCESSOR_X86_INTELNEHALEM,
-	OMR_PROCESSOR_X86_INTELWESTMERE,
-	OMR_PROCESSOR_X86_INTELSANDYBRIDGE,
-	OMR_PROCESSOR_X86_INTELIVYBRIDGE,
-	OMR_PROCESSOR_X86_INTELHASWELL,
-	OMR_PROCESSOR_X86_INTELBROADWELL,
-	OMR_PROCESSOR_X86_INTELSKYLAKE,
-	OMR_PROCESSOR_X86_INTEL_LAST = OMR_PROCESSOR_X86_INTELSKYLAKE,
+	OMR_PROCESSOR_X86_INTEL_PENTIUM = OMR_PROCESSOR_X86_INTEL_FIRST,
+	OMR_PROCESSOR_X86_INTEL_P6,
+	OMR_PROCESSOR_X86_INTEL_PENTIUM4,
+	OMR_PROCESSOR_X86_INTEL_CORE2,
+	OMR_PROCESSOR_X86_INTEL_TULSA,
+	OMR_PROCESSOR_X86_INTEL_NEHALEM,
+	OMR_PROCESSOR_X86_INTEL_WESTMERE,
+	OMR_PROCESSOR_X86_INTEL_SANDYBRIDGE,
+	OMR_PROCESSOR_X86_INTEL_IVYBRIDGE,
+	OMR_PROCESSOR_X86_INTEL_HASWELL,
+	OMR_PROCESSOR_X86_INTEL_BROADWELL,
+	OMR_PROCESSOR_X86_INTEL_SKYLAKE,
+	OMR_PROCESSOR_X86_INTEL_CASCADELAKE,
+	OMR_PROCESSOR_X86_INTEL_COOPERLAKE,
+	OMR_PROCESSOR_X86_INTEL_ICELAKE,
+	OMR_PROCESSOR_X86_INTEL_SAPPHIRERAPIDS,
+	OMR_PROCESSOR_X86_INTEL_EMERALDRAPIDS,
+	OMR_PROCESSOR_X86_INTEL_LAST = OMR_PROCESSOR_X86_INTEL_EMERALDRAPIDS,
 	OMR_PROCESSOR_X86_AMD_FIRST,
-	OMR_PROCESSOR_X86_AMDK5 = OMR_PROCESSOR_X86_AMD_FIRST,
-	OMR_PROCESSOR_X86_AMDK6,
-	OMR_PROCESSOR_X86_AMDATHLONDURON,
-	OMR_PROCESSOR_X86_AMDOPTERON,
-	OMR_PROCESSOR_X86_AMDFAMILY15H,
-	OMR_PROCESSOR_X86_AMD_LAST = OMR_PROCESSOR_X86_AMDFAMILY15H,
-	OMR_PROCESSOR_X86_LAST = OMR_PROCESSOR_X86_AMDFAMILY15H,
+	OMR_PROCESSOR_X86_AMD_K5 = OMR_PROCESSOR_X86_AMD_FIRST,
+	OMR_PROCESSOR_X86_AMD_K6,
+	OMR_PROCESSOR_X86_AMD_ATHLONDURON,
+	OMR_PROCESSOR_X86_AMD_OPTERON,
+	OMR_PROCESSOR_X86_AMD_FAMILY15H,
+	OMR_PROCESSOR_X86_AMD_LAST = OMR_PROCESSOR_X86_AMD_FAMILY15H,
 
-	OMR_PROCESOR_RISCV32_UNKNOWN,
-	OMR_PROCESOR_RISCV64_UNKNOWN,
+	OMR_PROCESSOR_X86_LAST = OMR_PROCESSOR_X86_AMD_FAMILY15H,
+
+	OMR_PROCESSOR_RISCV32_UNKNOWN,
+	OMR_PROCESSOR_RISCV64_UNKNOWN,
 
 	OMR_PROCESSOR_DUMMY = 0x40000000 /* force wide enums */
 
@@ -1517,7 +1550,6 @@ typedef struct OMRProcessorDesc {
 #define OMR_FEATURE_S390_MSA        3 /* STFLE bit 17 */
 #define OMR_FEATURE_S390_DFP        6 /* STFLE bit 42 & 44 */
 #define OMR_FEATURE_S390_HPAGE      7
-#define OMR_FEATURE_S390_TE        10 /* STFLE bit 50 & 73 */
 #define OMR_FEATURE_S390_MSA_EXTENSION3                      11 /* STFLE bit 76 */
 #define OMR_FEATURE_S390_MSA_EXTENSION4                      12 /* STFLE bit 77 */
 
@@ -1562,6 +1594,11 @@ typedef struct OMRProcessorDesc {
 /* STFLE bit 49 - Miscellaneous-instruction-extension facility */
 #define OMR_FEATURE_S390_MISCELLANEOUS_INSTRUCTION_EXTENSION 49
 
+/* STFLE bit 50 - Constrained transactional-execution facility */
+#define OMR_FEATURE_S390_CONSTRAINED_TRANSACTIONAL_EXECUTION_FACILITY 50
+/* STFLE bit 73 - Transactional-execution facility */
+#define OMR_FEATURE_S390_TRANSACTIONAL_EXECUTION_FACILITY 73
+
 /* z13 facilities */
 
 /* STFLE bit 53 - Load/store-on-condition facility 2 */
@@ -1601,7 +1638,7 @@ typedef struct OMRProcessorDesc {
 
 /* z15 facilities */
 
-/* STFLE bit 61 - Miscellaneous-instruction-extensions facility 3 */ 
+/* STFLE bit 61 - Miscellaneous-instruction-extensions facility 3 */
 #define OMR_FEATURE_S390_MISCELLANEOUS_INSTRUCTION_EXTENSION_3 61
 
 /* STFLE bit 148 - Vector enhancements facility 2 */
@@ -1614,6 +1651,23 @@ typedef struct OMRProcessorDesc {
 
 /* STFLE bit 192 - Vector-Packed-Decimal-Enhancement Facility 2 */
 #define OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY_2 192
+
+/* zNext facilities */
+
+/* STFLE bit 84 - Miscellaneous-instruction-extensions facility 4 */
+#define OMR_FEATURE_S390_MISCELLANEOUS_INSTRUCTION_EXTENSION_4 84
+
+/* STFLE bit 198 - Vector enhancements facility 3 */
+#define OMR_FEATURE_S390_VECTOR_FACILITY_ENHANCEMENT_3 198
+
+/* STFLE bit 87 - PLO-extension facility */
+#define OMR_FEATURE_S390_PLO_EXTENSION 87
+
+/* STFLE bit 199 - Vector-Packed-Decimal-Enhancement Facility 3 */
+#define OMR_FEATURE_S390_VECTOR_PACKED_DECIMAL_ENHANCEMENT_FACILITY_3 199
+
+/* STFLE bit 170 - Ineffective-nonconstrained-transaction facility */
+#define OMR_FEATURE_S390_INEFFECTIVE_NONCONSTRAINED_TRANSACTION_FACILITY 170
 
 /*  Linux on Z features
  *  Auxiliary Vector Hardware Capability (AT_HWCAP) features for Linux on Z.
@@ -1747,6 +1801,42 @@ typedef struct OMRProcessorDesc {
 #define OMR_FEATURE_X86_SHA                 96 + 29 /* Intel SHA Extensions */
 #define OMR_FEATURE_X86_AVX512BW            96 + 30 /* AVX512 Byte and Word */
 #define OMR_FEATURE_X86_AVX512VL            96 + 31 /* AVX512 Vector Length */
+
+/*
+ * Structured Feature Information Returned in the ECX Register by CPUID instruction when EAX = 7, ECX = 0
+ */
+#define OMR_FEATURE_X86_PREFETCHWT1         128 + 0
+#define OMR_FEATURE_X86_AVX512_VBMI         128 + 1
+#define OMR_FEATURE_X86_UMIP                128 + 2
+#define OMR_FEATURE_X86_PKU                 128 + 3
+#define OMR_FEATURE_X86_OSPKE               128 + 4
+#define OMR_FEATURE_X86_WAITPKG             128 + 5
+#define OMR_FEATURE_X86_AVX512_VBMI2        128 + 6
+#define OMR_FEATURE_X86_CET_SS              128 + 7
+#define OMR_FEATURE_X86_GFNI                128 + 8
+#define OMR_FEATURE_X86_VAES                128 + 9
+#define OMR_FEATURE_X86_VPCLMULQDQ          128 + 10
+#define OMR_FEATURE_X86_AVX512_VNNI         128 + 11
+#define OMR_FEATURE_X86_AVX512_BITALG       128 + 12
+#define OMR_FEATURE_X86_TME_EN              128 + 13
+#define OMR_FEATURE_X86_AVX512_VPOPCNTDQ    128 + 14
+#define OMR_FEATURE_X86_4_15                128 + 15 /* Reserved */
+#define OMR_FEATURE_X86_LA57                128 + 16
+#define OMR_FEATURE_X86_MAWAU_0             128 + 17
+#define OMR_FEATURE_X86_MAWAU_1             128 + 18
+#define OMR_FEATURE_X86_MAWAU_2             128 + 19
+#define OMR_FEATURE_X86_MAWAU_3             128 + 20
+#define OMR_FEATURE_X86_MAWAU_4             128 + 21
+#define OMR_FEATURE_X86_RDPID               128 + 22
+#define OMR_FEATURE_X86_KL                  128 + 23
+#define OMR_FEATURE_X86_BUS_LOCK_DETECT     128 + 24
+#define OMR_FEATURE_X86_CLDEMOTE            128 + 25
+#define OMR_FEATURE_X86_4_26                128 + 26 /* Reserved */
+#define OMR_FEATURE_X86_MOVDIRI             128 + 27
+#define OMR_FEATURE_X86_MOVDIR64B           128 + 28
+#define OMR_FEATURE_X86_ENQCMD              128 + 29
+#define OMR_FEATURE_X86_SGX_LC              128 + 30
+#define OMR_FEATURE_X86_PKS                 128 + 31
 
 /*  AArch64 Linux features
  *  See https://www.kernel.org/doc/html/latest/arm64/elf_hwcaps.html.
@@ -2405,6 +2495,10 @@ typedef struct OMRPortLibrary {
 	int32_t (*sysinfo_cgroup_subsystem_iterator_next)(struct OMRPortLibrary *portLibrary, struct OMRCgroupMetricIteratorState *state, struct OMRCgroupMetricElement *metricElement);
 	/** see @ref omrsysinfo.c::omrsysinfo_cgroup_subsystem_iterator_destroy "omrsysinfo_cgroup_subsystem_iterator_destroy"*/
 	void (*sysinfo_cgroup_subsystem_iterator_destroy)(struct OMRPortLibrary *portLibrary, struct OMRCgroupMetricIteratorState *state);
+	/** see @ref omrsysinfo.c::omrsysinfo_get_process_start_time "omrsysinfo_get_process_start_time"*/
+	int32_t (*sysinfo_get_process_start_time)(struct OMRPortLibrary *portLibrary, uintptr_t pid, uint64_t *processStartTimeInNanoseconds);
+	/** see @ref omrsysinfo.c::omrsysinfo_get_number_context_switches "omrsysinfo_get_number_context_switches"*/
+	int32_t  (*sysinfo_get_number_context_switches)(struct OMRPortLibrary *portLibrary, uint64_t *numSwitches) ;
 	/** see @ref omrport.c::omrport_init_library "omrport_init_library"*/
 	int32_t (*port_init_library)(struct OMRPortLibrary *portLibrary, uintptr_t size) ;
 	/** see @ref omrport.c::omrport_startup_library "omrport_startup_library"*/
@@ -3048,6 +3142,8 @@ extern J9_CFUNC int32_t omrport_getVersion(struct OMRPortLibrary *portLibrary);
 #define omrsysinfo_cgroup_subsystem_iterator_metricKey(param1, param2) privateOmrPortLibrary->sysinfo_cgroup_subsystem_iterator_metricKey(privateOmrPortLibrary, param1, param2)
 #define omrsysinfo_cgroup_subsystem_iterator_next(param1, param2) privateOmrPortLibrary->sysinfo_cgroup_subsystem_iterator_next(privateOmrPortLibrary, param1, param2)
 #define omrsysinfo_cgroup_subsystem_iterator_destroy(param1) privateOmrPortLibrary->sysinfo_cgroup_subsystem_iterator_destroy(privateOmrPortLibrary, param1)
+#define omrsysinfo_get_process_start_time(param1, param2) privateOmrPortLibrary->sysinfo_get_process_start_time(privateOmrPortLibrary, param1, param2)
+#define omrsysinfo_get_number_context_switches(param1) privateOmrPortLibrary->sysinfo_get_number_context_switches(privateOmrPortLibrary, param1)
 #define omrintrospect_startup() privateOmrPortLibrary->introspect_startup(privateOmrPortLibrary)
 #define omrintrospect_shutdown() privateOmrPortLibrary->introspect_shutdown(privateOmrPortLibrary)
 #define omrintrospect_set_suspend_signal_offset(param1) privateOmrPortLibrary->introspect_set_suspend_signal_offset(privateOmrPortLibrary, param1)

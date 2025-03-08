@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "p/codegen/OMRMachine.hpp"
@@ -90,8 +90,9 @@ static int32_t spillSizeForRegister(TR::Register *virtReg)
       case TR_VSX_VECTOR:
       case TR_VRF:
          return 16;
+      default:
+         TR_ASSERT(false, "Unexpected register kind");
       }
-   TR_ASSERT(false, "Unexpected register kind");
    return 0;
    }
 
@@ -251,6 +252,8 @@ TR::RealRegister *OMR::Power::Machine::findBestFreeRegister(TR::Instruction *cur
          break;
       case TR_VRF:
          maskI = TR::RealRegister::FirstVRF;
+         break;
+      default:
          break;
    }
 
@@ -493,6 +496,8 @@ TR::RealRegister *OMR::Power::Machine::freeBestRegister(TR::Instruction     *cur
             maskI = first = TR::RealRegister::FirstVRF;
             last = TR::RealRegister::LastVRF;
             break;
+         default:
+            break;
          }
 
       int32_t  preference = 0, pref_favored = 0;
@@ -724,6 +729,8 @@ TR::RealRegister *OMR::Power::Machine::freeBestRegister(TR::Instruction     *cur
             location = self()->cg()->allocateSpill(16, false, NULL);
             }
          break;
+      default:
+         break;
       }
 
    if (rk == TR_CCR)
@@ -843,6 +850,8 @@ TR::RealRegister *OMR::Power::Machine::freeBestRegister(TR::Instruction     *cur
          tmemref->setLength(16);
          reloadInstr = generateTrg1MemInstruction(self()->cg(), opCode, currentNode, best, tmemref, currentInstruction);
          self()->cg()->stopUsingRegister(tempIndexRegister);
+         break;
+      default:
          break;
       }
 
@@ -1080,6 +1089,8 @@ TR::RealRegister *OMR::Power::Machine::reverseSpillState(TR::Instruction      *c
          tmemref->setLength(16);
          spillInstr = generateMemSrc1Instruction(self()->cg(), opCode, currentNode, tmemref, targetRegister, currentInstruction);
          self()->cg()->stopUsingRegister(tempIndexRegister);
+         break;
+      default:
          break;
       }
    self()->cg()->traceRAInstruction(spillInstr);
@@ -1755,6 +1766,8 @@ static void registerCopy(TR::Instruction     *precedingInstruction,
       case TR_VRF:
          instr = generateTrg1Src2Instruction(cg, TR::InstOpCode::vor, currentNode, targetReg, sourceReg, sourceReg, precedingInstruction);
          break;
+      default:
+         break;
       }
    cg->traceRAInstruction(instr);
    }
@@ -1779,23 +1792,25 @@ static void registerExchange(TR::Instruction     *precedingInstruction,
       {
       TR::InstOpCode::Mnemonic opCode;
       switch (rk)
-	 {
-	 case TR_GPR:
-	    opCode = TR::InstOpCode::XOR;
-	    break;
-	 case TR_FPR:
-	    opCode = TR::InstOpCode::xxlxor;
-	    break;
-	 case TR_VSX_SCALAR:
-	 case TR_VSX_VECTOR:
-	    opCode = TR::InstOpCode::xxlxor;
-	    break;
-	 case TR_VRF:
-	    opCode = TR::InstOpCode::vxor;
-	    break;
-	 case TR_CCR:
-	    TR_ASSERT(0, "Cannot exchange CCR without a third reg");
-	 }
+         {
+         case TR_GPR:
+            opCode = TR::InstOpCode::XOR;
+            break;
+         case TR_FPR:
+            opCode = TR::InstOpCode::xxlxor;
+            break;
+         case TR_VSX_SCALAR:
+         case TR_VSX_VECTOR:
+            opCode = TR::InstOpCode::xxlxor;
+            break;
+         case TR_VRF:
+            opCode = TR::InstOpCode::vxor;
+            break;
+         case TR_CCR:
+            TR_ASSERT(0, "Cannot exchange CCR without a third reg");
+         default:
+            break;
+         }
       cg->traceRAInstruction(generateTrg1Src2Instruction(cg, opCode, currentNode, targetReg, targetReg, sourceReg, precedingInstruction));
       cg->traceRAInstruction(generateTrg1Src2Instruction(cg, opCode, currentNode, sourceReg, targetReg, sourceReg, precedingInstruction));
       cg->traceRAInstruction(generateTrg1Src2Instruction(cg, opCode, currentNode, targetReg, targetReg, sourceReg, precedingInstruction));

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_NODE_INCL
@@ -546,6 +546,28 @@ public:
     */
    bool                   isEAEscapeHelperCall();
 
+   /**
+    * \brief
+    *    Creates a node for storing into an address field of an object
+    *
+    * \parm comp
+    *    Compilation object
+    *
+    * \parm obj
+    *    Node containing object reference
+    *
+    * \parm symRef
+    *    Symbol reference of the address field
+    *
+    * \parm value
+    *    Value to store
+    *
+    * \return
+    *    Created node
+    *
+    */
+   static TR::Node *      storeToAddressField(TR::Compilation *comp, TR::Node *obj, TR::SymbolReference *symRef, TR::Node *value);
+
    TR_YesNoMaybe          hasBeenRun();
 
    /// Given a monenter node, return the persistent class identifer that's being synchronized
@@ -844,7 +866,7 @@ public:
    TR::Register *  setRegister(TR::Register *reg);
    void *          unsetRegister();
 
-   int32_t         getEvaluationPriority(TR::CodeGenerator *codeGen);
+   int32_t         getEvaluationPriority(TR::CodeGenerator *cg);
    int32_t         setEvaluationPriority(int32_t p);
 
    /**
@@ -1152,6 +1174,9 @@ public:
    bool isInternalPointer();
    void setIsInternalPointer(bool v);
 
+   // Flag used by TR::aloadi
+   bool isDataAddrPointer();
+
    // Flags used by TR::arraytranslate and TR::arraytranslateAndTest
    bool isArrayTRT();
    void setArrayTRT(bool v);
@@ -1191,10 +1216,6 @@ public:
    bool chkTableBackedByRawStorage();
 
    // Flags used by TR::arraycmp
-   bool isArrayCmpLen();
-   void setArrayCmpLen(bool v);
-   bool chkArrayCmpLen();
-
    bool isArrayCmpSign();
    void setArrayCmpSign(bool v);
    bool chkArrayCmpSign();
@@ -1374,7 +1395,7 @@ public:
    void setUnsigned(bool b);
    bool chkUnsigned();
 
-   // Flags used by aconst and iaload (on s390 iaload can be used after dynamic lit pool)
+   // Flags used by aconst and aloadi (on s390 aloadi can be used after dynamic lit pool)
    bool isClassPointerConstant();
    void setIsClassPointerConstant(bool b);
    bool chkClassPointerConstant();
@@ -1383,8 +1404,8 @@ public:
    void setIsMethodPointerConstant(bool b);
    bool chkMethodPointerConstant();
 
-   bool isUnneededIALoad();
-   void setUnneededIALoad(bool v);
+   bool isUnneededAloadi();
+   void setUnneededAloadi(bool v);
 
    // Flags used by TR::monent, TR::monexit, ad TR::tstart
    bool canSkipSync();
@@ -1503,11 +1524,11 @@ public:
    void setReturnIsDummy();
    bool chkReturnIsDummy();
 
-   // Flag used by ilload nodes for DFP
+   // Flag used by lloadi nodes for DFP
    bool isBigDecimalLoad();
    void setIsBigDecimalLoad();
 
-   // Flag used by iload, iiload, lload, ilload, aload, iaload
+   // Flag used by iload, iloadi, lload, lloadi, aload, aloadi
    bool isLoadAndTest()          { return _flags.testAny(loadAndTest); }
    void setIsLoadAndTest(bool v) { _flags.set(loadAndTest, v); }
 
@@ -1591,6 +1612,7 @@ protected:
 public:
    // For opcode properties
    bool hasPinningArrayPointer();
+   bool supportsPinningArrayPointerInNodeExtension();
 
 // Protected inner classes and structs.
 protected:
@@ -1652,8 +1674,8 @@ protected:
       TR::TreeTop           *_branchDestinationNode;        ///< hasBranchDestinationNode()
       TR::Block             *_block;                        ///< hasBlock()
       int32_t                _arrayStride;                  ///< hasArrayStride()
-      TR::AutomaticSymbol  *_pinningArrayPointer;          ///< hasPinningArrayPointer()
-      TR::DataTypes         _dataType;                     ///< hasDataType()  TODO: Change to TR::DataType once all target compilers support it
+      TR::AutomaticSymbol   *_pinningArrayPointer;          ///< hasPinningArrayPointer()
+      TR::DataTypes          _dataType;                     ///< hasDataType()  TODO: Change to TR::DataType once all target compilers support it
 
       UnionPropertyA()
          {
@@ -1851,7 +1873,6 @@ protected:
       tableBackedByRawStorage               = 0x00008000,
 
       // Flags used by TR::arraycmp
-      arrayCmpLen                           = 0x00008000,
       arrayCmpSign                          = 0x00004000,
 
       // Flags used by TR::arraycopy
@@ -1939,11 +1960,11 @@ protected:
       // currently used for ldiv folding to idiv, when both children are with highWordZero
       Unsigned                              = 0x00004000,
 
-      // Flags used by TR::aconst and TR::iaload (on s390 iaload can be used after dynamic lit pool)
+      // Flags used by TR::aconst and TR::aloadi (on s390 aloadi can be used after dynamic lit pool)
       //
       classPointerConstant                  = 0x00010000,
       methodPointerConstant                 = 0x00002000,
-      unneededIALoad                        = 0x00001000,
+      unneededAloadi                        = 0x00001000,
 
       // Flags used by TR::monent, TR::monexit, and TR::tstart
       //
@@ -2015,12 +2036,12 @@ protected:
       // Flag used by TR::Return
       returnIsDummy                         = 0x00001000,
 
-      // Flag used by ilload nodes for BigDecimal long field (DFP)
+      // Flag used by lloadi nodes for BigDecimal long field (DFP)
       // Active when disableDFP JIT option not specifiec, and running
       // on hardware Power or zSeries hardware that supports DFP
       bigDecimal_load                       = 0x00000002, // TODO: make J9_PROJECT_SPECIFIC
 
-      // Flag used by iload, iiload, lload, ilload, aload, iaload
+      // Flag used by iload, iloadi, lload, lloadi, aload, aloadi
       loadAndTest                           = 0x00008000,
 
       // Flag used by TR::New when the codegen supports

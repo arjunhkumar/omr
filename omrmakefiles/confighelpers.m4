@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 ############### Categorize the OS
@@ -67,7 +67,9 @@ AC_DEFUN([OMRCFG_CATEGORIZE_ARCH],
 AC_DEFUN([OMRCFG_CATEGORIZE_TOOLCHAIN],
 	[AC_LANG([C])
 	AS_IF([test "x$$1" = "x"],
-		AS_IF([test "$GCC" = "yes"], [$1=gcc]))
+		AS_IF(AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifndef __open_xl__
+#error not an openxl compiler
+#endif]])], [$1=openxl], AS_IF([test "$GCC" = "yes"], [$1=gcc]))))
 	AS_IF([test "x$OMR_BUILD_TOOLCHAIN" = "x"],
 		AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#ifndef _MSC_VER
 #error not an msvc compiler

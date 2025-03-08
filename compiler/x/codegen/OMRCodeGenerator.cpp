@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/CodeGenerator.hpp"
@@ -91,12 +91,20 @@
 #include "optimizer/RegisterCandidate.hpp"
 #include "ras/Debug.hpp"
 #include "ras/DebugCounter.hpp"
+#include "runtime/CodeCache.hpp"
 #include "runtime/CodeCacheManager.hpp"
 #include "x/codegen/DataSnippet.hpp"
 #include "x/codegen/OutlinedInstructions.hpp"
 #include "x/codegen/FPTreeEvaluator.hpp"
 #include "x/codegen/X86Instruction.hpp"
 #include "codegen/InstOpCode.hpp"
+
+// Amount to be added to the estimated code size to ensure that there are long
+// branches between warm and cold code sections (must be multiple of 8 bytes).
+//
+#define MIN_DISTANCE_BETWEEN_WARM_AND_COLD_CODE 512
+
+static_assert(MIN_DISTANCE_BETWEEN_WARM_AND_COLD_CODE % 8 == 0, "MIN_DISTANCE_BETWEEN_WARM_AND_COLD_CODE should be multiple of 8");
 
 namespace OMR { class RegisterUsage; }
 namespace TR { class RegisterDependencyConditions; }
@@ -110,6 +118,7 @@ void TR_X86ProcessorInfo::reset()
    _featureFlags = 0;
    _featureFlags2 = 0;
    _featureFlags8 = 0;
+   _featureFlags10 = 0;
    _processorDescription = 0;
    }
 
@@ -130,6 +139,7 @@ void TR_X86ProcessorInfo::initialize(bool force)
    _featureFlags.set(TR::Compiler->target.cpu.getX86ProcessorFeatureFlags());
    _featureFlags2.set(TR::Compiler->target.cpu.getX86ProcessorFeatureFlags2());
    _featureFlags8.set(TR::Compiler->target.cpu.getX86ProcessorFeatureFlags8());
+   _featureFlags10.set(TR::Compiler->target.cpu.getX86ProcessorFeatureFlags10());
 
    // Determine the processor vendor.
    //
@@ -160,9 +170,34 @@ void TR_X86ProcessorInfo::initialize(bool force)
          case 0x06:
             {
             uint32_t extended_model = getCPUModel(_processorSignature) + (getCPUExtendedModel(_processorSignature) << 4);
+            uint32_t processorStepping = getCPUStepping(_processorSignature);
             switch (extended_model)
                {
-               case 0x55:
+               case 0xcf:
+                  _processorDescription |= TR_ProcessorIntelEmeraldRapids; break;
+               case 0x8f:
+                  _processorDescription |= TR_ProcessorIntelSapphireRapids; break;
+               case 0x6a:  // IceLake_X
+               case 0x6c:  // IceLake_D
+               case 0x7d:  // IceLake
+               case 0x7e:  // IceLake_L
+                  _processorDescription |= TR_ProcessorIntelIceLake; break;
+               case 0x55:  // Skylake_X
+                  if (processorStepping >= 5 && processorStepping <= 7)
+                     {
+                     _processorDescription |= TR_ProcessorIntelCascadeLake;
+                     }
+                  else if (processorStepping >= 0xa && processorStepping <= 0xb)
+                     {
+                     _processorDescription |= TR_ProcessorIntelCooperLake;
+                     }
+                  else
+                     {
+                     _processorDescription |= TR_ProcessorIntelSkylake;
+                     }
+                  break;
+               case 0x4e:  // Skylake_L
+               case 0x5e:  // Skylake
                   _processorDescription |= TR_ProcessorIntelSkylake; break;
                case 0x4f:
                   _processorDescription |= TR_ProcessorIntelBroadwell; break;
@@ -261,8 +296,8 @@ OMR::X86::CodeGenerator::initializeX86(TR::Compilation *comp)
         *
         * TODO: Need to figure out from which mode of Broadwell start supporting TM
         */
-      TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.is(OMR_PROCESSOR_X86_INTELHASWELL) == getX86ProcessorInfo().isIntelHaswell(), "isIntelHaswell() failed\n");
-      if (!comp->target().cpu.is(OMR_PROCESSOR_X86_INTELHASWELL))
+      TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.is(OMR_PROCESSOR_X86_INTEL_HASWELL) == getX86ProcessorInfo().isIntelHaswell(), "isIntelHaswell() failed\n");
+      if (!comp->target().cpu.is(OMR_PROCESSOR_X86_INTEL_HASWELL))
          {
          if (comp->target().is64Bit())
             {
@@ -289,15 +324,7 @@ OMR::X86::CodeGenerator::initializeX86(TR::Compilation *comp)
       self()->setXMMDoubleLoadOpCode(TR::InstOpCode::MOVSDRegMem);
       }
 
-   self()->setTargetSupportsSoftwarePrefetches();
-
-   // Enable software prefetch of the TLH and configure the TLH prefetching
-   // geometry.
-   //
-   TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.is(OMR_PROCESSOR_X86_INTELCORE2) == comp->cg()->getX86ProcessorInfo().isIntelCore2(), "isIntelCore2() failed\n");
-   TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.is(OMR_PROCESSOR_X86_INTELNEHALEM) == comp->cg()->getX86ProcessorInfo().isIntelNehalem(), "isIntelNehalem() failed\n");
-   if (((!comp->getOption(TR_DisableTLHPrefetch) && (comp->target().cpu.is(OMR_PROCESSOR_X86_INTELCORE2) || comp->target().cpu.is(OMR_PROCESSOR_X86_INTELNEHALEM))) ||
-       (comp->getOption(TR_TLHPrefetch) && self()->targetSupportsSoftwarePrefetches())))
+   if (comp->getOption(TR_TLHPrefetch))
       {
       self()->setEnableTLHPrefetching();
       }
@@ -379,7 +406,16 @@ OMR::X86::CodeGenerator::initializeX86(TR::Compilation *comp)
 
    if (!TR::Compiler->om.canGenerateArraylets())
       {
-      self()->setSupportsArrayCmp();
+      static const bool disableArrayCmp = feGetEnv("TR_DisableArrayCmp") != NULL;
+      if (!disableArrayCmp)
+         {
+         self()->setSupportsArrayCmp();
+         }
+      static const bool disableArrayCmpLen = feGetEnv("TR_DisableArrayCmpLen") != NULL;
+      if (!disableArrayCmpLen)
+         {
+         self()->setSupportsArrayCmpLen();
+         }
       self()->setSupportsPrimitiveArrayCopy();
       if (!comp->getOption(TR_DisableArraySetOpts))
          {
@@ -388,7 +424,6 @@ OMR::X86::CodeGenerator::initializeX86(TR::Compilation *comp)
       static bool disableX86TRTO = feGetEnv("TR_disableX86TRTO") != NULL;
       if (!disableX86TRTO)
          {
-         TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.supportsFeature(OMR_FEATURE_X86_SSE4_1) == self()->getX86ProcessorInfo().supportsSSE4_1(), "supportsSSE4_1() failed\n");
          if (comp->target().cpu.supportsFeature(OMR_FEATURE_X86_SSE4_1))
             {
             self()->setSupportsArrayTranslateTRTO();
@@ -397,8 +432,6 @@ OMR::X86::CodeGenerator::initializeX86(TR::Compilation *comp)
       static bool disableX86TROT = feGetEnv("TR_disableX86TROT") != NULL;
       if (!disableX86TROT)
          {
-         TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.supportsFeature(OMR_FEATURE_X86_SSE4_1) == self()->getX86ProcessorInfo().supportsSSE4_1(), "supportsSSE4_1() failed\n");
-         TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.supportsFeature(OMR_FEATURE_X86_SSE2) == self()->getX86ProcessorInfo().supportsSSE2(), "supportsSSE4_1() failed\n");
          if (comp->target().cpu.supportsFeature(OMR_FEATURE_X86_SSE4_1))
             {
             self()->setSupportsArrayTranslateTROT();
@@ -428,10 +461,10 @@ OMR::X86::CodeGenerator::initializeX86(TR::Compilation *comp)
    static char * enableMulHigh = feGetEnv("TR_X86MulHigh");
    if (enableMulHigh)
       {
-      self()->setSupportsLoweringConstIDiv();
+      self()->setSupportsIMulHigh();
 
       if (comp->target().is64Bit())
-         self()->setSupportsLoweringConstLDiv();
+         self()->setSupportsLMulHigh();
       }
 
    self()->setSpillsFPRegistersAcrossCalls(); // TODO:AMD64: Are the preserved XMMRs relevant here?
@@ -441,9 +474,9 @@ OMR::X86::CodeGenerator::initializeX86(TR::Compilation *comp)
    //
    TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.isGenuineIntel() == getX86ProcessorInfo().isGenuineIntel(), "isGenuineIntel() failed\n");
    TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.isAuthenticAMD() == getX86ProcessorInfo().isAuthenticAMD(), "isAuthenticAMD() failed\n");
-   TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.is(OMR_PROCESSOR_X86_AMDFAMILY15H) == getX86ProcessorInfo().isAMD15h(), "isAMD15h() failed\n");
+   TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.is(OMR_PROCESSOR_X86_AMD_FAMILY15H) == getX86ProcessorInfo().isAMD15h(), "isAMD15h() failed\n");
    int32_t boundary;
-   if (comp->target().cpu.isGenuineIntel() || (comp->target().cpu.isAuthenticAMD() && comp->target().cpu.is(OMR_PROCESSOR_X86_AMDFAMILY15H)))
+   if (comp->target().cpu.isGenuineIntel() || (comp->target().cpu.isAuthenticAMD() && comp->target().cpu.is(OMR_PROCESSOR_X86_AMD_FAMILY15H)))
       boundary = 32;
    else
       {
@@ -506,7 +539,6 @@ OMR::X86::CodeGenerator::initializeX86(TR::Compilation *comp)
 
 OMR::X86::CodeGenerator::CodeGenerator(TR::Compilation *comp) :
    OMR::CodeGenerator(comp),
-   _nanoTimeTemp(NULL),
    _assignmentDirection(Backward),
    _lastCatchAppendInstruction(NULL),
    _betterSpillPlacements(NULL),
@@ -658,86 +690,6 @@ OMR::X86::CodeGenerator::getX86ProcessorInfo()
 int32_t OMR::X86::CodeGenerator::getMaximumNumbersOfAssignableGPRs()
    {
    return TR::RealRegister::LastAssignableGPR - TR::RealRegister::FirstGPR + 1; // TODO:AMD64: This is including rsp
-   }
-
-/*
- * This method returns TRUE for all the cases we decide NOT to replace the call to CAS
- * with inline assembly. The GRA and Evaluator should be consistent about whether to inline CAS natives.
- */
-static bool willNotInlineCompareAndSwapNative(TR::Node *node,
-      int8_t size,
-      TR::Compilation *comp)
-   {
-#ifdef J9_PROJECT_SPECIFIC
-   TR::SymbolReference *callSymRef = node->getSymbolReference();
-   TR::MethodSymbol *methodSymbol = callSymRef->getSymbol()->castToMethodSymbol();
-
-   if (TR::Compiler->om.canGenerateArraylets() && !node->isUnsafeGetPutCASCallOnNonArray())
-      return true;
-   static char *disableCASInlining = feGetEnv("TR_DisableCASInlining");
-
-   if (disableCASInlining /* || comp->useCompressedPointers() */)
-      return true;
-
-   // In Java9 the sun.misc.Unsafe JNI methods have been moved to jdk.internal,
-   // with a set of wrappers remaining in sun.misc to delegate to the new package.
-   // We can be called in this function for the wrappers (which we will
-   // not be converting to assembly), the new jdk.internal JNI methods or the
-   // Java8 sun.misc JNI methods (both of which we will convert). We can
-   // differentiate between these cases by testing with isNative() on the method.
-   if (!methodSymbol->isNative())
-      return true;
-
-   if (size == 4)
-      {
-      return false;
-      }
-   else if (size == 8 && comp->target().is64Bit())
-      {
-      return false;
-      }
-   else
-      {
-      if (!comp->cg()->getX86ProcessorInfo().supportsCMPXCHG8BInstruction())
-         return true;
-
-      return false;
-      }
-#else
-   return true;
-#endif
-   }
-
-
-/** @brief Identify methods which are not transformed into inline assembly.
-
-    Some recognized methods are transformed into very simple hardcoded
-    assembly sequences which don't need register spills as real calls do.
-
-    @param node The TR::Node for the method call. NB this function assumes the Node is a call.
-
-    @return true if the method will be treated as a normal call, false if the method
-    will be converted to inline assembly.
- */
-bool OMR::X86::CodeGenerator::willBeEvaluatedAsCallByCodeGen(TR::Node *node, TR::Compilation *comp)
-   {
-#ifdef J9_PROJECT_SPECIFIC
-   TR::SymbolReference *callSymRef = node->getSymbolReference();
-   TR::MethodSymbol *methodSymbol = callSymRef->getSymbol()->castToMethodSymbol();
-   switch (methodSymbol->getRecognizedMethod())
-      {
-      case TR::sun_misc_Unsafe_compareAndSwapLong_jlObjectJJJ_Z:
-         return willNotInlineCompareAndSwapNative(node, 8, comp);
-      case TR::sun_misc_Unsafe_compareAndSwapInt_jlObjectJII_Z:
-         return willNotInlineCompareAndSwapNative(node, 4, comp);
-      case TR::sun_misc_Unsafe_compareAndSwapObject_jlObjectJjlObjectjlObject_Z:
-         return willNotInlineCompareAndSwapNative(node, (comp->target().is64Bit() && !comp->useCompressedPointers()) ? 8 : 4, comp);
-
-      default:
-         break;
-      }
-#endif
-   return true;
    }
 
 int32_t OMR::X86::CodeGenerator::getMaximumNumbersOfAssignableFPRs()
@@ -1029,15 +981,56 @@ bool OMR::X86::CodeGenerator::getSupportsOpCodeForAutoSIMD(TR::CPU *cpu, TR::ILO
       case TR::mload:
       case TR::mloadi:
          return cpu->supportsFeature(OMR_FEATURE_X86_SSE4_1);
+      case TR::vcmpgt:
+      case TR::vmcmpgt:
+      case TR::vcmpge:
+      case TR::vmcmpge:
+         // PRE-AVX must use NLT/NLE to implement GT/GTE.
+         // This is only valid for integer types due to nan handling.
+         if (et.isFloatingPoint() && !cpu->supportsFeature(OMR_FEATURE_X86_AVX))
+            return false;
+      case TR::vcmpeq:
+      case TR::vmcmpeq:
+      case TR::vcmpne:
+      case TR::vmcmpne:
+      case TR::vcmplt:
+      case TR::vmcmplt:
+      case TR::vcmple:
+      case TR::vmcmple:
+         switch (ot.getVectorLength())
+            {
+            case TR::VectorLength128:
+               if (et == TR::Int64)
+                  return cpu->supportsFeature(OMR_FEATURE_X86_SSE4_2);
+               return true;
+            case TR::VectorLength256:
+               if (et.isFloatingPoint())
+                  return cpu->supportsFeature(OMR_FEATURE_X86_AVX);
+               return cpu->supportsFeature(OMR_FEATURE_X86_AVX2);
+            case TR::VectorLength512:
+               return cpu->supportsFeature(OMR_FEATURE_X86_AVX512F);
+            default:
+               return false;
+            }
+      case TR::mToLongBits:
+          switch (ot.getVectorLength())
+             {
+             case TR::VectorLength128:
+                return !et.isInt16();
+             case TR::VectorLength256:
+                return cpu->supportsFeature(OMR_FEATURE_X86_AVX2) && !et.isInt16();
+             case TR::VectorLength512:
+                return cpu->supportsFeature(OMR_FEATURE_X86_AVX512F);
+             default:
+                return false;
+             }
       case TR::vmabs:
          if (et.isFloatingPoint())
-            return false;
+            return false; // Todo; Implement masked vabs for fp types
          break;
       case TR::vabs:
-         if (!et.isFloatingPoint())
-            {
-            break;
-            }
+         if (!et.isFloatingPoint()) break;
+         // Intentional fallthrough. FP vabs requires special handling and cannot be mapped to a single instruction.
       case TR::b2m:
       case TR::s2m:
       case TR::i2m:
@@ -1082,6 +1075,9 @@ bool OMR::X86::CodeGenerator::getSupportsOpCodeForAutoSIMD(TR::CPU *cpu, TR::ILO
                return false;
             }
          break;
+      case TR::vbitselect:
+         if (et.isFloatingPoint()) return false;
+         // Intentional fallthrough
       case TR::vneg:
          switch (ot.getVectorLength()) {
             case TR::VectorLength128:
@@ -1244,23 +1240,6 @@ TR::RealRegister *
 OMR::X86::CodeGenerator::getMethodMetaDataRegister()
    {
    return toRealRegister(self()->getVMThreadRegister());
-   }
-
-TR::SymbolReference *
-OMR::X86::CodeGenerator::getNanoTimeTemp()
-   {
-   if (_nanoTimeTemp == NULL)
-      {
-      TR::AutomaticSymbol *sym;
-#if defined(LINUX) || defined(OSX)
-      sym = TR::AutomaticSymbol::create(self()->trHeapMemory(),TR::Aggregate,sizeof(struct timeval));
-#else
-      sym = TR::AutomaticSymbol::create(self()->trHeapMemory(),TR::Aggregate,8);
-#endif
-      self()->comp()->getMethodSymbol()->addAutomatic(sym);
-      _nanoTimeTemp = new (self()->trHeapMemory()) TR::SymbolReference(self()->comp()->getSymRefTab(), sym);
-      }
-   return _nanoTimeTemp;
    }
 
 bool
@@ -1805,6 +1784,9 @@ void OMR::X86::CodeGenerator::doRegisterAssignment(TR_RegisterKinds kindsToAssig
 
       self()->doBackwardsRegisterAssignment(kindsToAssign, self()->getAppendInstruction());
       }
+
+   if (TR::Options::getCmdLineOptions()->getOption(TR_MoveOOLInstructionsToWarmCode))
+      moveOutOfLineInstructionsToWarmCode();
    }
 
 bool OMR::X86::CodeGenerator::isReturnInstruction(TR::Instruction *instr)
@@ -1830,6 +1812,83 @@ struct DescendingSortX86DataSnippetByDataSize
       return a->getDataSize() > b->getDataSize();
       }
    };
+
+
+void OMR::X86::CodeGenerator::addItemsToRSSReport(uint8_t *coldCode)
+   {
+   // calculate size and collect counters for all cold blocks in the cold cache
+   TR_PersistentList<TR::DebugCounterAggregation> *coldBlockCountersList = NULL;
+   bool insideColdCode = false;
+   size_t blocksInsideColdCodeSize = 0;
+   TR::Compilation *comp = self()->comp();
+   const char* methodName = comp->signature();
+
+   for (TR::TreeTop *tt = comp->getMethodSymbol()->getFirstTreeTop(); tt ; tt = tt->getNextTreeTop())
+      {
+      TR::Node *node = tt->getNode();
+
+      if (node->getOpCodeValue() != TR::BBStart) continue;
+
+      TR::Block *block = node->getBlock();
+
+      if (insideColdCode)
+         {
+         uint8_t *startCursor = block->getFirstInstruction()->getBinaryEncoding();
+         uint8_t *endCursor = block->getLastInstruction()->getBinaryEncoding();
+         size_t blockSize = endCursor - startCursor;
+         blocksInsideColdCodeSize += blockSize;
+
+         if (!coldBlockCountersList)
+            coldBlockCountersList = new (comp->trPersistentMemory()) TR_PersistentList<TR::DebugCounterAggregation> ();
+
+         coldBlockCountersList->add(block->getDebugCounters());
+         }
+
+      if (block->isLastWarmBlock())
+         insideColdCode = true;
+
+      }
+
+   // create one RSSItem for all cold blocks
+   if (self()->getEstimatedColdLength() &&
+       OMR::RSSReport::instance())
+      {
+      TR::CodeCache *codeCache = TR::CodeCacheManager::instance()->findCodeCacheFromPC(coldCode);
+      OMR::RSSRegion *rssRegion = codeCache->getColdCodeRSSRegion();
+
+      if (rssRegion)
+         {
+         size_t actualColdLength = getBinaryBufferCursor() - coldCode;
+         int32_t overEstimate = static_cast<int32_t>(getEstimatedColdLength() - actualColdLength);
+
+         TR_ASSERT_FATAL(overEstimate >= 0, "Estimated cold code length should not be less than actual\n");
+
+         if (blocksInsideColdCodeSize != actualColdLength)
+            {
+            if (comp->getOption(TR_TraceCG))
+               {
+               traceMsg(comp, "RSS: blocksInsideColdCodeSize=%zu actualColdLength=%zu coldCode=%p coldCodeEnd=%p\n",
+                              blocksInsideColdCodeSize, actualColdLength, coldCode, coldCode+actualColdLength);
+               }
+            }
+
+         OMR::RSSItem *rssItem;
+
+         if (overEstimate > 0)
+            {
+            rssItem = new (comp->trPersistentMemory()) OMR::RSSItem(OMR::RSSItem::overEstimate, getBinaryBufferCursor(),
+                                                                           overEstimate, NULL);
+            rssRegion->addRSSItem(rssItem, codeCache->getReservingCompThreadID(), methodName);
+            }
+
+         rssItem = new (comp->trPersistentMemory()) OMR::RSSItem(OMR::RSSItem::coldBlocks, coldCode, actualColdLength,
+                                                                        coldBlockCountersList);
+
+         rssRegion->addRSSItem(rssItem, codeCache->getReservingCompThreadID(), methodName);
+         }
+      }
+   }
+
 void OMR::X86::CodeGenerator::doBinaryEncoding()
    {
    LexicalTimer pt1("code generation", self()->comp()->phaseTimer());
@@ -1860,6 +1919,7 @@ void OMR::X86::CodeGenerator::doBinaryEncoding()
 
    TR::Instruction * estimateCursor = self()->getFirstInstruction();
    int32_t estimate = 0;
+   int32_t warmEstimate = 0;
 
    // Estimate the binary length up to TR::InstOpCode::proc
    //
@@ -1916,6 +1976,8 @@ void OMR::X86::CodeGenerator::doBinaryEncoding()
    //
    bool skipOneReturn = false;
    int32_t estimatedPrologueStartOffset = estimate;
+   bool snippetsAfterWarm = self()->comp()->getOption(TR_MoveSnippetsToWarmCode);
+
    while (estimateCursor)
       {
       // Update the info bits on the register mask.
@@ -2000,6 +2062,22 @@ void OMR::X86::CodeGenerator::doBinaryEncoding()
       if (self()->comp()->getOption(TR_TraceCG))
          self()->getDebug()->dumpInstructionWithVFPState(estimateCursor, &prevState);
 
+      // If this is the last warm instruction, remember the estimated size up to
+      // this point and add a buffer to the estimated size so that branches
+      // between warm and cold instructions will be forced to be long branches.
+      // The size is rounded up to a multiple of 8 so that double-alignments in
+      // the cold section will have the same amount of padding for the estimate
+      // and the actual code allocation.
+      //
+      if (estimateCursor->isLastWarmInstruction())
+         {
+         if (snippetsAfterWarm)
+            estimate = setEstimatedLocationsForSnippetLabels(estimate);
+
+         warmEstimate = (estimate+7) & ~7;
+         estimate = warmEstimate + MIN_DISTANCE_BETWEEN_WARM_AND_COLD_CODE;
+         }
+
       if (estimateCursor == _vfpResetInstruction)
          self()->generateDebugCounter(estimateCursor, "cg.prologues:#instructionBytes", estimate - estimatedPrologueStartOffset, TR::DebugCounter::Expensive);
 
@@ -2009,7 +2087,9 @@ void OMR::X86::CodeGenerator::doBinaryEncoding()
    if (self()->comp()->getOption(TR_TraceCG))
       traceMsg(self()->comp(), "\n</instructions>\n");
 
-   estimate = self()->setEstimatedLocationsForSnippetLabels(estimate);
+   if (!snippetsAfterWarm || !warmEstimate)
+      estimate = self()->setEstimatedLocationsForSnippetLabels(estimate);
+
    // When using copyBinaryToBuffer() to copy the encoding of an instruction we
    // indiscriminatelly copy a whole integer, even if the size of the encoding
    // is less than that. This may cause the write to happen beyond the allocated
@@ -2017,8 +2097,20 @@ void OMR::X86::CodeGenerator::doBinaryEncoding()
    // block, then the write could potentially destroy data that resides in the
    // adjacent block. For this reason it is better to overestimate
    // the allocated size by 4.
+   //
    #define OVER_ESTIMATION 4
-   self()->setEstimatedCodeLength(estimate+OVER_ESTIMATION);
+   self()->setEstimatedCodeLength(estimate + OVER_ESTIMATION);
+
+   if (warmEstimate)
+      {
+      self()->setEstimatedWarmLength(warmEstimate + OVER_ESTIMATION);
+      self()->setEstimatedColdLength(estimate - warmEstimate - MIN_DISTANCE_BETWEEN_WARM_AND_COLD_CODE + OVER_ESTIMATION);
+      }
+   else
+      {
+      self()->setEstimatedWarmLength(estimate + OVER_ESTIMATION);
+      self()->setEstimatedColdLength(0);
+      }
 
    if (self()->comp()->getOption(TR_TraceCG))
       {
@@ -2036,7 +2128,9 @@ void OMR::X86::CodeGenerator::doBinaryEncoding()
       }
 
    uint8_t * coldCode = NULL;
-   uint8_t * temp = self()->allocateCodeMemory(self()->getEstimatedCodeLength(), 0, &coldCode);
+   uint8_t * temp = self()->allocateCodeMemory(self()->getEstimatedWarmLength(),
+                                               self()->getEstimatedColdLength(),
+                                               &coldCode);
    TR_ASSERT(temp, "Failed to allocate primary code area.");
 
    if (self()->comp()->target().is64Bit() && self()->hasCodeCacheSwitched() && self()->getPicSlotCount() != 0)
@@ -2069,6 +2163,8 @@ void OMR::X86::CodeGenerator::doBinaryEncoding()
 
    // Generate binary for the rest of the instructions
    //
+   int32_t accumulatedErrorBeforeSnippets = 0;
+
    while (cursorInstruction)
       {
       uint8_t * const instructionStart = self()->getBinaryBufferCursor();
@@ -2091,8 +2187,36 @@ void OMR::X86::CodeGenerator::doBinaryEncoding()
          }
 
       self()->addToAtlas(cursorInstruction);
+
+      // If this is the last warm instruction, save info about the warm code range
+      // and set up to generate code in the cold code range.
+      //
+      if (cursorInstruction->isLastWarmInstruction())
+         {
+         self()->setWarmCodeEnd(self()->getBinaryBufferCursor());
+         self()->setColdCodeStart(coldCode);
+         self()->setBinaryBufferCursor(coldCode);
+
+         if (self()->comp()->getOption(TR_TraceCG))
+            {
+            traceMsg(self()->comp(), "%s warmCodeEnd = %p, lastWarmInstruction = %p coldCodeStart = %p\n",
+                                                           SPLIT_WARM_COLD_STRING,
+                                                           self()->getWarmCodeEnd(), cursorInstruction, coldCode);
+            }
+
+         accumulatedErrorBeforeSnippets = getAccumulatedInstructionLengthError();
+
+         // Adjust the accumulated length error so that distances within the cold
+         // code are calculated properly using the estimated code locations.
+         //
+         self()->setAccumulatedInstructionLengthError(static_cast<uint32_t>(self()->getBinaryBufferStart() + self()->getEstimatedWarmLength() + MIN_DISTANCE_BETWEEN_WARM_AND_COLD_CODE - coldCode));
+         }
+
       cursorInstruction = cursorInstruction->getNext();
       }
+
+   if (OMR::RSSReport::instance())
+       addItemsToRSSReport(coldCode);
 
    // Create exception table entries for outlined instructions.
    //
@@ -2129,6 +2253,12 @@ void OMR::X86::CodeGenerator::doBinaryEncoding()
    if (self()->comp()->getOption(TR_TraceCG))
       {
       traceMsg(self()->comp(), "</encode>\n");
+      }
+
+   if (self()->comp()->getOption(TR_SplitWarmAndColdBlocks))
+      {
+      if (snippetsAfterWarm) // snippets will follow the warm code
+         setAccumulatedInstructionLengthError(accumulatedErrorBeforeSnippets);
       }
 
    }
@@ -2325,6 +2455,19 @@ void OMR::X86::CodeGenerator::emitDataSnippets()
       self()->setBinaryBufferCursor((*iterator)->emitSnippetBody());
       }
    }
+
+uint32_t OMR::X86::CodeGenerator::getDataSnippetsSize()
+   {
+   uint32_t length = 0;
+
+   for (auto iterator = _dataSnippetList.begin(); iterator != _dataSnippetList.end(); ++iterator)
+      {
+      length += (*iterator)->getLength(0);
+      }
+
+   return length;
+   }
+
 
 TR::X86ConstantDataSnippet *OMR::X86::CodeGenerator::findOrCreate2ByteConstant(TR::Node * n, int16_t c)
    {
@@ -3272,5 +3415,83 @@ OMR::X86::CodeGenerator::considerTypeForGRA(TR::SymbolReference *symRef)
    else
       {
       return true;
+      }
+   }
+
+uint32_t
+OMR::X86::CodeGenerator::getOutOfLineCodeSize()
+   {
+   uint32_t totalSize = 0;
+
+   auto oiIterator = self()->getOutlinedInstructionsList().begin();
+   while (oiIterator != self()->getOutlinedInstructionsList().end())
+      {
+      auto start = (*oiIterator)->getFirstInstruction()->getBinaryEncoding();
+      auto end   = (*oiIterator)->getAppendInstruction()->getBinaryEncoding();
+
+      totalSize += static_cast<uint32_t>(end - start);
+
+      ++oiIterator;
+      }
+
+   return totalSize;
+   }
+
+void
+OMR::X86::CodeGenerator::moveOutOfLineInstructionsToWarmCode()
+   {
+   // OOL instructions are already attached at the end of the IL (after cold instructions)
+   // and register allocated.
+   // Move them to immediately after the last warm instruction, unless they already happened to be
+   // there (e.g. there are no cold instructions)
+   //
+   if (!self()->getLastWarmInstruction())
+      return;
+
+   if (self()->comp()->getOption(TR_TraceCG))
+      traceMsg(self()->comp(), "Moving OutOfLine instructions to after %p\n", self()->getLastWarmInstruction());
+
+   auto oiIterator = self()->getOutlinedInstructionsList().begin();
+
+   while (oiIterator != self()->getOutlinedInstructionsList().end())
+      {
+      TR::Instruction *firstOLInstruction = (*oiIterator)->getFirstInstruction();
+      TR::Instruction *lastOLInstruction  = (*oiIterator)->getAppendInstruction();
+
+      TR_ASSERT_FATAL(firstOLInstruction, "VFPRestore instruction should preceeed any OOL section\n");
+      TR_ASSERT_FATAL(self()->getLastWarmInstruction() != self()->getAppendInstruction(),
+                      "Last warm instruction can't be append instruction since OOL code was attached already\n");
+
+      if (self()->getLastWarmInstruction() != firstOLInstruction->getPrev())
+         {
+         // remove from previous location
+         if (firstOLInstruction->getPrev())
+            firstOLInstruction->getPrev()->setNext(lastOLInstruction->getNext());
+
+         if (lastOLInstruction->getNext())
+            lastOLInstruction->getNext()->setPrev(firstOLInstruction->getPrev());
+
+         // update codegen append instruction
+         if (lastOLInstruction == self()->getAppendInstruction())
+            self()->setAppendInstruction(firstOLInstruction->getPrev());
+
+         // insert after last warm instruction
+         TR::Instruction *mainlineAppendInstruction = self()->getLastWarmInstruction();
+         mainlineAppendInstruction->setLastWarmInstruction(false);
+         lastOLInstruction->setLastWarmInstruction(true);
+         self()->setLastWarmInstruction(lastOLInstruction);
+
+         TR::Instruction *mainlineFollowInstruction = mainlineAppendInstruction->getNext();
+
+         mainlineAppendInstruction->setNext(firstOLInstruction);
+         firstOLInstruction->setPrev(mainlineAppendInstruction);
+
+         lastOLInstruction->setNext(mainlineFollowInstruction);
+
+         if (mainlineFollowInstruction)
+            mainlineFollowInstruction->setPrev(lastOLInstruction);
+         }
+
+      ++oiIterator;
       }
    }

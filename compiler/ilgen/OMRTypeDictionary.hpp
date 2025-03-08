@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_TYPEDICTIONARY_INCL
@@ -50,6 +50,8 @@ public:
    TR_ALLOC(TR_Memory::IlGenerator)
 
    TypeDictionary();
+   TypeDictionary(const TypeDictionary &src);
+
    ~TypeDictionary() throw();
 
    TR::IlType * LookupStruct(const char *structName);
@@ -230,6 +232,10 @@ protected:
    static ImplGetter _getImpl;
 
    typedef bool (*StrComparator)(const char *, const char *);
+
+   typedef TR::typed_allocator<std::pair<const char * const, TR::IlType *>, TR::Region &> PointerMapAllocator;
+   typedef std::map<const char *, TR::IlType *, StrComparator, PointerMapAllocator> PointerMap;
+   PointerMap          _pointersByName;
 
    typedef TR::typed_allocator<std::pair<const char * const, OMR::StructType *>, TR::Region &> StructMapAllocator;
    typedef std::map<const char *, OMR::StructType *, StrComparator, StructMapAllocator> StructMap;

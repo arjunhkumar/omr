@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef UTE_DATAFORMAT_H_INCLUDED
@@ -117,6 +117,7 @@ typedef enum {
 	UT_TREX,
 	UT_OPTERON,
 	UT_RV64G,
+	UT_ARMV8A,
 	UT_SUBTYPE_FORCE_INTEGER = INT_MAX
 } UtSubtype;
 
@@ -147,6 +148,7 @@ typedef enum {
 	UT_S390X,
 	UT_AMD64,
 	UT_RISCV,
+	UT_AARCH64,
 	UT_ARCHITECTURE_FORCE_INTEGER = INT_MAX
 } UtArchitecture;
 

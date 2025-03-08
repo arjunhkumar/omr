@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 //On zOS XLC linker can't handle files with same name at link time
@@ -53,7 +53,6 @@
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
 #include "cs2/arrayof.h"
-#include "cs2/hashtab.h"
 #include "env/CompilerEnv.hpp"
 #include "env/TRMemory.hpp"
 #include "env/jittypes.h"
@@ -86,7 +85,7 @@ OMR::Z::Instruction::Instruction(TR::CodeGenerator* cg, TR::InstOpCode::Mnemonic
    OMR::Instruction(cg, op, node),
    CTOR_INITIALIZER_LIST
    {
-   TR_ASSERT_FATAL(cg->comp()->target().cpu.isAtLeast(_opcode.getMinimumALS()), "Processor detected (%s) does not support instruction %s\n", cg->comp()->target().cpu.getProcessorName(), _opcode.getMnemonicName());
+   TR_ASSERT_FATAL(getOpCode().canEmulate() || cg->comp()->target().cpu.isAtLeast(_opcode.getMinimumALS()), "Processor detected (%s) does not support instruction %s\n", cg->comp()->target().cpu.getProcessorName(), _opcode.getMnemonicName());
 
    self()->initialize();
    }
@@ -96,7 +95,7 @@ OMR::Z::Instruction::Instruction(TR::CodeGenerator*cg, TR::Instruction* precedin
    OMR::Instruction(cg, precedingInstruction, op, node),
    CTOR_INITIALIZER_LIST
    {
-   TR_ASSERT_FATAL(cg->comp()->target().cpu.isAtLeast(_opcode.getMinimumALS()), "Processor detected (%s) does not support instruction %s\n", cg->comp()->target().cpu.getProcessorName(), _opcode.getMnemonicName());
+   TR_ASSERT_FATAL(getOpCode().canEmulate() || cg->comp()->target().cpu.isAtLeast(_opcode.getMinimumALS()), "Processor detected (%s) does not support instruction %s\n", cg->comp()->target().cpu.getProcessorName(), _opcode.getMnemonicName());
 
    self()->initialize(precedingInstruction, true);
    }

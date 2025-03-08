@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -242,7 +242,7 @@ omrdump_create(struct OMRPortLibrary *portLibrary, char *filename, char *dumpTyp
 						"insufficient free buffer space to write the core file";
 				break;
 			default:
-				sprintf((const char *)workspace,
+				snprintf((const char *)workspace, sizeof(workspace),
 						"unantipated err flag value (0x%X). errno=%x.",
 						s->argv.flags, s->argv.rc);
 				errMsg = (char *)workspace;
@@ -310,7 +310,7 @@ omrdump_startup(struct OMRPortLibrary *portLibrary)
 	 *  The #define following is that constant in EBCDIC.
 	 */
 #define OMRZTPF_BYTE_INTERP "\xC4\xF9\xE5\xD4"
-	/*              J9ZTPF_BYTE_INTERP "D9VM" */
+	/*              OMRZTPF_BYTE_INTERP "D9VM" */
 	/*
 	 *      z/TPF handles JVM-associated processes a little differently than all
 	 *      others. We need to mark the process block to inform the kernel that

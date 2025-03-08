@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef LLJB_COMPILER_HPP
@@ -63,7 +63,7 @@ public:
 
    /**
     * @brief create a mapping between the llvm::Function in a module to
-    * the adress in the codecache with the compiled method
+    * the address in the codecache with the compiled method
     *
     * @param llvmFunc the llvm::Function *
     * @param entry the void *

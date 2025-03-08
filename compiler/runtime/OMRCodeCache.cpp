@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "runtime/CodeCache.hpp"
@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "AtomicSupport.hpp"
 #include "env/FrontEnd.hpp"
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
@@ -309,9 +310,6 @@ OMR::CodeCache::initialize(TR::CodeCacheManager *manager,
    _sizeOfLargestFreeWarmBlock = 0;
    _lastAllocatedBlock = NULL; // MP
 
-   omrthread_jit_write_protect_disable();
-   *((TR::CodeCache **)(_segment->segmentBase())) = self(); // Write a pointer to this cache at the beginning of the segment
-   omrthread_jit_write_protect_enable();
    _warmCodeAlloc = _segment->segmentBase() + sizeof(this);
 
    _warmCodeAlloc = (uint8_t *)align((size_t)_warmCodeAlloc, config.codeCacheAlignment());
@@ -329,93 +327,99 @@ OMR::CodeCache::initialize(TR::CodeCacheManager *manager,
       TR_ASSERT( (((size_t)_CCPreLoadedCodeBase) & config.codeCacheHelperAlignmentMask()) == 0, "Per-code cache helper sizes do not account for alignment requirements." );
       _coldCodeAlloc = _CCPreLoadedCodeBase;
       _trampolineSyncList = NULL;
-
-      return true;
       }
-
-   // Helpers are located at the top of the code cache (offset N), growing down towards the base (offset 0)
-   size_t trampolineSpaceSize = config.trampolineCodeSize() * config.numRuntimeHelpers();
-   // _helperTop is heapTop
-   _helperBase = _helperTop - trampolineSpaceSize;
-   _helperBase = (uint8_t *)(((size_t)_helperBase) & (~config.codeCacheTrampolineAlignmentBytes()));
-
-   if (!config.needsMethodTrampolines())
+   else // Trampolines are needed
       {
-      // There is no need in method trampolines when there is going to be
-      // only one code cache segment
-      //
-      _trampolineBase = _helperBase;
-      _tempTrampolinesMax = 0;
-      }
-   else
-      {
+      // Helpers are located at the top of the code cache (offset N), growing down towards the base (offset 0)
+      size_t trampolineSpaceSize = config.trampolineCodeSize() * config.numRuntimeHelpers();
       // _helperTop is heapTop
-      // (_helperTop - segment->heapBase) is heapSize
+      _helperBase = _helperTop - trampolineSpaceSize;
+      _helperBase = (uint8_t *)(((size_t)_helperBase) & (~config.codeCacheTrampolineAlignmentBytes()));
 
-      _trampolineBase = _helperBase -
-                        ((_helperBase - _segment->segmentBase())*config.trampolineSpacePercentage()/100);
+      if (!config.needsMethodTrampolines())
+         {
+         // There is no need in method trampolines when there is going to be
+         // only one code cache segment
+         //
+         _trampolineBase = _helperBase;
+         _tempTrampolinesMax = 0;
+         }
+      else
+         {
+         // _helperTop is heapTop
+         // (_helperTop - segment->heapBase) is heapSize
 
-      // Grab the configuration details from the JIT platform code
+         _trampolineBase = _helperBase -
+                           ((_helperBase - _segment->segmentBase())*config.trampolineSpacePercentage()/100);
+
+         // Grab the configuration details from the JIT platform code
+         //
+         // (_helperTop - segment->heapBase) is heapSize
+         config.mccCallbacks().codeCacheConfig(static_cast<int32_t>(_helperTop - _segment->segmentBase()), &_tempTrampolinesMax);
+         }
+
+      mcc_printf("mcc_initialize: trampoline base %p\n",  _trampolineBase);
+
+      // set the temporary trampoline slab right under the helper trampolines, should be already aligned
+      _tempTrampolineTop  = _helperBase;
+      _tempTrampolineBase = _tempTrampolineTop - (config.trampolineCodeSize() * _tempTrampolinesMax);
+      _tempTrampolineNext = _tempTrampolineBase;
+
+      // Check if we have enough space in the code cache to contain the trampolines
+      if (_trampolineBase >= _tempTrampolineNext && config.needsMethodTrampolines())
+         {
+         _hashEntrySlab->free(manager);
+         return false;
+         }
+
+      // set the allocation pointer to right after the temporary trampolines
+      _trampolineAllocationMark  = _tempTrampolineBase;
+      _trampolineReservationMark = _trampolineAllocationMark;
+
+      // set the pre loaded per Cache Helper slab
+      _CCPreLoadedCodeTop = (uint8_t *)(((size_t)_trampolineBase) & (~config.codeCacheHelperAlignmentMask()));
+      _CCPreLoadedCodeBase = _CCPreLoadedCodeTop - config.ccPreLoadedCodeSize();
+      TR_ASSERT( (((size_t)_CCPreLoadedCodeBase) & config.codeCacheHelperAlignmentMask()) == 0, "Per-code cache helper sizes do not account for alignment requirements." );
+      _coldCodeAlloc = _CCPreLoadedCodeBase;
+
+      // Set helper trampoline table available
       //
-      // (_helperTop - segment->heapBase) is heapSize
-      config.mccCallbacks().codeCacheConfig(static_cast<int32_t>(_helperTop - _segment->segmentBase()), &_tempTrampolinesMax);
-      }
+      config.mccCallbacks().createHelperTrampolines((uint8_t *)_helperBase, config.numRuntimeHelpers());
 
-   mcc_printf("mcc_initialize: trampoline base %p\n",  _trampolineBase);
-
-   // set the temporary trampoline slab right under the helper trampolines, should be already aligned
-   _tempTrampolineTop  = _helperBase;
-   _tempTrampolineBase = _tempTrampolineTop - (config.trampolineCodeSize() * _tempTrampolinesMax);
-   _tempTrampolineNext = _tempTrampolineBase;
-
-   // Check if we have enough space in the code cache to contain the trampolines
-   if (_trampolineBase >= _tempTrampolineNext && config.needsMethodTrampolines())
-      {
-      _hashEntrySlab->free(manager);
-      return false;
-      }
-
-   // set the allocation pointer to right after the temporary trampolines
-   _trampolineAllocationMark  = _tempTrampolineBase;
-   _trampolineReservationMark = _trampolineAllocationMark;
-
-   // set the pre loaded per Cache Helper slab
-   _CCPreLoadedCodeTop = (uint8_t *)(((size_t)_trampolineBase) & (~config.codeCacheHelperAlignmentMask()));
-   _CCPreLoadedCodeBase = _CCPreLoadedCodeTop - config.ccPreLoadedCodeSize();
-   TR_ASSERT( (((size_t)_CCPreLoadedCodeBase) & config.codeCacheHelperAlignmentMask()) == 0, "Per-code cache helper sizes do not account for alignment requirements." );
-   _coldCodeAlloc = _CCPreLoadedCodeBase;
-
-   // Set helper trampoline table available
-   //
-   config.mccCallbacks().createHelperTrampolines((uint8_t *)_helperBase, config.numRuntimeHelpers());
-
-   _trampolineSyncList = NULL;
-   if (_tempTrampolinesMax)
-      {
-      // Initialize temporary trampoline synchronization list
-      if (!self()->allocateTempTrampolineSyncBlock())
+      _trampolineSyncList = NULL;
+      if (_tempTrampolinesMax)
          {
-         _hashEntrySlab->free(manager);
-         return false;
+         // Initialize temporary trampoline synchronization list
+         if (!self()->allocateTempTrampolineSyncBlock())
+            {
+            _hashEntrySlab->free(manager);
+            return false;
+            }
+         }
+
+      if (config.needsMethodTrampolines())
+         {
+         // Initialize hashtables to hold trampolines for resolved and unresolved methods
+         _resolvedMethodHT   = CodeCacheHashTable::allocate(manager);
+         _unresolvedMethodHT = CodeCacheHashTable::allocate(manager);
+         if (_resolvedMethodHT==NULL || _unresolvedMethodHT==NULL)
+            {
+            _hashEntrySlab->free(manager);
+            return false;
+            }
          }
       }
-
-   if (config.needsMethodTrampolines())
-      {
-      // Initialize hashtables to hold trampolines for resolved and unresolved methods
-      _resolvedMethodHT   = CodeCacheHashTable::allocate(manager);
-      _unresolvedMethodHT = CodeCacheHashTable::allocate(manager);
-      if (_resolvedMethodHT==NULL || _unresolvedMethodHT==NULL)
-         {
-         _hashEntrySlab->free(manager);
-         return false;
-         }
-      }
-
    // Before returning, let's adjust the free space seen by VM.
    // Usable space is between _warmCodeAlloc and _trampolineBase. Everything else is overhead
    size_t spaceLost = (_warmCodeAlloc - _segment->segmentBase()) + (_segment->segmentTop() - _trampolineBase);
    _manager->increaseCurrTotalUsedInBytes(spaceLost);
+
+   // Now that we have initialized the code cache, (including _warmCodeAlloc and _coldCodeAlloc)
+   // write a pointer to this cache at the beginning of the segment
+   VM_AtomicSupport::writeBarrier();
+   omrthread_jit_write_protect_disable();
+   *((TR::CodeCache **)(_segment->segmentBase())) = self();
+   omrthread_jit_write_protect_enable();
 
    return true;
    }
@@ -678,7 +682,15 @@ OMR::CodeCache::syncTempTrampolines()
             {
             void *newPC = (void *) TR::Compiler->mtd.startPC(entry->_info._resolved._method);
             void *trampoline = entry->_info._resolved._currentTrampoline;
-            if (trampoline && entry->_info._resolved._currentStartPC != newPC)
+            bool forceCreateTrampoline = false;
+
+            if (reinterpret_cast<intptr_t>(newPC) == 0)
+               {
+               newPC = entry->_info._resolved._currentStartPC;
+               forceCreateTrampoline = true;
+               }
+
+            if (trampoline && (forceCreateTrampoline || (entry->_info._resolved._currentStartPC != newPC)))
                {
                self()->createTrampoline(trampoline,
                                         newPC,
@@ -705,6 +717,11 @@ OMR::CodeCache::syncTempTrampolines()
             {
             CodeCacheHashEntry *entry = syncBlock->_hashEntryArray[entryIdx];
             void *newPC = (void *) TR::Compiler->mtd.startPC(entry->_info._resolved._method);
+
+            if (reinterpret_cast<intptr_t>(newPC) == 0)
+               {
+               newPC = entry->_info._resolved._currentStartPC;
+               }
 
             // call the codegen to perform the trampoline code modification
             self()->createTrampoline(entry->_info._resolved._currentTrampoline,
@@ -951,7 +968,7 @@ OMR::CodeCache::addFreeBlock(void * metaData)
 bool
 OMR::CodeCache::addFreeBlock2WithCallSite(uint8_t *start,
                                         uint8_t *end,
-                                        char *file,
+                                        const char *file,
                                         uint32_t lineNumber)
    {
    TR::CodeCacheConfig &config = _manager->codeCacheConfig();
@@ -1317,6 +1334,9 @@ OMR::CodeCache::printOccupancyStats()
    fprintf(stderr, "Code Cache @%p flags=0x%x almostFull=%d\n", this, _flags, _almostFull);
    fprintf(stderr, "   cold-warm hole size        = %8" OMR_PRIuSIZE " bytes\n", self()->getFreeContiguousSpace());
    fprintf(stderr, "   warmCodeAlloc=%p coldCodeAlloc=%p\n", (void*)_warmCodeAlloc, (void*)_coldCodeAlloc);
+   size_t warmCodeSize = _warmCodeAlloc - _segment->segmentBase();
+   size_t coldCodeSize = _trampolineBase - _coldCodeAlloc;
+   fprintf(stderr, "   warmCodeSize= %zu coldCodeSize= %zu\n", warmCodeSize, coldCodeSize);
    size_t totalReclaimed = 0;
    if (_freeBlockList)
       {
@@ -1549,6 +1569,7 @@ OMR::CodeCache::allocateCodeMemory(size_t warmCodeSize,
    uint8_t * cacheHeapAlloc;
    bool warmIsFreeBlock = false;
    bool coldIsFreeBlock = false;
+   uint8_t *oldColdAlloc = _coldCodeAlloc;
 
    size_t warmSize = warmCodeSize;
    size_t coldSize = coldCodeSize;
@@ -1674,6 +1695,37 @@ OMR::CodeCache::allocateCodeMemory(size_t warmCodeSize,
       *coldCode = coldCodeAddress;
    else
       *coldCode = warmCodeAddress;
+
+   if (OMR::RSSReport::instance() &&
+       !coldIsFreeBlock &&
+       !needsToBeContiguous &&
+       _coldCodeRSSRegion)
+      {
+      _coldCodeRSSRegion->_size = _coldCodeRSSRegion->_start - _coldCodeAlloc;
+
+      int32_t padding = static_cast<int32_t>(oldColdAlloc - coldCodeAddress - coldCodeSize);
+      TR_ASSERT_FATAL(padding >= 0, "Cold code padding should be >= 0");
+
+      if (padding > 0)
+         {
+         OMR::RSSItem *rssItem = new (TR::Compiler->persistentMemory()) OMR::RSSItem(OMR::RSSItem::alignment,
+                                                                                     oldColdAlloc - padding, padding,
+                                                                                     NULL /* counters */);
+         _coldCodeRSSRegion->addRSSItem(rssItem, self()->getReservingCompThreadID());
+         }
+
+      int32_t header = static_cast<uint32_t>(coldCodeAddress - _coldCodeAlloc);
+      TR_ASSERT_FATAL(header >= 0, "Cold code header should be >= 0");
+
+      if (header > 0)
+         {
+         OMR::RSSItem *rssItem = new (TR::Compiler->persistentMemory()) OMR::RSSItem(OMR::RSSItem::header,
+                                                                                     coldCodeAddress - header, header,
+                                                                                     NULL /* counters */);
+         _coldCodeRSSRegion->addRSSItem(rssItem, self()->getReservingCompThreadID());
+         }
+      }
+
    return warmCodeAddress;
    }
 

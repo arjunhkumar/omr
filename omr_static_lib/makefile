@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 # Create one giant archive for OMR.
@@ -67,13 +67,16 @@ endif
 
 # Prepend the path to the library for relative paths.
 # Absolute paths to object files must be left alone.
+# MAKEFLAGS is cleared below because it might contain '-w' which seems to
+# nullify the use of '--no-print-directory', or job-server context which
+# yields warnings that should not be mixed into the 'show-objects' output.
 OBJECTS := \
 $(foreach lib,$(OMRLIBS), \
   $(foreach object, \
-    $(shell $(MAKE) -s --no-print-directory -C $(lib) show-objects), \
+    $(shell MAKEFLAGS= $(MAKE) -s --no-print-directory -C $(lib) show-objects), \
     $(if $(filter /%,$(object)),$(object),$(lib)/$(object))))
 
-$(OBJECTS):
-	@echo $@
+$(OBJECTS) :
+	@echo "omr_static_lib: Assuming $(top_srcdir)/omr/makefile ensured that $@ is up to date"
 
 include $(top_srcdir)/omrmakefiles/rules.mk

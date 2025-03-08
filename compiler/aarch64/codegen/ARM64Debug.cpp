@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdint.h>
@@ -111,6 +111,7 @@ static const char *opCodeToNameMap[] =
    "brkarm64",
    "dsb",
    "dmb",
+   "yield",
    "br",
    "blr",
    "ret",
@@ -787,12 +788,18 @@ static const char *opCodeToNameMap[] =
    "vshll2_4s",
    "vshll2_2d",
    "vcmeq16b",
+   "vcmeq8b",
    "vcmeq8h",
+   "vcmeq4h",
    "vcmeq4s",
+   "vcmeq2s",
    "vcmeq2d",
    "vcmeq16b_zero",
+   "vcmeq8b_zero",
    "vcmeq8h_zero",
+   "vcmeq4h_zero",
    "vcmeq4s_zero",
+   "vcmeq2s_zero",
    "vcmeq2d_zero",
    "vcmhs16b",
    "vcmhs8h",
@@ -915,6 +922,10 @@ static const char *opCodeToNameMap[] =
    "vuzp2_8h",
    "vuzp2_4s",
    "vuzp2_2d",
+   "vtrn1_8b",
+   "vtrn1_16b",
+   "vtrn2_8b",
+   "vtrn2_16b",
    "vext16b",
    "vneg16b",
    "vneg8h",
@@ -931,6 +942,7 @@ static const char *opCodeToNameMap[] =
    "vabs2d",
    "vfabs4s",
    "vfabs2d",
+   "vrbit16b",
    "vrev16_16b",
    "vrev32_16b",
    "vrev32_8h",
@@ -943,8 +955,20 @@ static const char *opCodeToNameMap[] =
    "vxtn2_16b",
    "vxtn2_8h",
    "vxtn2_4s",
+   "vcls16b",
+   "vcls8h",
+   "vcls4s",
+   "vclz16b",
+   "vclz8h",
+   "vclz4s",
    "vcnt8b",
    "vcnt16b",
+   "vsaddlp16b",
+   "vsaddlp8h",
+   "vsaddlp4s",
+   "vuaddlp16b",
+   "vuaddlp8h",
+   "vuaddlp4s",
    "vdup16b",
    "vdup8h",
    "vdup4s",
@@ -1090,7 +1114,7 @@ TR_Debug::print(TR::FILE *pOutFile, TR::Instruction *instr)
          print(pOutFile, (TR::ARM64ImmInstruction *)instr);
          break;
       case OMR::Instruction::IsSynchronization:
-         print(pOutFile, (TR::ARM64ImmInstruction *)instr); // printing handled by superclass
+         print(pOutFile, (TR::ARM64SynchronizationInstruction *)instr);
          break;
       case OMR::Instruction::IsException:
          print(pOutFile, (TR::ARM64ImmInstruction *)instr); // printing handled by superclass
@@ -1682,6 +1706,10 @@ TR_Debug::print(TR::FILE *pOutFile, TR::ARM64Trg1Src1ImmInstruction *instr)
                break;
             case TR::InstOpCode::addsimmw:
                mnemonic = "cmnimmw";
+               break;
+            default:
+               TR_ASSERT_FATAL( 0, "unexpected operation");
+               break;
             }
          trfprintf(pOutFile, "%s \t", mnemonic);
          print(pOutFile, instr->getSource1Register(), TR_WordReg);
@@ -1754,7 +1782,7 @@ TR_Debug::print(TR::FILE *pOutFile, TR::ARM64Trg1Src1ImmInstruction *instr)
             done = true;
             trfprintf(pOutFile, "sxt%cw \t", (imms == 7) ? 'b' : 'h');
             print(pOutFile, instr->getTargetRegister(), TR_WordReg); trfprintf(pOutFile, ", ");
-            print(pOutFile, instr->getSource1Register(), TR_WordReg); 
+            print(pOutFile, instr->getSource1Register(), TR_WordReg);
             }
          }
       if (!done)
@@ -2201,6 +2229,37 @@ TR_Debug::print(TR::FILE *pOutFile, TR::ARM64Src2CondInstruction *instr)
    trfprintf(pOutFile, ", %d", instr->getConditionFlags());
    trfprintf(pOutFile, ", %s", ARM64ConditionNames[instr->getConditionCode()]);
 
+   trfflush(_comp->getOutFile());
+   }
+
+static const char *
+getBarrierLimitationName(TR::InstOpCode::AArch64BarrierLimitation lim)
+   {
+   switch (lim)
+      {
+      case TR::InstOpCode::sy: return "sy";
+      case TR::InstOpCode::st: return "st";
+      case TR::InstOpCode::ld: return "ld";
+      case TR::InstOpCode::ish: return "ish";
+      case TR::InstOpCode::ishst: return "ishst";
+      case TR::InstOpCode::ishld: return "ishld";
+      case TR::InstOpCode::nsh: return "nsh";
+      case TR::InstOpCode::nshst: return "nshst";
+      case TR::InstOpCode::nshld: return "nshld";
+      case TR::InstOpCode::osh: return "osh";
+      case TR::InstOpCode::oshst: return "oshst";
+      case TR::InstOpCode::oshld: return "oshld";
+
+      default: return "???";
+      }
+   }
+
+void
+TR_Debug::print(TR::FILE *pOutFile, TR::ARM64SynchronizationInstruction *instr)
+   {
+   printPrefix(pOutFile, instr);
+   const char *lim = getBarrierLimitationName(static_cast<TR::InstOpCode::AArch64BarrierLimitation>(instr->getSourceImmediate()));
+   trfprintf(pOutFile, "%s \t%s", getOpCodeName(&instr->getOpCode()), lim);
    trfflush(_comp->getOutFile());
    }
 

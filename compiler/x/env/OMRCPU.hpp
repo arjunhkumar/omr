@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_X86_CPU_INCL
@@ -55,9 +55,13 @@ protected:
    CPU() : OMR::CPU() {}
    CPU(const OMRProcessorDesc& processorDescription) : OMR::CPU(processorDescription) {}
 
+   TR::Compilation *_comp = NULL;
+
 public:
 
    static TR::CPU detect(OMRPortLibrary * const omrPortLib);
+
+   static TR::CPU customize(OMRProcessorDesc processorDescription);
 
    static void initializeTargetProcessorInfo(bool force = false);
 
@@ -67,8 +71,39 @@ public:
    uint32_t getX86ProcessorFeatureFlags();
    uint32_t getX86ProcessorFeatureFlags2();
    uint32_t getX86ProcessorFeatureFlags8();
+   uint32_t getX86ProcessorFeatureFlags10();
 
    bool getSupportsHardwareSQRT();
+
+   /** @brief Determines whether the 32 bit bitwise compress instruction is available on the current processor.
+    *
+    *  @return true if the 32 bit bitwise compress instruction is available, false otherwise.
+    */
+   bool getSupportsHardware32bitCompress();
+
+   /** @brief Determines whether the 64 bit bitwise compress instruction is available on the current processor.
+    *
+    *  @return true if the 64 bit bitwise compress instruction is available, false otherwise.
+    */
+   bool getSupportsHardware64bitCompress();
+
+   /** @brief Determines whether the 32 bit bitwise expand instruction is available on the current processor.
+    *
+    *  @return true if the 32 bit bitwise expand instruction is available, false otherwise.
+    */
+   bool getSupportsHardware32bitExpand();
+
+   /** @brief Determines whether the 64 bit bitwise expand instruction is available on the current processor.
+    *
+    *  @return true if the 64 bit bitwise expand instruction is available, false otherwise.
+    */
+   bool getSupportsHardware64bitExpand();
+
+   /** @brief Determines whether the popcnt instruction is available on the current processor.
+    *
+    *  @return true if popcnt is available, false otherwise.
+    */
+   bool hasPopulationCountInstruction();
 
    /** @brief Determines whether the Transactional Memory (TM) facility is available on the current processor.
     *
@@ -139,6 +174,8 @@ public:
    bool supportsFeature(uint32_t feature);
    bool supports_feature_old_api(uint32_t feature);
    bool supports_feature_test(uint32_t feature);
+
+   bool isFeatureDisabledByOption(uint32_t feature);
 
    /**
     * @brief Returns name of the current processor

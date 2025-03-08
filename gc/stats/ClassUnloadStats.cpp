@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "ClassUnloadStats.hpp"
@@ -38,4 +38,31 @@ MM_ClassUnloadStats::clear()
 	_startPostTime = 0;
 	_endPostTime = 0;
 	_classUnloadMutexQuiesceTime = 0;
-};
+}
+
+void
+MM_ClassUnloadStats::updateUnloadedCounters(uintptr_t anonymous, uintptr_t classes, uintptr_t classloaders)
+{
+	_classLoaderUnloadedCount = classloaders;
+	_classesUnloadedCount = classes;
+	_anonymousClassesUnloadedCount = anonymous;
+
+	_classLoaderUnloadedCountCumulative += classloaders;
+	_classesUnloadedCountCumulative += classes;
+	_anonymousClassesUnloadedCountCumulative += anonymous;
+
+}
+
+void
+MM_ClassUnloadStats::getUnloadedCountersCumulative(uintptr_t *anonymous, uintptr_t *classes, uintptr_t *classloaders)
+{
+	if (NULL != anonymous) {
+		*anonymous = _anonymousClassesUnloadedCountCumulative;
+	}
+	if (NULL != classes) {
+		*classes = _classesUnloadedCountCumulative;
+	}
+	if (NULL != classloaders) {
+		*classloaders = _classLoaderUnloadedCountCumulative;
+	}
+}

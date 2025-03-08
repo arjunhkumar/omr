@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -49,6 +49,7 @@ namespace OMR { typedef OMR::Symbol SymbolConnector; }
 #include <stdint.h>
 #include "infra/Annotations.hpp"
 #include "env/TRMemory.hpp"
+#include "env/jittypes.h"
 #include "il/DataTypes.hpp"
 #include "infra/Assert.hpp"
 #include "infra/Flags.hpp"
@@ -102,6 +103,7 @@ protected:
    Symbol() :
       _size(0),
       _name(0),
+      _declaredClass(0),
       _flags(0),
       _flags2(0),
       _localIndex(0)
@@ -197,6 +199,12 @@ public:
    const char * getName()                   { return _name; }
    void         setName(const char * name)  { _name = name; }
 
+   // When DataType is TR::Address, the declared class of the field, so that it
+   // can be found even without a signature. When present, this type info is
+   // exactly as reliable as the type signature.
+   TR_OpaqueClassBlock *getDeclaredClass() { return _declaredClass; }
+   void setDeclaredClass(TR_OpaqueClassBlock* klass) { _declaredClass = klass; }
+
    uint32_t getFlags()                      { return _flags.getValue(); }
    uint32_t getFlags2()                     { return _flags2.getValue(); }
    void setFlagValue(uint32_t v, bool b)    { _flags.setValue(v, b); }
@@ -282,6 +290,15 @@ public:
    void setIsRecompQueuedFlag()             { _flags2.set(RecompQueuedFlag); }
    bool isRecompQueuedFlag()                { return _flags2.testAny(RecompQueuedFlag); }
 
+   void setIsCatchBlockCounter()            { _flags2.set(CatchBlockCounter); }
+   bool isCatchBlockCounter()               { return _flags2.testAny(CatchBlockCounter); }
+
+   void setIsEnterEventHookAddress()        { _flags2.set(EnterEventHookAddress); }
+   bool isEnterEventHookAddress()           { return _flags2.testAny(EnterEventHookAddress); }
+
+   void setIsExitEventHookAddress()         { _flags2.set(ExitEventHookAddress); }
+   bool isExitEventHookAddress()            { return _flags2.testAny(ExitEventHookAddress); }
+
    inline bool isNamed();
 
    // flag methods specific to Autos
@@ -364,6 +381,9 @@ public:
    //
    inline void setArrayShadowSymbol();
    inline bool isArrayShadowSymbol();
+
+   inline void setContiguousArrayDataAddrFieldSymbol();
+   inline bool isContiguousArrayDataAddrFieldSymbol();
 
    inline bool isRecognizedShadow();
 
@@ -498,7 +518,7 @@ public:
                                               ///< to behave as regular locals to
                                               ///< preserve floating point semantics
       PinningArrayPointer       = 0x10000000,
-      // Available              = 0x00020000,
+      contiguousArrayDataAddrField = 0x00020000,
       AutoAddressTaken          = 0x04000000, ///< a loadaddr of this auto exists
       SpillTempLoaded           = 0x04000000, ///< share bit with loadaddr because spill temps will never have their address taken. Used to remove store to spill if never loaded
       // Available              = 0x02000000,
@@ -588,12 +608,16 @@ public:
        * This flag is used to identify the value type default value instance slot address
        */
       StaticDefaultValueInstance = 0x00020000,
+      CatchBlockCounter          = 0x00040000,
+      EnterEventHookAddress      = 0x00080000,
+      ExitEventHookAddress       = 0x00100000,
       };
 
 protected:
 
    size_t        _size;
    const char *  _name;
+   TR_OpaqueClassBlock *_declaredClass;
    flags32_t     _flags;
    flags32_t     _flags2;
    uint16_t      _localIndex;

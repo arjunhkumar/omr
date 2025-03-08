@@ -11,14 +11,14 @@ is available at https://www.apache.org/licenses/LICENSE-2.0.
 This Source Code may also be made available under the following
 Secondary Licenses when the conditions for such availability set
 forth in the Eclipse Public License, v. 2.0 are satisfied: GNU
-General Public License, version 2 with the GNU Classpath 
+General Public License, version 2 with the GNU Classpath
 Exception [1] and GNU General Public License, version 2 with the
 OpenJDK Assembly Exception [2].
 
 [1] https://www.gnu.org/software/classpath/license.html
 [2] https://openjdk.org/legal/assembly-exception.html
 
-SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 -->
 <schema
 xmlns="http://www.w3.org/2001/XMLSchema"
@@ -31,8 +31,10 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 	<element name="mem-info" type="vgc:mem-info" />
 	<element name="arraylet-reference" type="vgc:arraylet-reference" />
 	<element name="arraylet-primitive" type="vgc:arraylet-primitive" />
-	<element name="arraylet-unknown" type="vgc:arraylet-unknown" />	
+	<element name="arraylet-unknown" type="vgc:arraylet-unknown" />
+	<element name="cpu-util" type="vgc:cpu-util" />
 	<element name="numa" type="vgc:numa" />
+	<element name="offheap-objects" type="vgc:offheap-objects" />
 	<element name="vmarg" type="vgc:vmarg" />
 	<element name="vmargs" type="vgc:vmargs" />
 	<element name="attribute" type="vgc:attribute" />
@@ -65,11 +67,13 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 	<element name="gc-op" type="vgc:gc-op" />
 	<element name="references" type="vgc:references" />
 	<element name="pending-finalizers" type="vgc:pending-finalizers" />
+	<element name="continuation-objects" type="vgc:continuation-objects" />
 	<element name="trace-info" type="vgc:trace-info" />
 	<element name="cardclean-info" type="vgc:cardclean-info" />
 	<element name="finalization" type="vgc:finalization" />
 	<element name="ownableSynchronizers" type="vgc:ownableSynchronizers" />
 	<element name="continuations" type="vgc:continuations" />
+	<element name="offheap" type="vgc:offheap" />
 	<element name="stringconstants" type="vgc:stringconstants" />
 	<element name="object-monitors" type="vgc:object-monitors" />
 	<element name="classunload-info" type="vgc:classunload-info" />
@@ -97,7 +101,7 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 	<element name="concurrent-end" type="vgc:concurrent-end" />
 	<element name="concurrent-mark-start" type="vgc:concurrent-mark-start" />
 	<element name="concurrent-mark-end" type="vgc:concurrent-mark-end" />
-	<element name="region" type="vgc:region" />	
+	<element name="region" type="vgc:region" />
 	<element name="metronome" type="vgc:metronome" />
 	<element name="syncgc-info" type="vgc:syncgc-info" />
 	<element name="free-mem-delta" type="vgc:free-mem-delta" />
@@ -122,7 +126,7 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 		<attribute name="micro-fragmented" type="integer" use="optional" />
 		<attribute name="macro-fragmented" type="integer" use="optional" />
 	</attributeGroup>
-	
+
 	<complexType name="verbosegc">
 		<sequence maxOccurs="1" minOccurs="1">
 			<element ref="vgc:initialized" maxOccurs="1" minOccurs="0" />
@@ -140,6 +144,7 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 				<element ref="vgc:cycle-end" maxOccurs="1" minOccurs="1" />
 				<element ref="vgc:allocation-stats" maxOccurs="1" minOccurs="1" />
 				<element ref="vgc:mem-info" maxOccurs="1" minOccurs="1" />
+				<element ref="vgc:cpu-util" maxOccurs="1" minOccurs="1" />
 				<element ref="vgc:gc-start" maxOccurs="1" minOccurs="1" />
 				<element ref="vgc:gc-end" maxOccurs="1" minOccurs="1" />
 				<element ref="vgc:concurrent-kickoff" maxOccurs="1" minOccurs="1" />
@@ -169,11 +174,13 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 	<complexType name="mem-info">
 		<sequence maxOccurs="1" minOccurs="1">
 			<element ref="vgc:mem" maxOccurs="unbounded" minOccurs="0" />
+			<element ref="vgc:offheap-objects" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:arraylet-reference" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:arraylet-primitive" maxOccurs="1" minOccurs="0" />
-			<element ref="vgc:arraylet-unknown" maxOccurs="1" minOccurs="0" />			
+			<element ref="vgc:arraylet-unknown" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:numa" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:pending-finalizers" maxOccurs="1" minOccurs="0" />
+			<element ref="vgc:continuation-objects" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:remembered-set" maxOccurs="1" minOccurs="0" />
 		</sequence>
 		<attribute name="id" type="integer" use="required" />
@@ -231,7 +238,7 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 		<attribute name="regionsstable" type="integer" use="optional" />
 		<attribute name="regionsrebuilding" type="integer" use="optional" />
 	</complexType>
-	
+
 	<complexType name="remembered-set-cleared">
 		<attribute name="processed" type="integer" use="required" />
 		<attribute name="cleared" type="integer" use="required" />
@@ -289,13 +296,13 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 		<attribute name="success" type="string" use="optional" />
 		<attribute name="from" type="string" use="optional" />
 	</complexType>
-	
+
 	<complexType name="allocation-taxation">
 		<attribute name="id" type="integer" use="required" />
 		<attribute name="taxation-threshold" type="integer" use="required" />
 		<attribute name="timestamp" type="dateTime" use="required" />
 		<attribute name="intervalms" type="float" use="required" />
-	</complexType>	
+	</complexType>
 
 	<complexType name="concurrent-global-final">
 		<sequence maxOccurs="1" minOccurs="1">
@@ -306,7 +313,7 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 		<attribute name="timestamp" type="dateTime" use="required" />
 		<attribute name="intervalms" type="float" use="required" />
 	</complexType>
-	
+
 	<complexType name="concurrent-trace-info">
 		<attribute name="reason" type="string" use="required" />
 		<attribute name="tracedByMutators" type="integer" use="required" />
@@ -344,12 +351,14 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 			<element ref="vgc:largest-consumer" maxOccurs="1" minOccurs="0" />
 		</sequence>
 		<attribute name="totalBytes" type="integer" use="required" />
+		<attribute name="discardedBytes" type="integer" use="required" />
 	</complexType>
 
 	<complexType name="allocated-bytes">
 		<attribute name="non-tlh" type="integer" use="required" />
 		<attribute name="tlh" type="integer" use="optional" />
 		<attribute name="arrayletleaf" type="integer" use="optional" />
+		<attribute name="offheap" type="integer" use="optional" />
 	</complexType>
 
 	<complexType name="largest-consumer">
@@ -360,7 +369,8 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 
 	<complexType name="gc-start">
 		<sequence maxOccurs="1" minOccurs="1">
-			<element ref="vgc:mem-info" maxOccurs="1" minOccurs="0" />
+			<element ref="vgc:cpu-util" maxOccurs="1" minOccurs="0" />
+			<element ref="vgc:mem-info" maxOccurs="1" minOccurs="1" />
 		</sequence>
 		<attribute name="id" type="integer" use="required" />
 		<attribute name="type" type="string" use="optional" />
@@ -370,7 +380,7 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 
 	<complexType name="gc-end">
 		<sequence maxOccurs="1" minOccurs="1">
-			<element ref="vgc:mem-info" maxOccurs="1" minOccurs="0" />
+			<element ref="vgc:mem-info" maxOccurs="1" minOccurs="1" />
 		</sequence>
 		<attribute name="id" type="integer" use="required" />
 		<attribute name="type" type="string" use="optional" />
@@ -451,12 +461,23 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 		<attribute name="classloader" type="integer" use="required" />
 	</complexType>
 
+	<complexType name="cpu-util">
+		<attribute name="id" type="integer" use="required" />
+		<attribute name="total" type="float" use="required" />
+		<attribute name="process" type="float" use="required" />
+	</complexType>
+
+	<complexType name="continuation-objects">
+		<attribute name="total" type="integer" use="required" />
+		<attribute name="started" type="integer" use="required" />
+	</complexType>
+
 	<complexType name="trace-info">
 		<attribute name="objectcount" type="integer" use="required" />
 		<attribute name="scancount" type="integer" use="required" />
 		<attribute name="scanbytes" type="integer" use="required" />
 	</complexType>
-	
+
 	<complexType name="cardclean-info">
 		<attribute name="objects" type="integer" use="required" />
 		<attribute name="bytes" type="integer" use="required" />
@@ -474,6 +495,11 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 
 	<complexType name="continuations">
 		<attribute name="candidates" type="integer" use="optional" />
+		<attribute name="cleared" type="integer" use="required" />
+	</complexType>
+
+	<complexType name="offheap">
+		<attribute name="candidates" type="integer" use="required" />
 		<attribute name="cleared" type="integer" use="required" />
 	</complexType>
 
@@ -668,12 +694,12 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 			<element ref="vgc:attribute" maxOccurs="unbounded" minOccurs="0" />
 		</sequence>
 	</complexType>
-	
+
 	<complexType name="region">
 		<sequence maxOccurs="1" minOccurs="1">
 			<element ref="vgc:attribute" maxOccurs="7" minOccurs="0" />
 		</sequence>
-	</complexType>	
+	</complexType>
 
 	<complexType name="syncgc-info">
 		<attribute name="reason" type="string" use="required" />
@@ -756,30 +782,30 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 		<attribute name="id" type="integer" use="required" />
 		<attribute name="timestamp" type="dateTime" use="required" />
 	</complexType>
-	
+
 	<complexType name="arraylet-reference">
 		<attribute name="objects" type="integer" use="required" />
 		<attribute name="leaves" type="integer" use="required" />
 		<attribute name="largest" type="integer" use="required" />
 	</complexType>
-	
+
 	<complexType name="arraylet-primitive">
 		<attribute name="objects" type="integer" use="required" />
 		<attribute name="leaves" type="integer" use="required" />
 		<attribute name="largest" type="integer" use="required" />
 	</complexType>
-	
+
 	<complexType name="arraylet-unknown">
 		<attribute name="objects" type="integer" use="required" />
 		<attribute name="leaves" type="integer" use="required" />
-	</complexType>	
-	
+	</complexType>
+
 	<complexType name="allocation-satisfied">
 		<attribute name="id" type="integer" use="required" />
 		<attribute name="threadId" type="hexBinary" use="required" />
 		<attribute name="bytesRequested" type="integer" use="required" />
 	</complexType>
-	
+
 	<complexType name="allocation-unsatisfied">
 		<attribute name="id" type="integer" use="required" />
 		<attribute name="threadId" type="hexBinary" use="required" />
@@ -793,11 +819,17 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 		<attribute name="non-local-percent" type="integer" use="required" />
 	</complexType>
 
+	<complexType name="offheap-objects">
+		<attribute name="objects" type="integer" use="required" />
+		<attribute name="bytes" type="integer" use="required" />
+	</complexType>
+
 	<group name="gc-op-mark">
 		<sequence>
 			<element ref="vgc:trace-info" maxOccurs="1" minOccurs="1" />
 			<element ref="vgc:cardclean-info" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:remembered-set-cleared" maxOccurs="1" minOccurs="0" />
+			<element ref="vgc:offheap" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:finalization" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:ownableSynchronizers" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:continuations" maxOccurs="1" minOccurs="0" />
@@ -861,6 +893,7 @@ xmlns:vgc="http://www.ibm.com/j9/verbosegc">
 			<element ref="vgc:memory-traced" maxOccurs="unbounded" minOccurs="0" />
 			<element ref="vgc:regions" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:remembered-set-cleared" maxOccurs="1" minOccurs="1" />
+			<element ref="vgc:offheap" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:finalization" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:ownableSynchronizers" maxOccurs="1" minOccurs="0" />
 			<element ref="vgc:continuations" maxOccurs="1" minOccurs="0" />

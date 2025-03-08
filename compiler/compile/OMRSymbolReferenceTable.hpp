@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_SYMBOLREFERENCETABLE_INCL
@@ -88,6 +88,7 @@ class SymbolReferenceTable
       arraySetSymbol,
       arrayCopySymbol,
       arrayCmpSymbol,
+      arrayCmpLenSymbol,
       prefetchSymbol,
 
       killsAllMethodSymbol,                           // A dummy method whose alias set includes all
@@ -112,7 +113,7 @@ class SymbolReferenceTable
       componentClassSymbol,
       componentClassAsPrimitiveSymbol,
       isArraySymbol,
-      isClassAndDepthFlagsSymbol,
+      isClassDepthAndFlagsSymbol,
       initializeStatusFromClassSymbol,
       isClassFlagsSymbol,
       vftSymbol,
@@ -147,6 +148,7 @@ class SymbolReferenceTable
       osrScratchBufferSymbol,    //osrScratchBuffer slot on  j9vmthread
       osrFrameIndexSymbol,       // osrFrameIndex slot on j9vmthread
       osrReturnAddressSymbol,       // osrFrameIndex slot on j9vmthread
+      contiguousArrayDataAddrFieldSymbol, // dataAddr field symbol used to track data portion of the array
 
       /** \brief
        *
@@ -239,6 +241,38 @@ class SymbolReferenceTable
        * \endcode
        */
       nonNullableArrayNullStoreCheckSymbol,
+
+      /**
+       * \brief This symbol represents a call that loads an array element. The array must have a reference
+       * type for its element type. It cannot be arrays of primitive types such as int[] or double[]
+       *
+       * \code
+       *   acall <loadFlattenableArrayElementNonHelperSymbol>
+       *     array-element-index
+       *     array-base-address
+       * \endcode
+       */
+      loadFlattenableArrayElementNonHelperSymbol,
+
+      /**
+       * \brief This symbol represents a call that stores a value into an array element. The array must have
+       * a reference type for its element type. It cannot be arrays of primitive types such as int[] or double[]
+       *
+       * \code
+       *   call <storeFlattenableArrayElementNonHelperSymbol>
+       *     value-reference-to-be-stored
+       *     array-element-index
+       *     array-reference-to-which-value-will-be-stored
+       * \endcode
+       */
+      storeFlattenableArrayElementNonHelperSymbol,
+
+      /**
+       * \brief Symbol used in testing whether an object is an identity object or a value type object.
+       *        It must be expanded inline prior to code generation, yielding a result of one if the
+       *        operand object reference is an identity object or zero if it is a value type object.
+       */
+      isIdentityObjectNonHelperSymbol,
 
       /** \brief
        *
@@ -481,7 +515,12 @@ class SymbolReferenceTable
        */
       defaultValueSymbol,
 
-      OMRlastPrintableCommonNonhelperSymbol = defaultValueSymbol,
+      /** \brief
+       * Dispatch directly to a dynamically-specified method.
+       */
+      jitDispatchJ9MethodSymbol,
+
+      OMRlastPrintableCommonNonhelperSymbol = jitDispatchJ9MethodSymbol,
 
       firstPerCodeCacheHelperSymbol,
       lastPerCodeCacheHelperSymbol = firstPerCodeCacheHelperSymbol + TR_numCCPreLoadedCode - 1,
@@ -689,7 +728,7 @@ class SymbolReferenceTable
 
    int32_t getNumInternalPointers() { return _numInternalPointers; }
 
-   TR::SymbolReference * methodSymRefFromName(TR::ResolvedMethodSymbol *owningMethodSymbol, char *className, char *methodName, char *signature, TR::MethodSymbol::Kinds kind, int32_t cpIndex=-1);
+   TR::SymbolReference *methodSymRefFromName(TR::ResolvedMethodSymbol *owningMethodSymbol, const char *className, const char *methodName, const char *signature, TR::MethodSymbol::Kinds kind, int32_t cpIndex=-1);
 
    TR::SymbolReference *createSymbolReference(TR::Symbol *sym, intptr_t o = 0);
 
@@ -740,7 +779,7 @@ class SymbolReferenceTable
    TR::SymbolReference * findInstanceDescriptionSymbolRef();
    TR::SymbolReference * findDescriptionWordFromPtrSymbolRef();
    TR::SymbolReference * findClassFlagsSymbolRef();
-   TR::SymbolReference * findClassAndDepthFlagsSymbolRef();
+   TR::SymbolReference * findClassDepthAndFlagsSymbolRef();
    TR::SymbolReference * findArrayComponentTypeSymbolRef();
    TR::SymbolReference * findClassIsArraySymbolRef();
    TR::SymbolReference * findHeaderFlagsSymbolRef() { return element(headerFlagsSymbol); }
@@ -772,6 +811,10 @@ class SymbolReferenceTable
    TR::SymbolReference * findOrCreateTemporaryWithKnowObjectIndex(TR::ResolvedMethodSymbol * owningMethodSymbol, TR::KnownObjectTable::Index knownObjectIndex);
    TR::SymbolReference * findOrCreateThisRangeExtensionSymRef(TR::ResolvedMethodSymbol *owningMethodSymbol = 0);
    TR::SymbolReference * findOrCreateContiguousArraySizeSymbolRef();
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+   TR::SymbolReference * findOrCreateContiguousArrayDataAddrFieldShadowSymRef();
+#endif // defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+   TR::SymbolReference * findContiguousArrayDataAddrFieldShadowSymRef();
    TR::SymbolReference * findOrCreateNewArrayNoZeroInitSymbolRef(TR::ResolvedMethodSymbol * owningMethodSymbol);
    TR::SymbolReference * findOrCreateNewObjectSymbolRef(TR::ResolvedMethodSymbol * owningMethodSymbol);
    TR::SymbolReference * findOrCreateNewObjectNoZeroInitSymbolRef(TR::ResolvedMethodSymbol * owningMethodSymbol);
@@ -819,6 +862,7 @@ class SymbolReferenceTable
    TR::SymbolReference * findOrCreateArrayCopySymbol();
    TR::SymbolReference * findOrCreateArraySetSymbol();
    TR::SymbolReference * findOrCreateArrayCmpSymbol();
+   TR::SymbolReference * findOrCreateArrayCmpLenSymbol();
 
    TR::SymbolReference * findOrCreateClassSymbol(TR::ResolvedMethodSymbol * owningMethodSymbol, int32_t cpIndex, void * classObject, bool cpIndexOfStatic = false);
    TR::SymbolReference * findOrCreateArrayShadowSymbolRef(TR::DataType type, TR::Node * baseArrayAddress, int32_t size, TR_FrontEnd * fe);

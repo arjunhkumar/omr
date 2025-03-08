@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef FRONTEND_INCL
@@ -103,7 +103,9 @@ struct TR_BinaryEncodingData
 class TR_FrontEnd : private TR::Uncopyable
    {
 public:
-   TR_FrontEnd() {}
+   TR_FrontEnd()
+      : _isSafeToFreeOptionsOnShutdown(false)   // most conservative setting, relied upon by OpenJ9
+      {}
 
    // --------------------------------------------------------------------------
    // Method
@@ -112,7 +114,7 @@ public:
    virtual TR_ResolvedMethod * createResolvedMethod(TR_Memory *, TR_OpaqueMethodBlock *, TR_ResolvedMethod * = 0, TR_OpaqueClassBlock * = 0);
    virtual OMR::MethodMetaDataPOD *createMethodMetaData(TR::Compilation *comp) { return NULL; }
 
-   virtual TR_OpaqueMethodBlock * getMethodFromName(char * className, char *methodName, char *signature);
+   virtual TR_OpaqueMethodBlock * getMethodFromName(const char *className, const char *methodName, const char *signature);
    virtual uint32_t offsetOfIsOverriddenBit();
 
    // Needs VMThread
@@ -181,6 +183,16 @@ public:
 
    // VM+Shared
    virtual TR_OpaqueClassBlock * getArrayClassFromComponentClass(TR_OpaqueClassBlock * componentClass);
+   /** \brief
+    *     Retrieves the nullRestrictedArrayClass from the array component class.
+    *
+    *  \param componentClass
+    *     The array component class
+    *
+    *  \return
+    *     A pointer to nullRestrictedArrayClass if it exists, otherwise NULL
+    */
+   virtual TR_OpaqueClassBlock * getNullRestrictedArrayClassFromComponentClass(TR_OpaqueClassBlock * componentClass);
    virtual TR_OpaqueClassBlock * getClassFromNewArrayType(int32_t arrayType);
    virtual TR_OpaqueClassBlock * getClassFromSignature(const char * sig, int32_t length, TR_ResolvedMethod *method, bool callSiteVettedForAOT=false);
    virtual TR_OpaqueClassBlock * getClassFromSignature(const char * sig, int32_t length, TR_OpaqueMethodBlock *method, bool callSiteVettedForAOT=false);
@@ -189,8 +201,9 @@ public:
    virtual TR_OpaqueClassBlock * getLeafComponentClassFromArrayClass(TR_OpaqueClassBlock *arrayClass);
 
    // Null-terminated.  bufferSize >= 1+getStringUTF8Length(objectPointer).  Returns buffer just for convenience.
-   virtual char *getStringUTF8(uintptr_t objectPointer, char *buffer, intptr_t bufferSize);
-   virtual intptr_t getStringUTF8Length(uintptr_t objectPointer);
+   virtual char *getStringUTF8(uintptr_t objectPointer, char *buffer, uintptr_t bufferSize);
+   virtual int32_t getStringUTF8Length(uintptr_t objectPointer);
+   virtual uint64_t getStringUTF8UnabbreviatedLength(uintptr_t objectPointer);
 
    // --------------------------------------------------------------------------
    // Code cache
@@ -212,6 +225,11 @@ public:
    virtual char *getFormattedName(char *, int32_t, char *, char *, bool);
    virtual void printVerboseLogHeader(TR::Options *cmdLineOptions) {}
 
+   virtual void setIsSafeToFreeOptionsOnShutdown(bool isSafe=true);
+   virtual bool isSafeToFreeOptionsOnShutdown();
+
+private:
+   bool _isSafeToFreeOptionsOnShutdown;
    };
 
 #endif

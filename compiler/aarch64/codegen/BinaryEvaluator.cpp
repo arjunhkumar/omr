@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/ARM64Instruction.hpp"
@@ -523,18 +523,8 @@ OMR::ARM64::TreeEvaluator::lsubEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    return genericBinaryEvaluator(node, TR::InstOpCode::subx, TR::InstOpCode::subimmx, true, cg);
    }
 
-typedef TR::Register *(*binaryEvaluatorHelper)(TR::Node *node, TR::Register *resReg, TR::Register *lhsRes, TR::Register *rhsReg, TR::CodeGenerator *cg);
-/**
- * @brief Helper functions for generating instruction sequence for masked binary operations
- *
- * @param[in] node: node
- * @param[in] cg: CodeGenerator
- * @param[in] op: binary opcode
- * @param[in] evaluatorHelper: optional pointer to helper function which generates instruction stream for operation
- * @return vector register containing the result
- */
-static TR::Register *
-inlineVectorBinaryOp(TR::Node *node, TR::CodeGenerator *cg, TR::InstOpCode::Mnemonic op, binaryEvaluatorHelper evaluatorHelper = NULL)
+TR::Register *
+OMR::ARM64::TreeEvaluator::inlineVectorBinaryOp(TR::Node *node, TR::CodeGenerator *cg, TR::InstOpCode::Mnemonic op, binaryEvaluatorHelper evaluatorHelper)
    {
    TR::Node *firstChild = node->getFirstChild();
    TR::Node *secondChild = node->getSecondChild();
@@ -1195,8 +1185,7 @@ OMR::ARM64::TreeEvaluator::imulhEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    generateTrg1Src3Instruction(cg, TR::InstOpCode::smaddl, node, trgReg, src1Reg, src2Reg, zeroReg, cond);
    cg->stopUsingRegister(zeroReg);
    /* logical shift right by 32 bits */
-   uint32_t imm = 0x183F; // N=1, immr=32, imms=63
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::ubfmx, node, trgReg, trgReg, imm);
+   generateLogicalShiftRightImmInstruction(cg, node, trgReg, trgReg, 32, true);
 
    if (tmpReg)
       {
@@ -1578,7 +1567,7 @@ static TR::Register *shiftHelper(TR::Node *node, TR::ARM64ShiftCode shiftType, T
    TR::Node *secondChild = node->getSecondChild();
    TR::ILOpCodes secondOp = secondChild->getOpCodeValue();
    TR::Register *srcReg = cg->evaluate(firstChild);
-   TR::Register *trgReg = cg->allocateRegister();
+   TR::Register *trgReg = NULL;
    bool is64bit = node->getDataType().isInt64();
    const uint32_t operandBits = TR::DataType::getSize(node->getDataType()) * 8;
 
@@ -1587,37 +1576,56 @@ static TR::Register *shiftHelper(TR::Node *node, TR::ARM64ShiftCode shiftType, T
    if (secondOp == TR::iconst)
       {
       int32_t value = secondChild->getInt();
-      uint32_t shift = is64bit ? (value & 0x3F) : (value & 0x1F);
-      TR::Register *shiftSrcReg = srcReg;
-      switch (shiftType)
+      if (value == 0)
          {
-         case TR::SH_LSL:
-            generateLogicalShiftLeftImmInstruction(cg, node, trgReg, shiftSrcReg, shift, is64bit);
-            break;
-         case TR::SH_LSR:
-            if (operandBits < 32)
-               {
-               generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::ubfmw, node, trgReg, srcReg, operandBits - 1); // uxth or uxtb
-               shiftSrcReg = trgReg;
-               }
-            generateLogicalShiftRightImmInstruction(cg, node, trgReg, shiftSrcReg, shift, is64bit);
-            break;
-         case TR::SH_ASR:
-            if (operandBits < 32)
-               {
-               generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::sbfmw, node, trgReg, srcReg, operandBits - 1); // sxth or sxtb
-               shiftSrcReg = trgReg;
-               }
-            generateArithmeticShiftRightImmInstruction(cg, node, trgReg, shiftSrcReg, shift, is64bit);
-            break;
-         default:
-            TR_ASSERT(false, "Unsupported shift type.");
+         if (firstChild->getReferenceCount() == 1)
+            {
+            trgReg = srcReg;
+            }
+         else
+            {
+            trgReg = cg->allocateRegister();
+            generateMovInstruction(cg, node, trgReg, srcReg, is64bit);
+            }
+         }
+      else
+         {
+         uint32_t shift = is64bit ? (value & 0x3F) : (value & 0x1F);
+         TR::Register *shiftSrcReg = srcReg;
+         trgReg = cg->allocateRegister();
+
+         switch (shiftType)
+            {
+            case TR::SH_LSL:
+               generateLogicalShiftLeftImmInstruction(cg, node, trgReg, shiftSrcReg, shift, is64bit);
+               break;
+            case TR::SH_LSR:
+               if (operandBits < 32)
+                  {
+                  generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::ubfmw, node, trgReg, srcReg, operandBits - 1); // uxth or uxtb
+                  shiftSrcReg = trgReg;
+                  }
+               generateLogicalShiftRightImmInstruction(cg, node, trgReg, shiftSrcReg, shift, is64bit);
+               break;
+            case TR::SH_ASR:
+               if (operandBits < 32)
+                  {
+                  generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::sbfmw, node, trgReg, srcReg, operandBits - 1); // sxth or sxtb
+                  shiftSrcReg = trgReg;
+                  }
+               generateArithmeticShiftRightImmInstruction(cg, node, trgReg, shiftSrcReg, shift, is64bit);
+               break;
+            default:
+               TR_ASSERT(false, "Unsupported shift type.");
+            }
          }
       }
    else
       {
       TR::Register *shiftAmountReg = cg->evaluate(secondChild);
       TR::Register *shiftSrcReg = srcReg;
+      trgReg = cg->allocateRegister();
+
       switch (shiftType)
          {
          case TR::SH_LSL:

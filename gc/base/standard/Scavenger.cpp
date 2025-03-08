@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if 0
@@ -322,6 +322,22 @@ MM_Scavenger::tearDown(MM_EnvironmentBase *env)
 	(*mmOmrHooks)->J9HookUnregister(mmOmrHooks, J9HOOK_MM_OMR_GLOBAL_GC_START, hookGlobalCollectionStart, (void *)this);
 	(*mmOmrHooks)->J9HookUnregister(mmOmrHooks, J9HOOK_MM_OMR_GLOBAL_GC_END, hookGlobalCollectionComplete, (void *)this);
 }
+
+#if defined(J9VM_OPT_CRIU_SUPPORT)
+bool
+MM_Scavenger::reinitializeForRestore(MM_EnvironmentBase *env)
+{
+	bool rc = true;
+
+	if (!_scavengeCacheFreeList.reinitializeForRestore(env)
+		|| !_scavengeCacheScanList.reinitializeForRestore(env)
+	) {
+		rc = false;
+	}
+
+	return rc;
+}
+#endif /* defined(J9VM_OPT_CRIU_SUPPORT) */
 
 /**
  * Perform any collector initialization particular to the concurrent collector.
@@ -3272,7 +3288,7 @@ MM_Scavenger::getFreeCache(MM_EnvironmentStandard *env)
 	if (NULL == cache) {
 		env->_scavengerStats._scanCacheOverflow = 1;
 		OMRPORT_ACCESS_FROM_OMRPORT(env->getPortLibrary());
-		uint64_t duration = omrtime_current_time_millis();
+		uint64_t duration = omrtime_hires_clock();
 
 		bool resizePerformed = false;
 		omrthread_monitor_enter(_freeCacheMonitor);
@@ -3289,8 +3305,8 @@ MM_Scavenger::getFreeCache(MM_EnvironmentStandard *env)
 			/* Still need a new cache and nothing left reserved - create it in Heap */
 			cache = createCacheInHeap(env);
 		}
-		duration = omrtime_current_time_millis() - duration;
-		env->_scavengerStats._scanCacheAllocationDurationDuringSavenger += duration;
+		duration = omrtime_hires_clock() - duration;
+		env->_scavengerStats._scanCacheAllocationDurationDuringSavenger += omrtime_hires_delta(0, duration, OMRPORT_TIME_DELTA_IN_MILLISECONDS);
 
 	}
 
@@ -4224,6 +4240,9 @@ MM_Scavenger::mainThreadGarbageCollect(MM_EnvironmentBase *envBase, MM_AllocateD
 	bool firstIncrement = true;
 #endif
 
+	/* Flush any VM level changes to prepare for a safe slot walk */
+	GC_OMRVMInterface::flushCachesForGC(env);
+
 	if (firstIncrement)	{
 		if (_extensions->processLargeAllocateStats) {
 			processLargeAllocateStatsBeforeGC(env);
@@ -4232,6 +4251,14 @@ MM_Scavenger::mainThreadGarbageCollect(MM_EnvironmentBase *envBase, MM_AllocateD
 		reportGCCycleStart(env);
 		_cycleTimes.cycleStart = omrtime_hires_clock();
 		mainSetupForGC(env);
+
+		/* Restart the allocation caches associated to all threads */
+		GC_OMRVMThreadListIterator threadListIterator(_omrVM);
+		OMR_VMThread *walkThread = NULL;
+		while ((walkThread = threadListIterator.nextOMRVMThread()) != NULL) {
+			MM_EnvironmentBase *walkEnv = MM_EnvironmentBase::getEnvironment(walkThread);
+			walkEnv->_objectAllocationInterface->restartCache(env);
+		}
 	}
 	clearIncrementGCStats(env, firstIncrement);
 	reportGCStart(env);
@@ -4314,16 +4341,6 @@ MM_Scavenger::mainThreadGarbageCollect(MM_EnvironmentBase *envBase, MM_AllocateD
 		_evacuateMemorySubSpace = _activeSubSpace->getMemorySubSpaceSurvivor();
 		_activeSubSpace->cacheRanges(_evacuateMemorySubSpace, &_evacuateSpaceBase, &_evacuateSpaceTop);
 #endif
-		/* Restart the allocation caches associated to all threads */
-		{
-			GC_OMRVMThreadListIterator threadListIterator(_omrVM);
-			OMR_VMThread *walkThread;
-			while((walkThread = threadListIterator.nextOMRVMThread()) != NULL) {
-				MM_EnvironmentBase *walkEnv = MM_EnvironmentBase::getEnvironment(walkThread);
-				walkEnv->_objectAllocationInterface->restartCache(env);
-			}
-		}
-
 		_extensions->heap->resetHeapStatistics(false);
 
 		/* If there was a failed tenure of a size greater than the threshold, set the flag. */
@@ -4418,6 +4435,11 @@ void
 MM_Scavenger::reportGCCycleFinalIncrementEnding(MM_EnvironmentStandard *env)
 {
 	OMRPORT_ACCESS_FROM_OMRPORT(env->getPortLibrary());
+	uintptr_t cycleType = env->_cycleState->_type;
+	/* set OMR_GC_CYCLE_TYPE_STATE_UNSUCCESSFUL bit in the cycleType of CycleEnd event in scavenge backout case */
+	if (env->getExtensions()->isScavengerBackOutFlagRaised()) {
+		cycleType |= OMR_GC_CYCLE_TYPE_STATE_UNSUCCESSFUL;
+	}
 
 	MM_CommonGCData commonData;
 
@@ -4427,7 +4449,7 @@ MM_Scavenger::reportGCCycleFinalIncrementEnding(MM_EnvironmentStandard *env)
 		omrtime_hires_clock(),
 		J9HOOK_MM_OMR_GC_CYCLE_END,
 		_extensions->getHeap()->initializeCommonGCData(env, &commonData),
-		env->_cycleState->_type,
+		cycleType,
 		omrgc_condYieldFromGC
 	);
 }
@@ -4566,9 +4588,6 @@ MM_Scavenger::internalPreCollect(MM_EnvironmentBase *env, MM_MemorySubSpace *sub
 			}
 		}
 	}
-
-	/* Flush any VM level changes to prepare for a safe slot walk */
-	GC_OMRVMInterface::flushCachesForGC(env);
 }
 
 /**
@@ -4616,7 +4635,6 @@ MM_Scavenger::internalGarbageCollect(MM_EnvironmentBase *envBase, MM_MemorySubSp
 		return true;
 	}
 
-#if defined(OMR_GC_CONCURRENT_SCAVENGER)
 	if (IS_CONCURRENT_ENABLED && isBackOutFlagRaised()) {
 		bool result = percolateGarbageCollect(env, subSpace, NULL, ABORTED_SCAVENGE, J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_ABORTED_SCAVENGE);
 
@@ -4624,7 +4642,6 @@ MM_Scavenger::internalGarbageCollect(MM_EnvironmentBase *envBase, MM_MemorySubSp
 
 		return true;
 	}
-#endif
 
 	/* First, if the previous scavenge had a failed tenure of a size greater than the threshold,
 	 * ask parent MSS to try a collect.
@@ -4776,6 +4793,14 @@ MM_Scavenger::internalGarbageCollect(MM_EnvironmentBase *envBase, MM_MemorySubSp
 #endif
 	{
 		mainThreadGarbageCollect(env, allocDescription);
+		/* We want to recursively call percolate gc here in order that the excessive gc
+		 * identifies the outermost gc and records the metrics correctly.
+		 */
+		if (isBackOutFlagRaised()) {
+			bool result = percolateGarbageCollect(env, subSpace, NULL, ABORTED_SCAVENGE, J9MMCONSTANT_IMPLICIT_GC_PERCOLATE_ABORTED_SCAVENGE);
+			Assert_MM_true(result);
+			return true;
+		}
 	}
 
 	/* If we know now that the next scavenge will cause a peroclate broadcast
@@ -4948,7 +4973,7 @@ MM_Scavenger::reportGCIncrementStart(MM_EnvironmentStandard *env)
 	stats->_startTime = omrtime_hires_clock();
 
 	intptr_t rc = omrthread_get_process_times(&stats->_startProcessTimes);
-	switch (rc){
+	switch (rc) {
 	case -1: /* Error: Function un-implemented on architecture */
 	case -2: /* Error: getrusage() or GetProcessTimes() returned error value */
 		stats->_startProcessTimes._userTime = I_64_MAX;
@@ -4976,7 +5001,7 @@ MM_Scavenger::reportGCIncrementEnd(MM_EnvironmentStandard *env)
 	stats->collectCollectionStatistics(env, stats);
 
 	intptr_t rc = omrthread_get_process_times(&stats->_endProcessTimes);
-	switch (rc){
+	switch (rc) {
 	case -1: /* Error: Function un-implemented on architecture */
 	case -2: /* Error: getrusage() or GetProcessTimes() returned error value */
 		stats->_endProcessTimes._userTime = 0;

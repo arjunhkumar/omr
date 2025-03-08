@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -35,15 +35,13 @@
 #include <sys/time.h>
 #include "omrport.h"
 
-#if defined(OSX)
+#if defined(OSX) || defined(LINUX)
 /* Frequency is nanoseconds / second */
 #define OMRTIME_HIRES_CLOCK_FREQUENCY J9CONST_U64(1000000000)
-#else /* defined(OSX) */
+#else /* defined(OSX) || defined(LINUX) */
 /* Frequency is microseconds / second */
 #define OMRTIME_HIRES_CLOCK_FREQUENCY J9CONST_U64(1000000)
-#endif /* defined(OSX) */
-
-#define OMRTIME_NANOSECONDS_PER_SECOND J9CONST_I64(1000000000)
+#endif /* defined(OSX) || defined(LINUX) */
 
 #if defined(OSX)
 static clock_serv_t cs_t;
@@ -97,14 +95,14 @@ omrtime_current_time_nanos(struct OMRPortLibrary *portLibrary, uintptr_t *succes
 	struct timeval ts;
 	*success = 0;
 	if (0 == gettimeofday(&ts, NULL)) {
-		nsec = ((uint64_t)ts.tv_sec * OMRTIME_NANOSECONDS_PER_SECOND) + (uint64_t)(ts.tv_usec * 1000);
+		nsec = ((uint64_t)ts.tv_sec * OMRPORT_TIME_DELTA_IN_NANOSECONDS) + (uint64_t)(ts.tv_usec * 1000);
 		*success = 1;
 	}
 #else /* defined(OSX) */
 	struct timespec ts;
 	*success = 0;
 	if (0 == clock_gettime(CLOCK_REALTIME, &ts)) {
-		nsec = ((uint64_t)ts.tv_sec * OMRTIME_NANOSECONDS_PER_SECOND) + (uint64_t)ts.tv_nsec;
+		nsec = ((uint64_t)ts.tv_sec * OMRPORT_TIME_DELTA_IN_NANOSECONDS) + (uint64_t)ts.tv_nsec;
 		*success = 1;
 	}
 #endif /* defined(OSX) */
@@ -118,13 +116,13 @@ omrtime_nano_time(struct OMRPortLibrary *portLibrary)
 #if defined(OSX)
 	mach_timespec_t mt;
 	if (KERN_SUCCESS == clock_get_time(cs_t, &mt)) {
-		hiresTime = ((int64_t)mt.tv_sec * OMRTIME_NANOSECONDS_PER_SECOND) + (int64_t)mt.tv_nsec;
+		hiresTime = ((int64_t)mt.tv_sec * OMRPORT_TIME_DELTA_IN_NANOSECONDS) + (int64_t)mt.tv_nsec;
 	}
 #else /* defined(OSX) */
 	struct timespec ts;
 
 	if (0 == clock_gettime(OMRTIME_NANO_CLOCK, &ts)) {
-		hiresTime = ((int64_t)ts.tv_sec * OMRTIME_NANOSECONDS_PER_SECOND) + (int64_t)ts.tv_nsec;
+		hiresTime = ((int64_t)ts.tv_sec * OMRPORT_TIME_DELTA_IN_NANOSECONDS) + (int64_t)ts.tv_nsec;
 	}
 #endif /* defined(OSX) */
 
@@ -161,7 +159,14 @@ omrtime_hires_clock(struct OMRPortLibrary *portLibrary)
 {
 #if defined(OSX)
 	return clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
-#else /* defined(OSX) */
+#elif defined(LINUX) /* defined(OSX) */
+	uint64_t ret = 0;
+	struct timespec ts;
+	if (0 == clock_gettime(OMRTIME_NANO_CLOCK, &ts)) {
+		ret = ((uint64_t)ts.tv_sec * OMRPORT_TIME_DELTA_IN_NANOSECONDS) + (uint64_t)ts.tv_nsec;
+	}
+	return ret;
+#else /* defined(LINUX) */
 	struct timeval tp;
 
 	gettimeofday(&tp, NULL);

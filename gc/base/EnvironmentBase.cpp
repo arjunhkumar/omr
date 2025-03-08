@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "omrcfg.h"
@@ -370,7 +370,7 @@ MM_EnvironmentBase::isExclusiveAccessRequestWaiting()
 }
 
 bool
-MM_EnvironmentBase::acquireExclusiveVMAccessForGC(MM_Collector *collector, bool failIfNotFirst, bool flushCaches)
+MM_EnvironmentBase::acquireExclusiveVMAccessForGC(MM_Collector *collector, bool failIfNotFirst)
 {
 	MM_GCExtensionsBase *extensions = getExtensions();
 	uintptr_t collectorAccessCount = collector->getExclusiveAccessCount();
@@ -451,10 +451,6 @@ MM_EnvironmentBase::acquireExclusiveVMAccessForGC(MM_Collector *collector, bool 
 	acquireExclusiveVMAccess();
 
 	collector->incrementExclusiveAccessCount();
-
-	if (flushCaches) {
-		GC_OMRVMInterface::flushCachesForGC(this);
-	}
 
 	return !_exclusiveAccessBeatenByOtherThread;
 

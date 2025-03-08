@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(COPYSCANCACHEBASE_HPP_)
@@ -40,17 +40,6 @@
 #define OMR_COPYSCAN_CACHE_MASK_PERSISTENT (OMR_COPYSCAN_CACHE_TYPE_HEAP)
 
 /** @} */
-
-/* These definitions are going to be removed at cleaning step of the change. */
-#define J9VM_MODRON_SCAVENGER_CACHE_TYPE_SEMISPACE OMR_COPYSCAN_CACHE_TYPE_SEMISPACE
-#define J9VM_MODRON_SCAVENGER_CACHE_TYPE_TENURESPACE OMR_COPYSCAN_CACHE_TYPE_TENURESPACE
-#define J9VM_MODRON_SCAVENGER_CACHE_TYPE_SPLIT_ARRAY OMR_COPYSCAN_CACHE_TYPE_SPLIT_ARRAY
-#define J9VM_MODRON_SCAVENGER_CACHE_TYPE_COPY OMR_COPYSCAN_CACHE_TYPE_COPY
-#define J9VM_MODRON_SCAVENGER_CACHE_TYPE_LOA OMR_COPYSCAN_CACHE_TYPE_LOA
-#define J9VM_MODRON_SCAVENGER_CACHE_TYPE_CLEARED OMR_COPYSCAN_CACHE_TYPE_CLEARED
-#define J9VM_MODRON_SCAVENGER_CACHE_TYPE_SCAN OMR_COPYSCAN_CACHE_TYPE_SCAN
-#define J9VM_MODRON_SCAVENGER_CACHE_TYPE_HEAP OMR_COPYSCAN_CACHE_TYPE_HEAP
-#define J9VM_MODRON_SCAVENGER_CACHE_MASK_PERSISTENT OMR_COPYSCAN_CACHE_MASK_PERSISTENT
 
 #include "omrcomp.h"
 #include "modronbase.h"

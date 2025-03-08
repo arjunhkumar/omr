@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "infra/TreeServices.hpp"
@@ -27,7 +27,7 @@
 #include "il/Node.hpp"
 
 bool
-TR_AddressTree::isILLoad(TR::Node * node)
+TR_AddressTree::isLloadi(TR::Node * node)
    {
    if (node->getOpCodeValue() != TR::iload  && node->getOpCodeValue() != TR::lload &&
        node->getOpCodeValue() != TR::iloadi && node->getOpCodeValue() != TR::lloadi)
@@ -47,7 +47,7 @@ TR_AddressTree::findComplexAddressGenerationTree(TR::Node *node, vcount_t visitC
       return false;
    node->setVisitCount(visitCount);
 
-   if (isILLoad(node))
+   if (isLloadi(node))
       {
       int32_t childNumber;
       for (childNumber = 0; childNumber < parent->getNumChildren(); childNumber++)
@@ -68,16 +68,16 @@ TR_AddressTree::processBaseAndIndex(TR::Node* parent)
    TR::Node * lhs = parent->getFirstChild();
    TR::Node * rhs = parent->getSecondChild();
    bool isValid = true;
-   if (isILLoad(lhs) && isILLoad(rhs))
+   if (isLloadi(lhs) && isLloadi(rhs))
       {
       isValid = false; // exactly one child should be a variable
       }
-   else if (isILLoad(lhs))
+   else if (isLloadi(lhs))
       {
       _indexBaseNode.setParentAndChildNumber(lhs, 0);
       _indVarNode.setParentAndChildNumber(parent, 0);
       }
-   else if (isILLoad(rhs))
+   else if (isLloadi(rhs))
       {
       _indexBaseNode.setParentAndChildNumber(rhs, 0);
       _indVarNode.setParentAndChildNumber(parent, 1);
@@ -135,7 +135,7 @@ TR_AddressTree::processMultiplyNode(TR::Node * multiplyNode)
          return false;
          }
       }
-   else if (isILLoad(firstMulChild))
+   else if (isLloadi(firstMulChild))
       {
       _indexBaseNode.setParentAndChildNumber(firstMulChild, 0);
       _indVarNode.setParentAndChildNumber(multiplyNode, 0);
@@ -168,7 +168,7 @@ TR_AddressTree::processMultiplyNode(TR::Node * multiplyNode)
 //       ixload
 //          aiadd <memory reference sub-tree>
 //    l2i
-//       ilload <DirectByteBuffer>
+//       lloadi <DirectByteBuffer>
 //          aload <Buffer>
 //
 // (64-bit)
@@ -176,20 +176,25 @@ TR_AddressTree::processMultiplyNode(TR::Node * multiplyNode)
 //    x2i
 //       ixload
 //          aladd <memory reference sub-tree>
-//    ilload <DirectByteBuffer>
+//    lloadi <DirectByteBuffer>
 //       aload <Buffer>
+//
+// For OffHeap tree can be without an add if accessing the first element of an array:
+// aloadi <contiguousArrayDataAddrField>
+//    aload <address>
+//
 bool
-TR_AddressTree::process(TR::Node * aiaddNode, bool onlyConsiderConstAiaddSecondChild)
+TR_AddressTree::process(TR::Node * elementAddrNode, bool onlyConsiderConstAiaddSecondChild)
    {
    TR::Node * multiplySubTree = NULL;
    bool validAiaddSubTree = false;
 
    _offset = 0;
-   _rootNode = aiaddNode;
+   _rootNode = elementAddrNode;
 
-   TR::ILOpCodes opCodeaiAdd = aiaddNode->getOpCodeValue();
+   TR::ILOpCodes opCodeElementAddr = elementAddrNode->getOpCodeValue();
 
-   if (opCodeaiAdd != TR::aiadd && opCodeaiAdd != TR::aladd)
+   if (opCodeElementAddr != TR::aiadd && opCodeElementAddr != TR::aladd && !elementAddrNode->isDataAddrPointer())
       {
       dumpOptDetails(comp(), "AddressTree: Can not construct an address tree without an address node\n");
       return false;
@@ -197,138 +202,148 @@ TR_AddressTree::process(TR::Node * aiaddNode, bool onlyConsiderConstAiaddSecondC
 
    // Use 'UnconvertedChild' instead of 'Child' below to skip over potential l2i's that can be strewn about for
    // 64-bit sign extension work.
-   TR::Node * aiaddFirstChild = aiaddNode->getFirstChild()->skipConversions();
-   TR::ILOpCodes opCodeAiaddFirstChild = aiaddFirstChild->getOpCodeValue();
-   TR::Node * aiaddSecondChild = aiaddNode->getSecondChild()->skipConversions();
-   TR::ILOpCodes opCodeAiaddSecondChild = aiaddSecondChild->getOpCodeValue();
+   TR::Node * elementAddrFirstChild = elementAddrNode->getFirstChild()->skipConversions();
+   TR::ILOpCodes opCodeElementAddrFirstChild = elementAddrFirstChild->getOpCodeValue();
 
-   if (opCodeAiaddFirstChild == TR::aload || opCodeAiaddFirstChild == TR::aloadi)
+   if (opCodeElementAddrFirstChild == TR::aload || opCodeElementAddrFirstChild == TR::aloadi)
       {
-      _baseVarNode.setParentAndChildNumber(aiaddNode, 0);
-      if ((opCodeAiaddSecondChild == TR::isub || opCodeAiaddSecondChild == TR::lsub ||
-           opCodeAiaddSecondChild == TR::iadd || opCodeAiaddSecondChild == TR::ladd) &&
-         !onlyConsiderConstAiaddSecondChild)
-         {
-         TR::Node * isubFirstChild = aiaddSecondChild->getFirstChild()->skipConversions();
-         TR::ILOpCodes opCodeIsubFirstChild = isubFirstChild->getOpCodeValue();
-         TR::Node * isubSecondChild = aiaddSecondChild->getSecondChild()->skipConversions();
-         TR::ILOpCodes opCodeIsubSecondChild = isubSecondChild->getOpCodeValue();
-
-         // (64-bit, for 32-bit, change the l to i in the opcodes below and remove the i2l...
-         // aladd
-         //   aload
-         //   lsub
-         //     lmul
-         //       i2l
-         //         <index>
-         //       lconst
-         //     lconst
-         if (opCodeIsubSecondChild != TR::iconst && opCodeIsubSecondChild != TR::lconst)
-            {
-            dumpOptDetails(comp(), "AddressTree: i(l)sub second child is not constant\n");
-            }
-         else
-            {
-            if (opCodeIsubFirstChild == TR::imul || opCodeIsubFirstChild == TR::lmul)
-               {
-               multiplySubTree = isubFirstChild;
-               TR::Node * indSymFromSubTree = isubFirstChild->getFirstChild()->skipConversions();
-
-               _multiplyNode.setParentAndChildNumber(aiaddSecondChild, 0);
-               if (indSymFromSubTree->getOpCodeValue() == TR::iload || indSymFromSubTree->getOpCodeValue() == TR::lload)
-                  {
-                  validAiaddSubTree = true;
-                  _indVarNode.setParentAndChildNumber(isubFirstChild, 0);
-                  _indexBaseNode.setParentAndChildNumber(indSymFromSubTree, 0);
-                  }
-               else if (indSymFromSubTree->getOpCodeValue() == TR::iadd || indSymFromSubTree->getOpCodeValue() == TR::ladd)
-                  {
-                  // the following check is safe because there should only be one induction
-                  // variable active for loops we consider, but it does however require that
-                  // the induction variable be the first child, so we will catch a case of:
-                  //   a[indVar + j]
-                  // but not:
-                  //   a[j + indVar]
-                  if (
-                      (indSymFromSubTree->getFirstChild()->getOpCodeValue() == TR::iload || indSymFromSubTree->getFirstChild()->getOpCodeValue() == TR::lload)
-                      &&
-                      (indSymFromSubTree->getSecondChild()->getOpCodeValue() == TR::iload || indSymFromSubTree->getSecondChild()->getOpCodeValue() == TR::lload ||
-                       indSymFromSubTree->getSecondChild()->getOpCodeValue() == TR::iconst || indSymFromSubTree->getSecondChild()->getOpCodeValue() == TR::lconst)
-                     )
-                     {
-                     validAiaddSubTree = true;
-                     _indVarNode.setParentAndChildNumber(indSymFromSubTree, 0);
-                     _indexBaseNode.setParentAndChildNumber(indSymFromSubTree->getFirstChild(), 0);
-                     }
-                  }
-               }
-            else if (isILLoad(isubFirstChild))
-               {
-               _multiplyNode.setParentAndChildNumber(aiaddSecondChild, 0);
-               _indVarNode.setParentAndChildNumber(aiaddSecondChild, 0);
-               _indexBaseNode.setParentAndChildNumber(isubFirstChild, 0);
-               validAiaddSubTree = true;
-               }
-            else if (opCodeIsubFirstChild == TR::iadd || opCodeIsubFirstChild == TR::ladd)
-               {
-               _multiplyNode.setParentAndChildNumber(aiaddSecondChild, 0);
-               validAiaddSubTree = processBaseAndIndex(isubFirstChild);
-               }
-            else
-               {
-               validAiaddSubTree = findComplexAddressGenerationTree(isubFirstChild, comp()->incVisitCount(),  aiaddSecondChild);
-               if (validAiaddSubTree)
-                  _multiplyNode.setParentAndChildNumber(aiaddSecondChild, 0);
-               else
-                  dumpOptDetails(comp(), "AddressTree: i(l)sub children are not i(l)mul or i(l)const\n");
-               }
-
-            if (opCodeIsubSecondChild == TR::iconst)
-               {
-               _offset = (isubSecondChild->getInt());
-               }
-            else
-               {
-               _offset = (isubSecondChild->getLongInt());
-               }
-            if(opCodeAiaddSecondChild == TR::isub || opCodeAiaddSecondChild == TR::lsub)
-               {
-               _offset = -_offset;
-               }
-            }
-         }
-      else if (opCodeAiaddSecondChild == TR::iconst || opCodeAiaddSecondChild == TR::lconst)
+      if (elementAddrNode->isDataAddrPointer()) // Accessing first element of an OffHeap array
          {
          validAiaddSubTree = true;
-         if (opCodeAiaddSecondChild == TR::iconst)
-            {
-            _offset = (aiaddSecondChild->getInt());
-            }
-         else
-            {
-            _offset = (aiaddSecondChild->getLongInt());
-            }
-         }
-      else if ((opCodeAiaddSecondChild == TR::imul || opCodeAiaddSecondChild == TR::lmul) &&
-               !onlyConsiderConstAiaddSecondChild)
-         {
-         validAiaddSubTree = true;
-         multiplySubTree = aiaddSecondChild;
-         }
-      else if (opCodeAiaddSecondChild == TR::iload)
-         {
-         validAiaddSubTree = true;
+         _baseVarNode.setParentAndChildNumber(elementAddrNode, 0);
          _offset = 0;
-         _indexBaseNode.setParentAndChildNumber(aiaddSecondChild, 0);
          }
       else
          {
-         dumpOptDetails(comp(), "AddressTree: second child of aiadd/aladd is not iload/i(l)sub/i(l)mul\n");
+         _baseVarNode.setParentAndChildNumber(elementAddrNode->getFirstChild()->isDataAddrPointer() ? elementAddrNode->getFirstChild() : elementAddrNode, 0);
+         
+         TR::Node * aiaddSecondChild = elementAddrNode->getSecondChild()->skipConversions();
+         TR::ILOpCodes opCodeAiaddSecondChild = aiaddSecondChild->getOpCodeValue();
+         if ((opCodeAiaddSecondChild == TR::isub || opCodeAiaddSecondChild == TR::lsub ||
+            opCodeAiaddSecondChild == TR::iadd || opCodeAiaddSecondChild == TR::ladd) &&
+            !onlyConsiderConstAiaddSecondChild)
+            {
+            TR::Node * isubFirstChild = aiaddSecondChild->getFirstChild()->skipConversions();
+            TR::ILOpCodes opCodeIsubFirstChild = isubFirstChild->getOpCodeValue();
+            TR::Node * isubSecondChild = aiaddSecondChild->getSecondChild()->skipConversions();
+            TR::ILOpCodes opCodeIsubSecondChild = isubSecondChild->getOpCodeValue();
+
+            // (64-bit, for 32-bit, change the l to i in the opcodes below and remove the i2l...
+            // aladd
+            //   aload
+            //   lsub
+            //     lmul
+            //       i2l
+            //         <index>
+            //       lconst
+            //     lconst
+            if (opCodeIsubSecondChild != TR::iconst && opCodeIsubSecondChild != TR::lconst)
+               {
+               dumpOptDetails(comp(), "AddressTree: i(l)sub second child is not constant\n");
+               }
+            else
+               {
+               if (opCodeIsubFirstChild == TR::imul || opCodeIsubFirstChild == TR::lmul)
+                  {
+                  multiplySubTree = isubFirstChild;
+                  TR::Node * indSymFromSubTree = isubFirstChild->getFirstChild()->skipConversions();
+
+                  _multiplyNode.setParentAndChildNumber(aiaddSecondChild, 0);
+                  if (indSymFromSubTree->getOpCodeValue() == TR::iload || indSymFromSubTree->getOpCodeValue() == TR::lload)
+                     {
+                     validAiaddSubTree = true;
+                     _indVarNode.setParentAndChildNumber(isubFirstChild, 0);
+                     _indexBaseNode.setParentAndChildNumber(indSymFromSubTree, 0);
+                     }
+                  else if (indSymFromSubTree->getOpCodeValue() == TR::iadd || indSymFromSubTree->getOpCodeValue() == TR::ladd)
+                     {
+                     // the following check is safe because there should only be one induction
+                     // variable active for loops we consider, but it does however require that
+                     // the induction variable be the first child, so we will catch a case of:
+                     //   a[indVar + j]
+                     // but not:
+                     //   a[j + indVar]
+                     if (
+                        (indSymFromSubTree->getFirstChild()->getOpCodeValue() == TR::iload || indSymFromSubTree->getFirstChild()->getOpCodeValue() == TR::lload)
+                        &&
+                        (indSymFromSubTree->getSecondChild()->getOpCodeValue() == TR::iload || indSymFromSubTree->getSecondChild()->getOpCodeValue() == TR::lload ||
+                        indSymFromSubTree->getSecondChild()->getOpCodeValue() == TR::iconst || indSymFromSubTree->getSecondChild()->getOpCodeValue() == TR::lconst)
+                        )
+                        {
+                        validAiaddSubTree = true;
+                        _indVarNode.setParentAndChildNumber(indSymFromSubTree, 0);
+                        _indexBaseNode.setParentAndChildNumber(indSymFromSubTree->getFirstChild(), 0);
+                        }
+                     }
+                  }
+               else if (isLloadi(isubFirstChild))
+                  {
+                  _multiplyNode.setParentAndChildNumber(aiaddSecondChild, 0);
+                  _indVarNode.setParentAndChildNumber(aiaddSecondChild, 0);
+                  _indexBaseNode.setParentAndChildNumber(isubFirstChild, 0);
+                  validAiaddSubTree = true;
+                  }
+               else if (opCodeIsubFirstChild == TR::iadd || opCodeIsubFirstChild == TR::ladd)
+                  {
+                  _multiplyNode.setParentAndChildNumber(aiaddSecondChild, 0);
+                  validAiaddSubTree = processBaseAndIndex(isubFirstChild);
+                  }
+               else
+                  {
+                  validAiaddSubTree = findComplexAddressGenerationTree(isubFirstChild, comp()->incVisitCount(),  aiaddSecondChild);
+                  if (validAiaddSubTree)
+                     _multiplyNode.setParentAndChildNumber(aiaddSecondChild, 0);
+                  else
+                     dumpOptDetails(comp(), "AddressTree: i(l)sub children are not i(l)mul or i(l)const\n");
+                  }
+
+               if (opCodeIsubSecondChild == TR::iconst)
+                  {
+                  _offset = (isubSecondChild->getInt());
+                  }
+               else
+                  {
+                  _offset = (isubSecondChild->getLongInt());
+                  }
+               if(opCodeAiaddSecondChild == TR::isub || opCodeAiaddSecondChild == TR::lsub)
+                  {
+                  _offset = -_offset;
+                  }
+               }
+            }
+         else if (opCodeAiaddSecondChild == TR::iconst || opCodeAiaddSecondChild == TR::lconst)
+            {
+            validAiaddSubTree = true;
+            if (opCodeAiaddSecondChild == TR::iconst)
+               {
+               _offset = (aiaddSecondChild->getInt());
+               }
+            else
+               {
+               _offset = (aiaddSecondChild->getLongInt());
+               }
+            }
+         else if ((opCodeAiaddSecondChild == TR::imul || opCodeAiaddSecondChild == TR::lmul) &&
+                  !onlyConsiderConstAiaddSecondChild)
+            {
+            validAiaddSubTree = true;
+            multiplySubTree = aiaddSecondChild;
+            }
+         else if (opCodeAiaddSecondChild == TR::iload)
+            {
+            validAiaddSubTree = true;
+            _offset = 0;
+            _indexBaseNode.setParentAndChildNumber(aiaddSecondChild, 0);
+            }
+         else
+            {
+            dumpOptDetails(comp(), "AddressTree: second child of aiadd/aladd is not iload/i(l)sub/i(l)mul\n");
+            }
          }
       }
    else
       {
-      dumpOptDetails(comp(), "AddressTree: first child of aiadd/aladd is not aiload\n");
+      dumpOptDetails(comp(), "AddressTree: base variable is not aiload\n");
       }
 
    if (validAiaddSubTree && (multiplySubTree != NULL))

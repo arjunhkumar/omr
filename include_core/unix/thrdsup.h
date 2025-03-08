@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 #ifndef thrdsup_h
 #define thrdsup_h
@@ -89,6 +89,12 @@ int linux_pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex, c
 intptr_t init_thread_library(void);
 intptr_t set_pthread_priority(pthread_t handle, omrthread_prio_t j9ThreadPriority);
 intptr_t set_pthread_name(pthread_t self, pthread_t thread, const char *name);
+intptr_t sem_init_zos(j9sem_t s, int pShared, int initValue);
+intptr_t sem_destroy_zos(j9sem_t s);
+intptr_t sem_getvalue_zos(j9sem_t s);
+intptr_t sem_trywait_zos(j9sem_t s);
+intptr_t sem_wait_zos(j9sem_t s);
+intptr_t sem_post_zos(j9sem_t s);
 
 extern struct J9ThreadLibrary default_library;
 

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(CONCURRENTGCSATB_HPP_)
@@ -31,6 +31,7 @@
 
 #if defined(OMR_GC_MODRON_CONCURRENT_MARK) && defined(OMR_GC_REALTIME)
 #include "ConcurrentGC.hpp"
+#include "OMRVMInterface.hpp"
 
 /**
  * @todo Provide class documentation
@@ -81,7 +82,15 @@ protected:
 		 * SATB marks all newly allocated objectes during active concurrent cycle.
 		 * Since it's done on TLH granularity we have to flush the current ones and start creating new ones, once the cycle starts.
 		 */
-		return env->acquireExclusiveVMAccessForGC(this, true, true);
+
+		bool didAcquire = env->acquireExclusiveVMAccessForGC(this, true);
+
+		if (didAcquire) {
+			GC_OMRVMInterface::flushCachesForGC(env);
+
+		}
+
+		return didAcquire;
 	}
 
 	void enableSATB(MM_EnvironmentBase *env);

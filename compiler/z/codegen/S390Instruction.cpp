@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <assert.h>
@@ -1165,7 +1165,15 @@ TR::S390ImmInstruction::generateBinaryEncoding()
       //
       void **locationToPatch = (void**)(cursor - (comp->target().is64Bit()?4:0));
       cg()->jitAddPicToPatchOnClassRedefinition(*locationToPatch, locationToPatch);
-      cg()->addExternalRelocation(new (cg()->trHeapMemory()) TR::ExternalRelocation((uint8_t *)locationToPatch, (uint8_t *)*locationToPatch, TR_HCR, cg()), __FILE__,__LINE__, getNode());
+      cg()->addExternalRelocation(
+         TR::ExternalRelocation::create(
+            (uint8_t *)locationToPatch,
+            (uint8_t *)*locationToPatch,
+            TR_HCR,
+            cg()),
+         __FILE__,
+         __LINE__,
+         getNode());
       }
 
    cursor += getOpCode().getInstructionLength();
@@ -1806,6 +1814,51 @@ TR::S390RILInstruction::adjustCallOffsetWithTrampoline(int32_t offset, uint8_t *
    return offsetHalfWords;
    }
 
+void
+TR::S390RILInstruction::addMetaDataForCodeAddress(uint8_t *cursor)
+   {
+   uintptr_t immediateAsAddress = static_cast<uintptr_t>(static_cast<uint32_t>(getSourceImmediate()));  // double cast to zero extend
+   bool is32bit = true;
+   if (isFirstOfAddressPair())
+      {
+      immediateAsAddress |= static_cast<uintptr_t>(toS390RILInstruction(getNext())->getSourceImmediate()) << 32;
+      is32bit = false;
+      }
+
+   TR::Compilation *comp = cg()->comp();
+
+   if (std::find(comp->getStaticHCRPICSites()->begin(), comp->getStaticHCRPICSites()->end(), this) != comp->getStaticHCRPICSites()->end())
+      {
+      if (is32bit)
+         cg()->jitAdd32BitPicToPatchOnClassRedefinition(reinterpret_cast<void*>(immediateAsAddress), static_cast<void*>(cursor));
+      else
+         cg()->jitAddPicToPatchOnClassRedefinition(reinterpret_cast<void*>(immediateAsAddress), static_cast<void*>(cursor));
+      cg()->addExternalRelocation(new (cg()->trHeapMemory()) TR::ExternalRelocation(cursor, reinterpret_cast<uint8_t*>(immediateAsAddress), TR_HCR, cg()), __FILE__,__LINE__, getNode());
+      }
+
+   if (std::find(comp->getStaticPICSites()->begin(), comp->getStaticPICSites()->end(), this) != comp->getStaticPICSites()->end())
+      {
+      if (immediateAsAddress && !TR::Compiler->cls.sameClassLoaders(comp, reinterpret_cast<TR_OpaqueClassBlock*>(immediateAsAddress), comp->getCurrentMethod()->classOfMethod()))
+         {
+         if (is32bit)
+            cg()->jitAdd32BitPicToPatchOnClassUnload(reinterpret_cast<void*>(immediateAsAddress), static_cast<void*>(cursor));
+         else
+            cg()->jitAddPicToPatchOnClassUnload(reinterpret_cast<void*>(immediateAsAddress), static_cast<void*>(cursor));
+         }
+      }
+   else if (std::find(comp->getStaticMethodPICSites()->begin(), comp->getStaticMethodPICSites()->end(), this) != comp->getStaticMethodPICSites()->end())
+      {
+      void *methodClass = cg()->fe()->createResolvedMethod(cg()->trMemory(), reinterpret_cast<TR_OpaqueMethodBlock*>(immediateAsAddress), comp->getCurrentMethod())->classOfMethod();
+      if (methodClass != NULL && !TR::Compiler->cls.sameClassLoaders(comp, static_cast<TR_OpaqueClassBlock*>(methodClass), comp->getCurrentMethod()->classOfMethod()))
+         {
+         if (is32bit)
+            cg()->jitAdd32BitPicToPatchOnClassUnload(methodClass, static_cast<void*>(cursor));
+         else
+            cg()->jitAddPicToPatchOnClassUnload(methodClass, static_cast<void*>(cursor));
+         }
+      }
+   }
+
 uint8_t *
 TR::S390RILInstruction::generateBinaryEncoding()
    {
@@ -2296,6 +2349,7 @@ TR::S390RILInstruction::generateBinaryEncoding()
       // LL: Verify extended immediate instruction length must be 6
       TR_ASSERT( getOpCode().getInstructionLength()==6, "Extended immediate instruction must be length of 6\n");
       (*(int32_t *) (cursor + 2)) |= boi((int32_t) getSourceImmediate());
+      addMetaDataForCodeAddress(cursor+2);
 
       cursor += getOpCode().getInstructionLength();
       }
@@ -2373,7 +2427,7 @@ TR::S390RSInstruction::generateBinaryEncoding()
       (*(int16_t *) (cursor + 2)) |= (0xFFF & bos(getSourceImmediate()));
       if (getKind() == TR::Instruction::IsRSY)
          {
-         (*(int8_t *) (cursor + 3)) |= (bos(getSourceImmediate() >> 12));
+         (*(int8_t *) (cursor + 4)) |= (bos(getSourceImmediate() >> 12));
          }
       }
 
@@ -3714,6 +3768,59 @@ TR::S390VRIiInstruction::generateBinaryEncoding()
 
    // Masks
    setMaskField(reinterpret_cast<uint32_t *>(cursor), getM4(), 1);
+
+   return postGenerateBinaryEncoding(cursor);
+   }
+
+/** \details
+ *
+ * VRI-k generate binary encoding for VRI-k instruction format
+ */
+uint8_t *
+TR::S390VRIkInstruction::generateBinaryEncoding()
+   {
+   // Error Checking
+   TR_ASSERT(getRegisterOperand(1) != NULL, "First Operand should not be NULL!");
+   TR_ASSERT(getRegisterOperand(2) != NULL, "2nd Operand should not be NULL!");
+   TR_ASSERT(getRegisterOperand(3) != NULL, "3rd Operand should not be NULL!");
+   TR_ASSERT(getRegisterOperand(4) != NULL, "4th Operand should not be NULL!");
+
+   // Generate Binary Encoding
+   uint8_t* cursor = preGenerateBinaryEncoding();
+
+   // The Immediate field
+   *(cursor + 3) |= getImmediateField5();
+
+   // Operands
+   toRealRegister(getRegisterOperand(1))->setRegister1Field(reinterpret_cast<uint32_t*>(cursor));
+   toRealRegister(getRegisterOperand(2))->setRegister2Field(reinterpret_cast<uint32_t*>(cursor));
+   toRealRegister(getRegisterOperand(3))->setRegister3Field(reinterpret_cast<uint32_t*>(cursor));
+   toRealRegister(getRegisterOperand(4))->setRegister4Field(reinterpret_cast<uint32_t*>(cursor));
+
+   return postGenerateBinaryEncoding(cursor);
+   }
+
+/** \details
+ *
+ * VRI-l generate binary encoding for VRI-l instruction format
+ */
+uint8_t *
+TR::S390VRIlInstruction::generateBinaryEncoding()
+   {
+   // Error Checking
+   TR_ASSERT(getRegisterOperand(1) != NULL, "First Operand should not be NULL!");
+   TR_ASSERT(getRegisterOperand(2) != NULL, "2nd Operand should not be NULL!");
+
+   // Generate Binary Encoding
+   uint8_t* cursor = preGenerateBinaryEncoding();
+
+   // The Immediate field
+   *(reinterpret_cast<uint32_t*>(cursor + 2)) |= static_cast<uint32_t>(getImmediateField3()) << 12;
+
+   // Operands
+   // First and second register operands for VRI-l map to second and third register fields
+   toRealRegister(getRegisterOperand(1))->setRegister2Field(reinterpret_cast<uint32_t*>(cursor));
+   toRealRegister(getRegisterOperand(2))->setRegister3Field(reinterpret_cast<uint32_t*>(cursor));
 
    return postGenerateBinaryEncoding(cursor);
    }

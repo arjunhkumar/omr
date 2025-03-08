@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "JitTest.hpp"
@@ -773,8 +773,6 @@ TEST_F(VectorTest, VInt8BitSelect) {
     SKIP_ON_S390(KnownBug) << "This test is currently disabled on Z platforms because not all Z platforms have vector support (issue #1843)";
     SKIP_ON_S390X(KnownBug) << "This test is currently disabled on Z platforms because not all Z platforms have vector support (issue #1843)";
     SKIP_ON_RISCV(MissingImplementation);
-    SKIP_ON_X86(MissingImplementation);
-    SKIP_ON_HAMMER(MissingImplementation);
 
     Tril::DefaultCompiler compiler(trees);
     ASSERT_EQ(0, compiler.compile()) << "Compilation failed unexpectedly\n" << "Input trees: " << inputTrees;
@@ -1099,4 +1097,23 @@ INSTANTIATE_TEST_CASE_P(Long128ReductionTest, BinaryDataDriven128Int64Test, ::te
     std::make_tuple(TR::vreductionMin, BinaryLongTest { { 9223372036854775801 }, { 9223372036854775801, 9223372036854775804}, {}, }),
     std::make_tuple(TR::vreductionMax, BinaryLongTest { { 100 }, { 100, -100}, {}, }),
     std::make_tuple(TR::vreductionMax, BinaryLongTest { { 9223372036854775804 }, { 9223372036854775801, 9223372036854775804}, {}, })
+)));
+
+INSTANTIATE_TEST_CASE_P(Short128ShiftRotateTest, BinaryDataDriven128Int16Test, ::testing::ValuesIn(*TRTest::MakeVector<std::tuple<TR::VectorOperation, BinaryShortTest>>(
+    std::make_tuple(TR::vshl, BinaryShortTest { { 2, 2, 16, 0 }, { 1, 2, 4, 5}, { 1, 0, 2, 70}, }),
+    std::make_tuple(TR::vshr, BinaryShortTest { { 1, 4, 0, 4 },  { 2, 4, 8, 9}, { 1, 0, 10, 1 }, }),
+    std::make_tuple(TR::vrol, BinaryShortTest { { 7, 4, 8, 8193 },  { 0x7000, 4, 8, 9}, { 4, 0, 16, -3 }, })
+)));
+
+INSTANTIATE_TEST_CASE_P(Int128ShiftRotateTest, BinaryDataDriven128Int32Test, ::testing::ValuesIn(*TRTest::MakeVector<std::tuple<TR::VectorOperation, BinaryIntTest>>(
+    std::make_tuple(TR::vshl, BinaryIntTest { { 2, 2, 16, 0 }, { 1, 2, 4, 5}, { 1, 0, 2, 70}, }),
+    std::make_tuple(TR::vshr, BinaryIntTest { { 1, 4, 0, 4 },  { 2, 4, 8, 9}, { 1, 0, 10, 1 }, }),
+    std::make_tuple(TR::vrol, BinaryIntTest { { 7, 4, 8, 536870913 }, { 0x70000000, 4, 8, 9}, { 4, 0, 32, -3 }, })
+)));
+
+INSTANTIATE_TEST_CASE_P(Long128ShiftRotateTest, BinaryDataDriven128Int64Test, ::testing::ValuesIn(*TRTest::MakeVector<std::tuple<TR::VectorOperation, BinaryLongTest>>(
+    std::make_tuple(TR::vshl, BinaryLongTest { { 2, 2, 16, 0 }, { 1, 2, 4, 5}, { 1, 0, 2, 70}, }),
+    std::make_tuple(TR::vshr, BinaryLongTest { { 1, 4, 0, 4 },  { 2, 4, 8, 9}, { 1, 0, 10, 1 }, }),
+    std::make_tuple(TR::vrol, BinaryLongTest { { 30064771072, 4 }, { 0x70000000, 4}, { 4, 0 }, }),
+    std::make_tuple(TR::vrol, BinaryLongTest { { 8, 2305843009213693953 }, { 8, 9}, { 64, -3 }, })
 )));

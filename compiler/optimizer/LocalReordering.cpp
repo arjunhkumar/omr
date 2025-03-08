@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/LocalReordering.hpp"
@@ -357,6 +357,7 @@ void TR_LocalReordering::moveStoresEarlierIfRhsAnchored(TR::Block *block, TR::Tr
        !node->getOpCode().isTreeTop() &&
        !node->getOpCode().isCall() &&
        (node->getOpCodeValue() != TR::New) &&
+       (node->getOpCodeValue() != TR::newvalue) &&
        (node->getOpCodeValue() != TR::newarray) &&
        (node->getOpCodeValue() != TR::anewarray) &&
        (node->getOpCodeValue() != TR::multianewarray) &&
@@ -406,11 +407,9 @@ bool TR_LocalReordering::insertEarlierIfPossible(TR::TreeTop *storeTree, TR::Tre
       else
         stopHere = isAnySymInDefinedBy(currentNode, visitCount2);
 
-      if (!stopHere)
-   {
-   if (currentNode->getOpCode().isCheckCast()) // Moving a store earlier than a checkcast usually results in suboptimal type info (because of the way store constraints work, they only pick up the type info when the store was encountered)
-      stopHere = true;
-   }
+      // Moving a node earlier than a check may have unforeseeable consequences as sophisticated optimizations like global vp can perform transformations based on value numbers.
+      if (!stopHere && currentNode->getOpCode().isCheck())
+         stopHere = true;
 
       if (stopHere)
          {
@@ -429,7 +428,7 @@ bool TR_LocalReordering::insertEarlierIfPossible(TR::TreeTop *storeTree, TR::Tre
             storeTree->setPrevTreeTop(currentTree);
             storeTree->setNextTreeTop(nextTree);
             nextTree->setPrevTreeTop(storeTree);
-      }
+            }
          foundInsertionSpot = true;
          break;
          }

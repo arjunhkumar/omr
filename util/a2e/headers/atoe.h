@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*
@@ -36,7 +36,9 @@
 extern "C" {
 #endif /* __cplusplus */
 /* CMVC 162573 include the header file that includes the prototype for malloc used in functions/macros below*/
-	#include <stdlib.h>
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <sys/types.h>
 
     #pragma map(sysTranslateASM, "SYSXLATE")
     extern char* sysTranslateASM(const char *source, int length, char *trtable, char* xlate_buf);
@@ -55,18 +57,19 @@ extern "C" {
         extern char e2a_tab[CONV_TABLE_SIZE];
     #endif
 
-      #define a2e(str, len) sysTranslate(str, abs(len), a2e_tab, (char *)malloc(abs(len)+1)) /*ibm@41269*/
-      #define e2a(str, len) sysTranslate(str, abs(len), e2a_tab, (char *)malloc(abs(len)+1)) /*ibm@41269*/
+      #define a2e(str, len) sysTranslate(str, abs(len), a2e_tab, (char *)malloc(abs(len) + 1)) /*ibm@41269*/
+      #define e2a(str, len) sysTranslate(str, abs(len), e2a_tab, (char *)malloc(abs(len) + 1)) /*ibm@41269*/
 
-      #define a2e_string(str) sysTranslate(str, strlen(str), a2e_tab, (char *)malloc(strlen(str)+1)) /*ibm@41269*/
-      #define e2a_string(str) sysTranslate(str, strlen(str), e2a_tab, (char *)malloc(strlen(str)+1)) /*ibm@41269*/
+      #define a2e_string(str) ((NULL == str) ? NULL : sysTranslate(str, strlen(str), a2e_tab, (char *)malloc(strlen(str) + 1))) /*ibm@41269*/
+      #define e2a_string(str) ((NULL == str) ? NULL : sysTranslate(str, strlen(str), e2a_tab, (char *)malloc(strlen(str) + 1))) /*ibm@41269*/
 
     char *a2e_func(char *str, int len);    /*ibm@1423*/
     char *e2a_func(char *str, int len);    /*ibm@3218*/
 
     void atoe_enableFileTagging(void);
     void atoe_setFileTaggingCcsid(void *pccsid);
-    int  atoe_open_notag(const char *fname, int options, ...);
+    int atoe_open_notag(const char *fname, int options, ...);
+    struct passwd *etoa_passwd(struct passwd *e_passwd);
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

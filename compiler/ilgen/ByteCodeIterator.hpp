@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef BYTECODEITERATOR_INCL
@@ -46,7 +46,7 @@ public:
       {
       void *operator new(size_t s, void *p) { return p; }
 
-      TryCatchInfo(uint16_t s, uint16_t e, uint16_t h, uint32_t c) :
+      TryCatchInfo(int32_t s, int32_t e, int32_t h, uint32_t c) :
          _startIndex(s),
          _endIndex(e),
          _handlerIndex(h),
@@ -57,7 +57,7 @@ public:
          {
          }
 
-      void initialize(uint16_t s, uint16_t e, uint16_t h, uint32_t c)
+      void initialize(int32_t s, int32_t e, int32_t h, uint32_t c)
          {
          _startIndex = s;
          _endIndex = e;
@@ -70,9 +70,9 @@ public:
          return _handlerIndex == o._handlerIndex && _catchType == o._catchType;
          }
 
-      uint16_t      _startIndex;
-      uint16_t      _endIndex;
-      uint16_t      _handlerIndex;
+      int32_t       _startIndex;
+      int32_t       _endIndex;
+      int32_t       _handlerIndex;
       uint32_t      _catchType;
       TR::Block    * _firstBlock;
       TR::Block    * _lastBlock;

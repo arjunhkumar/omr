@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <pthread.h>
@@ -65,13 +65,6 @@ intptr_t init_thread_library(void);
 #ifdef J9ZOS390
 static intptr_t zos_init_yielding(void);
 #endif
-intptr_t sem_getvalue_zos(j9sem_t s);
-intptr_t sem_init_zos(j9sem_t s, int pShared, int initValue);
-void call_omrthread_init(void);
-intptr_t sem_destroy_zos(j9sem_t s);
-intptr_t sem_wait_zos(j9sem_t s);
-intptr_t sem_trywait_zos(j9sem_t s);
-intptr_t sem_post_zos(j9sem_t s);
 
 #if defined (OMRZTPF)
 void  ztpf_init_proc(void);

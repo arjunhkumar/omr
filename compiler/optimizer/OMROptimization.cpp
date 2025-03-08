@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/Optimization.hpp"
@@ -221,10 +221,12 @@ OMR::Optimization::anchorChildren(TR::Node *node, TR::TreeTop* anchorTree, uint3
 
    if (!hasCommonedAncestor)
       {
-      if (self()->trace())
-         traceMsg(self()->comp(),"set hasCommonedAncestor = true as %s %p has refCount %d > 1\n",
-            node->getOpCode().getName(),node,node->getReferenceCount());
       hasCommonedAncestor = (node->getReferenceCount() > 1);
+      if (self()->trace())
+         traceMsg(self()->comp(),"set hasCommonedAncestor = %s as %s %p has refCount %d %s 1\n",
+            hasCommonedAncestor ? "true" : "false",
+            node->getOpCode().getName(),node,node->getReferenceCount(),
+            hasCommonedAncestor ? ">" : "<=");
       }
 
    for (int j = node->getNumChildren()-1; j >= 0; --j)
@@ -274,7 +276,6 @@ OMR::Optimization::anchorNode(TR::Node *node, TR::TreeTop* anchorTree)
       }
    }
 
-extern void createGuardSiteForRemovedGuard(TR::Compilation *comp, TR::Node* ifNode);
 /**
  * Folds a given if in IL. This method does NOT update CFG
  * The callers should handle any updates to CFG or call
@@ -287,11 +288,6 @@ OMR::Optimization::removeOrconvertIfToGoto(TR::Node* &node, TR::Block* block, in
    // it altogether.
    // In either case the CFG must be updated to reflect the change.
    //
-
-#ifdef J9_PROJECT_SPECIFIC
-   // doesn't matter taken or untaken, if it's a profiled guard we need to make sure the AOT relocation is created
-   createGuardSiteForRemovedGuard(self()->comp(), node);
-#endif
 
    node->setVirtualGuardInfo(NULL, self()->comp());
 

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "runtime/CodeCacheManager.hpp"
@@ -222,7 +222,14 @@ OMR::CodeCacheManager::destroy()
                                 _symbolContainer->_totalSymbolNameLength),
                               "Failed to write code cache symbols to relocatable ELF file.");
       }
+
    }
+
+   if (_symbolContainer)
+      {
+      self()->freeMemory(_symbolContainer);
+      _symbolContainer = NULL;
+      }
 #endif // HOST_OS == OMR_LINUX
 
    TR::CodeCache *codeCache = self()->getFirstCodeCache();
@@ -238,6 +245,10 @@ OMR::CodeCacheManager::destroy()
       {
       self()->freeCodeCacheSegment(_codeCacheRepositorySegment);
       }
+
+   TR::Monitor::destroy(_usageMonitor);
+   TR::Monitor::destroy(_codeCacheList._mutex);
+   TR::Monitor::destroy(_codeCacheRepositoryMonitor);
 
    _initialized = false;
    }
@@ -1033,6 +1044,11 @@ OMR::CodeCacheManager::decreaseFreeSpaceInCodeCacheRepository(size_t size)
       }
    }
 
+bool
+OMR::CodeCacheManager::isSufficientPhysicalMemoryAvailableForAllocation(size_t requestedCodeCacheSize)
+   {
+   return true;
+   }
 
 TR::CodeCacheMemorySegment *
 OMR::CodeCacheManager::carveCodeCacheSpaceFromRepository(size_t segmentSize,
@@ -1041,6 +1057,7 @@ OMR::CodeCacheManager::carveCodeCacheSpaceFromRepository(size_t segmentSize,
    uint8_t* start = NULL;
    uint8_t* end = NULL;
    size_t freeSpace = 0;
+   bool shouldAllowCarving;
 
    TR::CodeCacheMemorySegment *repositorySegment = _codeCacheRepositorySegment;
 
@@ -1059,8 +1076,9 @@ OMR::CodeCacheManager::carveCodeCacheSpaceFromRepository(size_t segmentSize,
       if (repositorySegment->segmentAlloc() - repositorySegment->segmentBase() == sizeof(TR::CodeCache *))
          codeCacheSizeToAllocate -= sizeof(TR::CodeCache*);
 
+      shouldAllowCarving = self()->isSufficientPhysicalMemoryAvailableForAllocation(codeCacheSizeToAllocate);
       freeSpace = repositorySegment->segmentTop() - repositorySegment->segmentAlloc();
-      if (freeSpace >= codeCacheSizeToAllocate)
+      if (freeSpace >= codeCacheSizeToAllocate && shouldAllowCarving)
          {
          // buy the space
          start = repositorySegment->segmentAlloc();
@@ -1069,14 +1087,16 @@ OMR::CodeCacheManager::carveCodeCacheSpaceFromRepository(size_t segmentSize,
          }
       }
 
-   if (config.verboseCodeCache())
+   if (start)
       {
-      if (start)
+      if (config.verboseCodeCache())
          TR_VerboseLog::writeLineLocked(TR_Vlog_CODECACHE, "carved size=%u range: " POINTER_PRINTF_FORMAT "-" POINTER_PRINTF_FORMAT,
                   codeCacheSizeToAllocate, start, end);
-      else
-         TR_VerboseLog::writeLineLocked(TR_Vlog_FAILURE, "failed to carve size=%lu. Free space = %u",
-                  codeCacheSizeToAllocate, freeSpace);
+      }
+   else
+      {
+      if (config.verboseCodeCache() || config.verbosePerformance())
+         TR_VerboseLog::writeLineLocked(TR_Vlog_FAILURE, "failed to carve code cache of size=%zu from the repository. Free space in code cache repository= %zu. isSufficientPhysicalMemoryAvailableForAllocation = %s", codeCacheSizeToAllocate, freeSpace, shouldAllowCarving? "true":"false");
       }
 
    if (start)

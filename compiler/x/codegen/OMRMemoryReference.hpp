@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_X86_MEMORY_REFERENCE_INCL
@@ -402,9 +402,14 @@ class OMR_EXTENSIBLE MemoryReference : public OMR::MemoryReference
          //
          TR::Register *baseRegister;
          if (toRealRegister(_baseRegister)->getRegisterNumber() == TR::RealRegister::vfp)
+            {
             baseRegister = toRealRegister(_baseRegister)->getAssignedRealRegister();
+            TR_ASSERT_FATAL(baseRegister, "virtual frame pointer must be assigned before binary encoding!\n");
+            }
          else
+            {
             baseRegister = _baseRegister;
+            }
          rxbBits |= toRealRegister(baseRegister)->rexBits(TR::RealRegister::REX_B, false);
          }
       if (_indexRegister)

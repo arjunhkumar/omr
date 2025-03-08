@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if defined(OMR_OS_WINDOWS)
@@ -57,7 +57,7 @@ typedef iconv_t charconvState_t;
 typedef void *charconvState_t; /*dummy type */
 #endif /* defined(LINUX) || defined(AIXPPC) || defined(J9ZOS390) || defined(OSX) */
 
-/* for sprintf, which is used for printing floats */
+/* for snprintf, which is used for printing floats */
 #include <stdio.h>
 
 #include "omrutil.h"
@@ -1084,7 +1084,7 @@ writeDoubleToBuffer(char *buf, uintptr_t bufLen, uint64_t width, uint64_t precis
 	*formatCursor++ = type;
 	*formatCursor = '\0';
 
-	sprintf(tempBuf, format, value);
+	snprintf(tempBuf, sizeof(tempBuf), format, value);
 
 	if (buf) {
 		strncpy(buf, tempBuf, bufLen);

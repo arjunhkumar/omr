@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdlib.h>
@@ -1256,6 +1256,9 @@ getProcessorInfo(void)
 		} else if (0 == strcmp(osarch, OMRPORT_ARCH_RISCV)) {
 			ret->architecture = UT_RISCV;
 			ret->procInfo.subtype = UT_RV64G;
+		} else if (0 == strcmp(osarch, OMRPORT_ARCH_AARCH64)) {
+			ret->architecture = UT_AARCH64;
+			ret->procInfo.subtype = UT_ARMV8A;
 		} else {
 			ret->architecture = UT_UNKNOWN;
 		}

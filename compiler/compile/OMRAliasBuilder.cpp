@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "compile/AliasBuilder.hpp"
@@ -47,7 +47,6 @@ OMR::AliasBuilder::AliasBuilder(TR::SymbolReferenceTable *symRefTab, size_t size
      _arrayElementSymRefs(TR::NumAllTypes, c->trMemory(), heapAlloc, growable),
      _arrayletElementSymRefs(TR::NumAllTypes, c->trMemory(), heapAlloc, growable),
      _unsafeSymRefNumbers(sizeHint, c->trMemory(), heapAlloc, growable),
-     _unsafeArrayElementSymRefs(sizeHint, c->trMemory(), heapAlloc, growable),
      _gcSafePointSymRefNumbers(sizeHint, c->trMemory(), heapAlloc, growable),
      _cpConstantSymRefs(sizeHint, c->trMemory(), heapAlloc, growable),
      _cpSymRefs(sizeHint, c->trMemory(), heapAlloc, growable),
@@ -128,7 +127,6 @@ OMR::AliasBuilder::createAliasInfo()
    nonIntPrimitiveStaticSymRefs().pack();
    methodSymRefs().pack();
    unsafeSymRefNumbers().pack();
-   unsafeArrayElementSymRefs().pack();
    gcSafePointSymRefNumbers().pack();
 
    setCatchLocalUseSymRefs();

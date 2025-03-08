@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 // ***************************************************************************
@@ -41,9 +41,11 @@
 #include "control/Recompilation.hpp"
 #include "cs2/hashtab.h"
 #include "env/CompilerEnv.hpp"
+#include "env/IO.hpp"
+#include "env/jittypes.h"
 #include "env/ObjectModel.hpp"
 #include "env/TRMemory.hpp"
-#include "env/jittypes.h"
+#include "env/TypeLayout.hpp"
 #include "optimizer/TransformUtil.hpp"
 #include "il/Block.hpp"
 #include "il/DataTypes.hpp"
@@ -83,7 +85,6 @@
 #include "optimizer/LocalValuePropagation.hpp"
 #include "ras/Debug.hpp"
 #include "ras/DebugCounter.hpp"
-#include "env/IO.hpp"
 
 #ifdef J9_PROJECT_SPECIFIC
 #include "env/VMJ9.h"
@@ -127,6 +128,7 @@ OMR::ValuePropagation::ValuePropagation(TR::OptimizationManager *manager)
      _referenceArrayCopyTrees(trMemory()),
      _needRunTimeCheckArrayCopy(trMemory()),
      _needMultiLeafArrayCopy(trMemory()),
+     _needRuntimeTestNullRestrictedArrayCopy(trMemory()),
      _arrayCopySpineCheck(trMemory()),
      _multiLeafCallsToInline(trMemory()),
      _converterCalls(trMemory()),
@@ -364,8 +366,6 @@ void OMR::ValuePropagation::initialize()
          _startEBB = NULL;
          }
       }
-
-     _unsafeArrayAccessNodes = new (trStackMemory()) TR_BitVector(comp()->getNodeCount(), trMemory(), stackAlloc, growable);
    }
 
 OMR::ValuePropagation::Relationship *OMR::ValuePropagation::copyRelationships(Relationship *first)
@@ -846,6 +846,11 @@ TR::Node* generateLenForArrayCopy(TR::Compilation *comp, int32_t elementSize, TR
          stride = TR::TransformUtil::generateArrayElementShiftAmountTrees(comp, srcObjNode);
 #endif
 
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+      if (TR::Compiler->om.isOffHeapAllocationEnabled())
+         len = TR::TransformUtil::generateConvertArrayElementIndexToOffsetTrees(comp, copyLenNode, stride, elementSize, true);
+      else
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
       if (is64BitTarget)
          {
          if (stride->getType().isInt32())
@@ -864,6 +869,11 @@ TR::Node* generateLenForArrayCopy(TR::Compilation *comp, int32_t elementSize, TR
       }
    else
       {
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+      if (TR::Compiler->om.isOffHeapAllocationEnabled())
+         len = TR::TransformUtil::generateConvertArrayElementIndexToOffsetTrees(comp, copyLenNode, stride, elementSize, false);
+      else
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
       if (is64BitTarget)
          {
          if (!stride)
@@ -964,6 +974,13 @@ void OMR::ValuePropagation::transformArrayCopyCall(TR::Node *node)
    bool needSameLeafCheckForDst = false;
    bool isMultiLeafArrayCopy = false;
    bool isRecognizedMultiLeafArrayCopy = false;
+
+   bool doRuntimeNullRestrictedTest = false;
+   bool needRuntimeTestDstArray = true; // needRuntimeTestDstArray is used only if doRuntimeNullRestrictedTest is true
+   bool areBothArraysFlattenedNullRestrictedArray = false;
+   bool isValueTypeArrayFlatteningEnabled = TR::Compiler->om.isValueTypeArrayFlatteningEnabled();
+   TR_YesNoMaybe isDstArrayNullRestricted = TR_no;
+   TR_YesNoMaybe isSrcArrayNullRestricted = TR_no;
 
    if (trace() && comp()->generateArraylets())
       traceMsg(comp(), "Detected arraylet arraycopy: %p\n", node);
@@ -1086,7 +1103,7 @@ void OMR::ValuePropagation::transformArrayCopyCall(TR::Node *node)
           !comp()->getOption(TR_DisableMultiLeafArrayCopy))
          {
          TR_ResolvedMethod *caller = node->getSymbolReference()->getOwningMethod(comp());
-         char *sig = "multiLeafArrayCopy";
+         const char *sig = "multiLeafArrayCopy";
          if (caller && strncmp(caller->nameChars(), sig, strlen(sig)) == 0)
             {
             if (trace())
@@ -1281,6 +1298,130 @@ void OMR::ValuePropagation::transformArrayCopyCall(TR::Node *node)
                }
             }
          }
+
+      if (trace())
+         {
+         traceMsg(comp(), "%s: n%dn %p transformTheCall %d referenceArray1 %d referenceArray2 %d primitiveArray1 %d primitiveArray2 %d primitiveTransform %d referenceTransform %d\n", __FUNCTION__,
+            node->getGlobalIndex(), node, transformTheCall,
+            referenceArray1, referenceArray2, primitiveArray1, primitiveArray2, primitiveTransform, referenceTransform);
+         traceMsg(comp(), "%s: n%dn %p transformTheCall %d areFlattenableValueTypesEnabled %d srcObjNode n%dn %p dstObjNode n%dn %p srcVN %d dstVN %d\n", __FUNCTION__,
+            node->getGlobalIndex(), node, transformTheCall, TR::Compiler->om.areFlattenableValueTypesEnabled(),
+            srcObjNode->getGlobalIndex(), srcObjNode, dstObjNode->getGlobalIndex(), dstObjNode, srcVN, dstVN);
+         }
+
+      static char *disableNullRestrictedArrayCopyXForm = feGetEnv("TR_DisableNullRestrictedArraycopyXForm");
+
+      // JEP 401: If null-restricted value type is enabled, we need to preform null check on the value being stored
+      // in order to throw a NullPointerException if the array is null-restricted and the value to write is null.
+      // If it is this case, System.arraycopy cannot be transformed into arraycopy instructions.
+      //
+      if (transformTheCall &&
+          TR::Compiler->om.areFlattenableValueTypesEnabled() &&  // Null restricted value type is enabled
+          !disableNullRestrictedArrayCopyXForm &&
+          !isStringCompressedArrayCopy &&
+          !isStringDecompressedArrayCopy &&
+          !primitiveArray1 &&
+          !primitiveArray2 &&
+          (copyLen != _constantZeroConstraint)) // Not zero length copy
+         {
+         isDstArrayNullRestricted = isArrayNullRestricted(dstObject);
+         isSrcArrayNullRestricted = isArrayNullRestricted(srcObject);
+
+         switch (isDstArrayNullRestricted)
+            {
+            case TR_yes:
+               {
+               if (isSrcArrayNullRestricted == TR_yes)
+                  {
+                  // Array flattening is not enabled
+                  //    - If both source and destination arrays are null-restricted, they don't contain
+                  //      NULL value. There is no need to check null store
+                  //    - Also because flattening is not enabled, we don't need to concern about copying
+                  //      between flattened arrays
+                  //
+                  // Array flattening is enabled
+                  //    - If both source and destination arrays are null-restricted
+                  //        - (1) Both arrays are not flattened, there is no need to do anything
+                  //        - (2) Both arrays are flattened, elementSize needs to be updated in order to
+                  //          use arraycopy instructions
+                  //        - (3) Either of the arrays might or might be flattened, System.arraycopy
+                  //          should not be transformed into arraycopy instructions.
+                  //
+                  if (isValueTypeArrayFlatteningEnabled)
+                     {
+                     if (trace())
+                        traceMsg(comp(), "%s: n%dn %p isArrayElementFlattened dst %d src %d\n", __FUNCTION__, node->getGlobalIndex(), node,
+                           isArrayElementFlattened(dstObject), isArrayElementFlattened(srcObject));
+
+                     if ((isArrayElementFlattened(dstObject) == TR_yes) &&
+                         (isArrayElementFlattened(srcObject) == TR_yes))
+                        {
+                        areBothArraysFlattenedNullRestrictedArray = true;
+                        elementSize = TR::Compiler->cls.flattenedArrayElementSize(comp(), dstObject->getClass());
+
+                        if (trace())
+                           traceMsg(comp(), "%s: n%dn %p elementSize %d\n", __FUNCTION__, node->getGlobalIndex(), node, elementSize);
+                        }
+                     else if ((isArrayElementFlattened(dstObject) != TR_no) ||
+                              (isArrayElementFlattened(srcObject) != TR_no))
+                        {
+                        transformTheCall = false;
+                        }
+                     }
+                  }
+               else // isSrcArrayNullRestricted == TR_no or TR_maybe
+                  {
+                  // The destination is null-restricted array and the source might or might not
+                  // be null-restricted array, do not transform because we need to do null store check and
+                  // consider if the arrays are flattened
+                  transformTheCall = false;
+                  }
+               break;
+               }
+            case TR_maybe:
+               {
+               // If the destination array might or might not be null-restricted array at compile time,
+               // runtime tests are required regardless of the source array type.
+               doRuntimeNullRestrictedTest = true;
+               break;
+               }
+            default: // TR_no == isDstArrayNullRestricted
+               {
+               if (isValueTypeArrayFlatteningEnabled)
+                  {
+                  if (isSrcArrayNullRestricted == TR_yes)
+                     {
+                     if (isArrayElementFlattened(srcObject) == TR_yes)
+                        {
+                        if (trace())
+                           traceMsg(comp(), "%s: n%dn %p dst array is identity type and source array is flattened VT array\n", __FUNCTION__, node->getGlobalIndex(), node);
+
+                        transformTheCall = false;
+                        }
+                     // else: As long as the source array is not flattened, no need to do anything here
+                     }
+                  else if (isSrcArrayNullRestricted == TR_maybe)
+                     {
+                     // The source might or might not be a null-restricted array. If it is null-restricted array that is flattened,
+                     // the arraycopy instruction cannot handle copying from flattened array into non-flattened array since the
+                     // destination array is identity type. Need to add runtime check here
+                     doRuntimeNullRestrictedTest = true;
+                     // We already know the destination array is identity type. No need to insert runtime test here
+                     needRuntimeTestDstArray = false;
+                     }
+                  // else: isSrcArrayNullRestricted == TR_no, both destination and source arrays are
+                  // identity arrays. No need to do anything here
+                  }
+               // else: As long as array flattening is not enabled, no need to do anything here
+               break;
+               }
+            }
+         }
+
+      if (trace())
+         traceMsg(comp(), "%s: n%dn %p transformTheCall %d isSrcArrayNullRestricted %s isDstArrayNullRestricted %s doRuntimeNullRestrictedTest %d\n", __FUNCTION__,
+            node->getGlobalIndex(), node, transformTheCall, comp()->getDebug()->getName(isSrcArrayNullRestricted),
+            comp()->getDebug()->getName(isDstArrayNullRestricted), doRuntimeNullRestrictedTest);
       }
 #else
    bool isStringCompressedArrayCopy = false;
@@ -1290,6 +1431,145 @@ void OMR::ValuePropagation::transformArrayCopyCall(TR::Node *node)
    if (transformTheCall && performTransformation(comp(), "%sChanging call %s [%p] to arraycopy\n", OPT_DETAILS, node->getOpCode().getName(), node))
       {
       TR::ResolvedMethodSymbol* methodSymbol = comp()->getMethodSymbol();
+
+#ifdef J9_PROJECT_SPECIFIC
+      if (doRuntimeNullRestrictedTest)
+         {
+         if (trace())
+            {
+            comp()->dumpMethodTrees("Trees before modifying for null-restricted array check");
+            comp()->getDebug()->print(comp()->getOutFile(), comp()->getFlowGraph());
+            }
+         /*
+               ==== Before ===
+  _curTree---> n9n       treetop
+               n8n         call  java/lang/System.arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V
+               n3n           aload  <parm 0 [LSomeInterface;>[#419  Parm]
+               n4n           iconst 0
+               n5n           aload  <parm 1 [LSomeInterface;>[#420  Parm]
+               n6n           iconst 0
+               n7n           iload  TestSystemArraycopy4.ARRAY_SIZE I[#421  Static]
+
+               ==== After ===
+               n48n      astore  <temp slot 3>[#429  Auto]
+               n3n         aload  <parm 0 [LSomeInterface;>[#419  Parm]
+               n52n      astore  <temp slot 5>[#431  Auto]
+               n5n         aload  <parm 1 [LSomeInterface;>[#420  Parm]
+    prevTT---> n56n      istore  <temp slot 7>[#433  Auto]
+               n7n         iload  TestSystemArraycopy4.ARRAY_SIZE I[#421  Static]
+  _curTree---> n9n       treetop
+               n8n         call  java/lang/System.arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V
+               n3n           ==>aload
+               n4n           iconst 0
+               n5n           ==>aload
+               n6n           iconst 0
+               n7n           ==>iload
+    nextTT---> ...
+               ...
+               ...
+ slowBlock---> n39n      BBStart <block_-1>
+               n41n      treetop
+               n42n        call  java/lang/System.arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V [#428  final native static Method] [flags 0x20500 0x0 ] (dontTransformArrayCopyCall )
+               n49n          aload  <temp slot 3>[#429  Auto]
+               n51n          iconst 0
+               n53n          aload  <temp slot 5>[#431  Auto]
+               n55n          iconst 0
+               n57n          iload  <temp slot 7>[#433  Auto]
+               n40n      BBEnd </block_-1>
+            */
+
+         // Create the block that contains the System.arraycopy call which will be the slow path
+         TR::Block *slowBlock = TR::Block::createEmptyBlock(node, comp(), UNKNOWN_COLD_BLOCK_COUNT);
+         slowBlock->setIsCold(true);
+
+         TR::Node *newCallNode = node->duplicateTree(false); // No need to duplicate the children of the call since they will be replaced next with temp load
+         // It is important to set setDontTransformArrayCopyCall on the new call node. Otherwise, the new call node could get
+         // transformed again by VP
+         newCallNode->setDontTransformArrayCopyCall();
+
+         TR::Node *ttNode = TR::Node::create(TR::treetop, 1, newCallNode);
+         TR::TreeTop *newCallTree = TR::TreeTop::create(comp());
+         newCallTree->setNode(ttNode);
+
+         slowBlock->append(newCallTree);
+
+         TR::Node *oldCallNode = node;
+         if (trace())
+            traceMsg(comp(),"Creating temps for children of the original call node n%dn %p. new call node n%dn %p\n", oldCallNode->getGlobalIndex(), oldCallNode, newCallNode->getGlobalIndex(), newCallNode);
+
+         TR::SymbolReference * dstArrRefSymRef = NULL;
+         TR::SymbolReference * srcArrRefSymRef = NULL;
+
+         // Create temporaries for System.arraycopy arguments and replace the children of the new call node with the temps
+         for (int32_t i = 0 ; i < oldCallNode->getNumChildren(); ++i)
+            {
+            TR::Node *child = oldCallNode->getChild(i);
+
+            TR::Node *value = NULL;
+            if (child->getOpCode().isLoadConst())
+               {
+               value = TR::Node::copy(child);
+               value->setReferenceCount(0);
+               }
+            else
+               {
+               TR::SymbolReference *newSymbolReference = comp()->getSymRefTab()->createTemporary(comp()->getMethodSymbol(), child->getDataType());
+               TR::Node *savedChildNode = TR::Node::createStore(oldCallNode, newSymbolReference, child);
+               TR::TreeTop *savedChildTree = TR::TreeTop::create(comp(), savedChildNode);
+
+               _curTree->insertBefore(savedChildTree);
+
+               if (trace())
+                  traceMsg(comp(),"Created child n%dn %p #%d for old child n%dn %p of the original call node\n", savedChildNode->getGlobalIndex(), savedChildNode, newSymbolReference->getReferenceNumber(),
+                     child->getGlobalIndex(), child);
+
+               // Create the child for the new call node with a load of the new sym ref
+               value = TR::Node::createLoad(newCallNode, newSymbolReference);
+
+               if (child == dstObjNode)
+                  dstArrRefSymRef = newSymbolReference;
+
+               if (child == srcObjNode)
+                  srcArrRefSymRef = newSymbolReference;
+               }
+
+            if (trace())
+               traceMsg(comp(),"Created child n%dn %p for new call node n%dn %p\n", value->getGlobalIndex(), value, newCallNode->getGlobalIndex(), newCallNode);
+
+            newCallNode->getChild(i)->recursivelyDecReferenceCount();
+            newCallNode->setAndIncChild(i, value);
+            }
+
+         // prevTT is required so that we can insert runtime array component type check after prevTT
+         TR::TreeTop *prevTT = _curTree->getPrevTreeTop();
+
+         // nextTT is required so that we can jump from the slow block to the block that contains the treetop after System.arraycopy
+         TR::TreeTop *nextTT = _curTree->getNextTreeTop();
+         while ((nextTT->getNode()->getOpCodeValue() == TR::BBEnd) ||
+                (nextTT->getNode()->getOpCodeValue() == TR::BBStart))
+            nextTT = nextTT->getNextTreeTop();
+
+         if (trace())
+            {
+            traceMsg(comp(), "%s: n%dn %p current block_%d slowBlock block_%d newCallTree n%dn %p prevTT n%dn %p nextTT n%dn %p\n", __FUNCTION__, node->getGlobalIndex(), node,
+               _curTree->getEnclosingBlock()->getNumber(), slowBlock->getNumber(), newCallTree->getNode()->getGlobalIndex(), newCallTree->getNode(),
+               prevTT->getNode()->getGlobalIndex(), prevTT->getNode(), nextTT->getNode()->getGlobalIndex(), nextTT->getNode());
+
+            traceMsg(comp(), "%s: srcObjNode n%dn %p #%d dstObjNode n%dn %p #%d\n", __FUNCTION__, srcObjNode->getGlobalIndex(), srcObjNode, srcArrRefSymRef->getReferenceNumber(),
+               dstObjNode->getGlobalIndex(), dstObjNode, dstArrRefSymRef->getReferenceNumber());
+            }
+
+         _needRuntimeTestNullRestrictedArrayCopy.add(new (trStackMemory()) TR_NeedRuntimeTestNullRestrictedArrayCopy(dstArrRefSymRef, srcArrRefSymRef,
+                                                                                                                     prevTT, nextTT,
+                                                                                                                     _curTree->getEnclosingBlock(), slowBlock,
+                                                                                                                     needRuntimeTestDstArray));
+         if (trace())
+            {
+            comp()->dumpMethodTrees("Trees after modifying for null-restricted array check");
+            comp()->getDebug()->print(comp()->getOutFile(), comp()->getFlowGraph());
+            }
+         }
+#endif
 
       bool canSkipAllChecksOnArrayCopy = methodSymbol->safeToSkipChecksOnArrayCopies() || isRecognizedMultiLeafArrayCopy || isStringCompressedArrayCopy || isStringDecompressedArrayCopy;
 
@@ -1465,6 +1745,8 @@ void OMR::ValuePropagation::transformArrayCopyCall(TR::Node *node)
          else if (srcArrayInfo)
             stride = srcArrayInfo->elementSize();
 
+         stride = areBothArraysFlattenedNullRestrictedArray ? elementSize : stride;
+
          if (stride != 0)
             srcArrayLength->setArrayStride(stride);
          }
@@ -1477,6 +1759,8 @@ void OMR::ValuePropagation::transformArrayCopyCall(TR::Node *node)
             stride = TR::Compiler->om.sizeofReferenceField();
          else if (dstArrayInfo)
             stride = dstArrayInfo->elementSize();
+
+         stride = areBothArraysFlattenedNullRestrictedArray ? elementSize : stride;
 
          if (stride != 0)
             dstArrayLength->setArrayStride(stride);
@@ -1615,7 +1899,7 @@ void OMR::ValuePropagation::transformArrayCopyCall(TR::Node *node)
       else
          {
          //aiadd
-         //   iaload
+         //   aloadi
          //       aiadd
          //          aload a
          //          iadd
@@ -1668,6 +1952,9 @@ void OMR::ValuePropagation::transformArrayCopyCall(TR::Node *node)
       // -------------------------------------------------------------------
       // Arraycopy length node
       // -------------------------------------------------------------------
+
+      if (trace())
+         traceMsg(comp(), "%s: n%dn %p elementSize %d stride n%dn %p\n", __FUNCTION__, node->getGlobalIndex(), node, elementSize, stride ? stride->getGlobalIndex() : -1, stride);
 
       len = generateLenForArrayCopy(comp(), elementSize, stride, srcObjNode, copyLenNode, node);
 
@@ -1849,7 +2136,31 @@ TR::Node *generateArrayAddressTree(
 
    bool is64BitTarget = comp->target().is64Bit() ? true : false;
 
-   TR::Node *array;
+   TR::Node *array = NULL;
+
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+   if (TR::Compiler->om.isOffHeapAllocationEnabled())
+      {
+      if (offHigh > 0)
+         {
+         if (elementSize == 1)
+            array = offNode->createLongIfNeeded();
+         else if (elementSize == 0)
+            {
+            if (!stride)
+               stride = TR::TransformUtil::generateArrayElementShiftAmountTrees(comp, objNode);
+            array = TR::TransformUtil::generateConvertArrayElementIndexToOffsetTrees(comp, offNode, stride, elementSize, true);
+            }
+         else
+            {
+            array = TR::TransformUtil::generateConvertArrayElementIndexToOffsetTrees(comp, offNode, stride, elementSize, false);
+            }
+         }
+      array = TR::TransformUtil::generateArrayElementAddressTrees(comp, objNode, array);
+      array->setIsInternalPointer(true);
+      return array;
+      }
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
 
    if (offHigh > 0)
       {
@@ -2093,11 +2404,11 @@ void OMR::ValuePropagation::generateArrayTranslateNode(TR::TreeTop *callTree,TR:
 
    bool isISO88591Encoder = (rm == TR::sun_nio_cs_ISO_8859_1_Encoder_encodeISOArray
                              || rm == TR::java_lang_StringCoding_implEncodeISOArray);
+   bool isAsciiEncoder = (rm == TR::java_lang_StringCoding_implEncodeAsciiArray);
    bool isISO88591Decoder = (rm == TR::sun_nio_cs_ISO_8859_1_Decoder_decodeISO8859_1);
    bool isSBCSEncoder = (rm == TR::sun_nio_cs_ext_SBCS_Encoder_encodeSBCS)? true:false;
    bool isSBCSDecoder = (rm == TR::sun_nio_cs_ext_SBCS_Decoder_decodeSBCS)? true:false;
-   bool isEncodeUtf16 = (rm == TR::sun_nio_cs_UTF_16_Encoder_encodeUTF16Big || rm == TR::sun_nio_cs_UTF_16_Encoder_encodeUTF16Little);
-
+   bool isEncodeUtf16 = (rm == TR::sun_nio_cs_UTF16_Encoder_encodeUTF16Big || rm == TR::sun_nio_cs_UTF16_Encoder_encodeUTF16Little);
 
    int32_t childId = callNode->getFirstArgumentIndex();
    if (callNode->getChild(childId)->getType().isAddress() && callNode->getChild(childId+1)->getType().isAddress())
@@ -2108,7 +2419,7 @@ void OMR::ValuePropagation::generateArrayTranslateNode(TR::TreeTop *callTree,TR:
    TR::Node *srcOff = srcOffNode->createLongIfNeeded();
    TR::Node *lenNode = NULL;
    TR::Node *len = NULL;
-   if (!isISO88591Encoder)
+   if (!(isISO88591Encoder || isAsciiEncoder))
       {
       lenNode = lenRef? TR::Node::createLoad(callNode, lenRef):callNode->getChild(childId++)->duplicateTree();
       len = lenNode->createLongIfNeeded();
@@ -2118,7 +2429,7 @@ void OMR::ValuePropagation::generateArrayTranslateNode(TR::TreeTop *callTree,TR:
    TR::Node* dstOffNode =  dstOffRef ? TR::Node::createLoad(callNode, dstOffRef): callNode->getChild(childId++)->duplicateTree();
    TR::Node *dstOff = dstOffNode->createLongIfNeeded();
 
-   if (isISO88591Encoder)
+   if (isISO88591Encoder || isAsciiEncoder)
       {
       lenNode = lenRef? TR::Node::createLoad(callNode, lenRef):callNode->getChild(childId++)->duplicateTree();
       len = lenNode->createLongIfNeeded();
@@ -2160,30 +2471,52 @@ void OMR::ValuePropagation::generateArrayTranslateNode(TR::TreeTop *callTree,TR:
    else
       strideNode = TR::Node::create(callNode, TR::iconst, 0, 2);
 
-   if ( isISO88591Encoder || isSBCSEncoder || isEncodeUtf16 ||
+   if ( isISO88591Encoder || isAsciiEncoder || isSBCSEncoder || isEncodeUtf16 ||
        (rm == TR::sun_nio_cs_US_ASCII_Encoder_encodeASCII)         ||
        (rm == TR::sun_nio_cs_UTF_8_Encoder_encodeUTF_8))
        encode = true;
 
-   if (encode)
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+   if (TR::Compiler->om.isOffHeapAllocationEnabled())
       {
-      node = TR::Node::create(is64BitTarget ? TR::lmul : TR::imul, 2, srcOff, strideNode);
-      node = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, node, hdrSize);
-      src = TR::Node::create(is64BitTarget? TR::aladd : TR::aiadd, 2, srcObj, node);
-      node = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, dstOff, hdrSize);
-      dst = TR::Node::create(is64BitTarget? TR::aladd : TR::aiadd, 2, dstObj, node);
-      arrayTranslateNode->setSourceIsByteArrayTranslate(false);
-      arrayTranslateNode->setTargetIsByteArrayTranslate(true);
+      if (encode)
+         {
+         srcOff = TR::TransformUtil::generateConvertArrayElementIndexToOffsetTrees(comp(), srcOff, strideNode, 0, false);
+         arrayTranslateNode->setSourceIsByteArrayTranslate(false);
+         arrayTranslateNode->setTargetIsByteArrayTranslate(true);
+         }
+      else
+         {
+         dstOff = TR::TransformUtil::generateConvertArrayElementIndexToOffsetTrees(comp(), dstOff, strideNode, 0, false);
+         arrayTranslateNode->setSourceIsByteArrayTranslate(true);
+         arrayTranslateNode->setTargetIsByteArrayTranslate(false);
+         }
+      src = TR::TransformUtil::generateArrayElementAddressTrees(comp(), srcObj, srcOff);
+      dst = TR::TransformUtil::generateArrayElementAddressTrees(comp(), dstObj, dstOff);
       }
    else
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
       {
-      node = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, srcOff, hdrSize);
-      src = TR::Node::create(is64BitTarget? TR::aladd : TR::aiadd, 2, srcObj, node);
-      node = TR::Node::create(is64BitTarget ? TR::lmul : TR::imul, 2, dstOff, strideNode);
-      node = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, node, hdrSize);
-      dst = TR::Node::create(is64BitTarget? TR::aladd : TR::aiadd, 2, dstObj, node);
-      arrayTranslateNode->setSourceIsByteArrayTranslate(true);
-      arrayTranslateNode->setTargetIsByteArrayTranslate(false);
+      if (encode)
+         {
+         node = TR::Node::create(is64BitTarget ? TR::lmul : TR::imul, 2, srcOff, strideNode);
+         node = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, node, hdrSize);
+         src = TR::Node::create(is64BitTarget? TR::aladd : TR::aiadd, 2, srcObj, node);
+         node = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, dstOff, hdrSize);
+         dst = TR::Node::create(is64BitTarget? TR::aladd : TR::aiadd, 2, dstObj, node);
+         arrayTranslateNode->setSourceIsByteArrayTranslate(false);
+         arrayTranslateNode->setTargetIsByteArrayTranslate(true);
+         }
+      else
+         {
+         node = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, srcOff, hdrSize);
+         src = TR::Node::create(is64BitTarget? TR::aladd : TR::aiadd, 2, srcObj, node);
+         node = TR::Node::create(is64BitTarget ? TR::lmul : TR::imul, 2, dstOff, strideNode);
+         node = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, node, hdrSize);
+         dst = TR::Node::create(is64BitTarget? TR::aladd : TR::aiadd, 2, dstObj, node);
+         arrayTranslateNode->setSourceIsByteArrayTranslate(true);
+         arrayTranslateNode->setTargetIsByteArrayTranslate(false);
+         }
       }
 
    if (encode && !isSBCSEncoder)
@@ -2299,9 +2632,9 @@ void OMR::ValuePropagation::generateArrayTranslateNode(TR::TreeTop *callTree,TR:
          comp()->getSymRefTab()->methodSymRefFromName(
             comp()->getMethodSymbol(),
             "com/ibm/jit/JITHelpers",
-            const_cast<char*> (TR::sun_nio_cs_UTF_16_Encoder_encodeUTF16Big == rm ?
+            TR::sun_nio_cs_UTF16_Encoder_encodeUTF16Big == rm ?
                "transformedEncodeUTF16Big" :
-               "transformedEncodeUTF16Little"),
+               "transformedEncodeUTF16Little",
             "(JJI)I",
             TR::MethodSymbol::Static
             );
@@ -2352,8 +2685,10 @@ TR::TreeTop* OMR::ValuePropagation::createConverterCallNodeAfterStores(
 #ifdef J9_PROJECT_SPECIFIC
    bool isISO88591Encoder = (rm == TR::sun_nio_cs_ISO_8859_1_Encoder_encodeISOArray
                              || rm == TR::java_lang_StringCoding_implEncodeISOArray);
+   bool isAsciiEncoder = (rm == TR::java_lang_StringCoding_implEncodeAsciiArray);
 #else
    bool isISO88591Encoder = false;
+   bool isAsciiEncoder = false;
 #endif
    int32_t childId = origTree->getNode()->getFirstChild()->getFirstArgumentIndex();
    bool hasReciever = symbol->isStatic() ? false : true;
@@ -2400,25 +2735,25 @@ TR::TreeTop* OMR::ValuePropagation::createConverterCallNodeAfterStores(
    if (lenRef)
       len = TR::Node::createLoad(root, lenRef);
    else
-      len = isISO88591Encoder?  root->getChild(childId+4)->duplicateTree() : root->getChild(childId+2)->duplicateTree();
+      len = (isISO88591Encoder || isAsciiEncoder) ?  root->getChild(childId + 4)->duplicateTree() : root->getChild(childId + 2)->duplicateTree();
 
-   isISO88591Encoder? root->setAndIncChild(childId+4, len): root->setAndIncChild(childId+2, len);
+   (isISO88591Encoder || isAsciiEncoder) ? root->setAndIncChild(childId + 4, len): root->setAndIncChild(childId + 2, len);
 
 
    if (dstRef)
       dst = TR::Node::createLoad(root, dstRef);
    else
-      dst = isISO88591Encoder ? root->getChild(childId+2)->duplicateTree(): root->getChild(childId+3)->duplicateTree();
+      dst = (isISO88591Encoder || isAsciiEncoder) ? root->getChild(childId+2)->duplicateTree(): root->getChild(childId+3)->duplicateTree();
 
-   isISO88591Encoder?root->setAndIncChild(childId+2, dst): root->setAndIncChild(childId+3, dst);
+   (isISO88591Encoder || isAsciiEncoder) ? root->setAndIncChild(childId + 2, dst): root->setAndIncChild(childId + 3, dst);
 
 
    if (dstOffRef)
       dstOff = TR::Node::createLoad(root, dstOffRef);
    else
-      dstOff = isISO88591Encoder ? root->getChild(childId+3)->duplicateTree(): root->getChild(childId+4)->duplicateTree();
+      dstOff = (isISO88591Encoder || isAsciiEncoder) ? root->getChild(childId + 3)->duplicateTree(): root->getChild(childId + 4)->duplicateTree();
 
-   isISO88591Encoder?root->setAndIncChild(childId+3, dstOff): root->setAndIncChild(childId+4, dstOff);
+   (isISO88591Encoder || isAsciiEncoder) ? root->setAndIncChild(childId + 3, dstOff): root->setAndIncChild(childId + 4, dstOff);
 
    if (tableRef)
       {
@@ -2659,8 +2994,10 @@ TR::TreeTop *createStoresForConverterCallChildren(TR::Compilation *comp, TR::Tre
 #ifdef J9_PROJECT_SPECIFIC
    bool isISO88591Encoder = (rm == TR::sun_nio_cs_ISO_8859_1_Encoder_encodeISOArray
                              || rm == TR::java_lang_StringCoding_implEncodeISOArray);
+   bool isAsciiEncoder = (rm == TR::java_lang_StringCoding_implEncodeAsciiArray);
 #else
    bool isISO88591Encoder = false;
+   bool isAsciiEncoder = false;
 #endif
 
    int32_t childId = node->getFirstArgumentIndex();
@@ -2675,11 +3012,11 @@ TR::TreeTop *createStoresForConverterCallChildren(TR::Compilation *comp, TR::Tre
    TR::Node *src = node->getChild(childId++);
    TR::Node *srcOff = node->getChild(childId++);
    TR::Node *len = NULL;
-   if (!isISO88591Encoder)
+   if (!(isISO88591Encoder || isAsciiEncoder))
       len = node->getChild(childId++);
    TR::Node *dst = node->getChild(childId++);
    TR::Node *dstOff = node->getChild(childId++);
-   if (isISO88591Encoder)
+   if (isISO88591Encoder || isAsciiEncoder)
       len = node->getChild(childId++);
 
    TR::TreeTop *storeTree = NULL;
@@ -2970,8 +3307,8 @@ void OMR::ValuePropagation::transformRealTimeArrayCopy(TR_RealTimeArrayCopy *rtA
    //------------------------------------------------
    //create ifNodes
    TR::Node *spineShiftNode = TR::Node::create(vcallNode, TR::iconst, 0, (int32_t)fe()->getArraySpineShift(elementSize));
-   TR::TreeTop *ifTree;
-   TR::Node *ifNode;
+   TR::TreeTop *ifTree = NULL;
+   TR::Node *ifNode = NULL;
    TR::Node *srcOff = NULL, *dstOff = NULL;
    TR::Node *len = NULL;
    TR::SymbolReference *child1Ref = NULL, *child2Ref = NULL;
@@ -3312,7 +3649,294 @@ void OMR::ValuePropagation::transformRTMultiLeafArrayCopy(TR_RealTimeArrayCopy *
    if (comp()->getMethodHotness() >= warm)
       requestOpt(OMR::globalValuePropagation);
    }
-#endif
+
+
+void OMR::ValuePropagation::transformNullRestrictedArrayCopy(TR_NeedRuntimeTestNullRestrictedArrayCopy *nullRestrictedArrayCopy)
+   {
+   /*
+    *     Array Flattening Is NOT Enabled:
+    *    ================================
+    *
+    *           Is dstArray null-restricted?
+    *                        |
+    *              +---------+---------+
+    *              |                   |
+    *             Yes                  No
+    *              |                   |
+    *              v                   v
+    *      System.arrayCopy        arraycopy
+    *          (slowBlock)
+    *
+    *
+    *
+    *    Array Flattening IS Enabled:
+    *    ================================
+    *
+    *           Is dstArray null-restricted?
+    *                       |
+    *             +---------+---------+
+    *             |                   |
+    *            Yes                  No
+    *             |                   |
+    *             v                   v
+    *     System.arrayCopy      Is srcArray null-restricted?
+    *        (slowBlock)           (could be flattened)
+    *                                       |
+    *                             +---------+---------+
+    *                             |                   |
+    *                            Yes                  No
+    *                             |                   |
+    *                             v                   v
+    *                        System.arraycopy     arraycopy
+    *                           (slowBlock)
+    *
+    *
+    *    No need to check dstArray(needTestDstArray=false):
+    *    ================================
+    *
+    *             Is srcArray null-restricted?
+    *               (could be flattened)
+    *                        |
+    *              +---------+---------+
+    *              |                   |
+    *             Yes                  No
+    *              |                   |
+    *              v                   v
+    *      System.arrayCopy        arraycopy
+    *          (slowBlock)
+    *
+    *
+    */
+
+   /*
+    * Example of after the transformation
+            n48n      astore  <temp slot 3>[#429  Auto]
+            n3n         aload  <parm 0 [LSomeInterface;>[#419  Parm]
+            n189n     astore  <temp slot 19>[#445  Auto]
+            n3n         ==>aload
+            ...
+            n52n      astore  <temp slot 5>[#431  Auto]
+            n5n         aload  <parm 1 [LSomeInterface;>[#420  Parm]
+            ...
+            n56n      istore  <temp slot 7>[#433  Auto]
+            n7n         iload  TestSystemArraycopy4.ARRAY_SIZE I[#421  Static]
+            ...
+            n157n     ificmpne --> block_10 BBStart at n39n ()
+            n155n       iand
+            n153n         iloadi  <isClassFlags>
+            n152n           aloadi  <componentClass>
+            n151n             aloadi  <vft-symbol>
+ dstArray-> n5n                 ==>aload
+            n154n         iconst 0x400000
+            n156n       iconst 0
+            n188n     BBEnd </block_2> =====
+
+            BBStart <block_12> (freq 8001)
+            n186n     ificmpne --> block_10 BBStart at n39n ()
+            n184n       iand
+            n182n         iloadi  <isClassFlags>
+            n181n           aloadi  <componentClass>
+            n180n             aloadi  <vft-symbol>
+ srcArray-> n190n               aload  <temp slot 19>[#445  Auto]
+            n183n         iconst 0x400000
+            n185n       iconst 0
+            n159n     BBEnd </block_12> =====
+            ...
+            ...
+            ...
+slowBlock-> n39n      BBStart <block_10> (freq 0) (cold)
+            n41n      treetop
+            n42n        call  java/lang/System.arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V
+            n49n          aload  <temp slot 3>[#429  Auto]
+            n51n          iconst 0
+            n53n          aload  <temp slot 5>[#431  Auto]
+            n55n          iconst 0
+            n57n          iload  <temp slot 7>[#433  Auto]
+            n150n     goto --> block_7 BBStart at n137n
+            n40n      BBEnd </block_10> (cold)
+    */
+
+   TR::CFG *cfg = comp()->getFlowGraph();
+   cfg->invalidateStructure();
+
+   TR::TreeTop *prevTT = nullRestrictedArrayCopy->_prevTT;
+   TR::TreeTop *nextTT = nullRestrictedArrayCopy->_nextTT;
+
+   TR::Block *prevBlock = prevTT->getEnclosingBlock();
+   TR::Block *nextBlock = nextTT->getEnclosingBlock();
+
+   if (prevBlock == nextBlock)
+      nextBlock = prevBlock->split(nextTT, cfg, true, true);
+
+   TR::Block *tmpBlock = nextBlock;
+   bool isNextBlockExtendedBlock = false;
+   bool isPrevBlockOfExtendedBlockEmpty = true;
+
+   // Due to previous arraycopy sub transformations, the block that contains the nextTT, nextBlock,
+   // could have become an extended block of its previous block. Because we can't jump to the middle
+   // of a chain of extended blocks, a proper next block needs to be found in order for the slow block
+   // that contains the call tree to jump to.
+   //
+   // For example, if nextBlock is block_3, there are two cases we need to look at
+   // in terms of the previous blocks of nextBlock
+   //
+   // (1) All preceding blocks are empty
+   //     - The slow block can jump to the first block of the chain of extended blocks, which is block_1
+   //
+   //        BBStart <block_1>
+   //        BBEnd <block_1>
+   //        BBStart <block_2> (extension of previous block)
+   //        BBEnd <block_2>
+   //        BBStart <block_3> (extension of previous block) //<--- nextBlock
+   //           n3n     return
+   //        BBEnd <block_3>
+   //
+   // (2) There is at least one block that is not empty
+   //     - We need to split at nextBlock, which is to split at block_3
+   //
+   //        BBStart <block_1>
+   //        BBEnd <block_1>
+   //        BBStart <block_2> (extension of previous block)
+   //           n2n      treetop //<--- isPrevBlockOfExtendedBlockEmpty = false
+   //           ...
+   //        BBEnd <block_2>
+   //        BBStart <block_3> (extension of previous block) //<--- split at nextBlock
+   //           n3n      return
+   //        BBEnd <block_3>
+   //
+   while (tmpBlock->isExtensionOfPreviousBlock())
+      {
+      isNextBlockExtendedBlock = true;
+
+      tmpBlock = tmpBlock->getPrevBlock();
+      TR::TreeTop *bbStart = tmpBlock->getEntry();
+      TR::TreeTop *bbEnd = tmpBlock->getExit();
+
+      if (bbStart->getNextTreeTop() != bbEnd)
+         {
+         isPrevBlockOfExtendedBlockEmpty = false;
+         break;
+         }
+      }
+
+   if (isNextBlockExtendedBlock)
+      {
+      if (isPrevBlockOfExtendedBlockEmpty)
+         {
+         nextBlock = tmpBlock;
+         if (trace())
+            {
+            traceMsg(comp(), "%s: prevBlockOfExtendedBlockEmpty 1 prevTT n%dn prevBlock block_%d nextTT n%dn nextBlock block_%d\n", __FUNCTION__,
+               prevTT->getNode()->getGlobalIndex(), prevBlock->getNumber(), nextTT->getNode()->getGlobalIndex(), nextBlock->getNumber());
+            }
+         }
+      else
+         {
+         nextBlock = nextBlock->split(nextTT, cfg, true, true);
+         if (trace())
+            {
+            traceMsg(comp(), "%s: split at nextTT. prevTT n%dn prevBlock block_%d nextTT n%dn nextBlock block_%d\n", __FUNCTION__,
+               prevTT->getNode()->getGlobalIndex(), prevBlock->getNumber(), nextTT->getNode()->getGlobalIndex(), nextBlock->getNumber());
+            }
+         }
+      }
+
+   bool needTestSrcArray = TR::Compiler->om.isValueTypeArrayFlatteningEnabled();
+   bool needTestDstArray = nullRestrictedArrayCopy->_needRuntimeTestDstArray;
+
+   TR_ASSERT_FATAL(needTestSrcArray || needTestDstArray, "needTestSrcArray %d needTestDstArray %d should not both be false\n", needTestSrcArray, needTestDstArray);
+
+   TR::SymbolReference *dstArrRefSymRef = nullRestrictedArrayCopy->_dstArrRefSymRef;
+   TR::SymbolReference *srcArrRefSymRef = nullRestrictedArrayCopy->_srcArrRefSymRef;
+   TR::Node *dstArrayRefNode = TR::Node::createLoad(dstArrRefSymRef);
+   TR::Node *srcArrayRefNode = TR::Node::createLoad(srcArrRefSymRef);
+
+   TR::Block *originBlock = nullRestrictedArrayCopy->_originBlock;
+   TR::Block *slowBlock = nullRestrictedArrayCopy->_slowBlock;
+
+   cfg->addNode(slowBlock);
+
+   if (trace())
+      {
+      traceMsg(comp(), "%s: srcArrayRefNode n%dn %p dstArrayRefNode n%dn %p originBlock block_%d slowBlock block_%d needTestSrcArray %d needTestDstArray %d\n", __FUNCTION__,
+         srcArrayRefNode->getGlobalIndex(), srcArrayRefNode, dstArrayRefNode->getGlobalIndex(), dstArrayRefNode, originBlock->getNumber(), slowBlock->getNumber(), needTestSrcArray, needTestDstArray);
+
+      traceMsg(comp(), "%s: prevTT n%dn prevBlock block_%d nextTT n%dn nextBlock block_%d\n", __FUNCTION__,
+         prevTT->getNode()->getGlobalIndex(), prevBlock->getNumber(), nextTT->getNode()->getGlobalIndex(), nextBlock->getNumber());
+      }
+
+   TR::TreeTop *lastTreeTop = comp()->getMethodSymbol()->getLastTreeTop();
+   lastTreeTop->insertTreeTopsAfterMe(slowBlock->getEntry(), slowBlock->getExit());
+
+   // Set up the slow block to jump to the block after the call block
+   TR::Node *gotoNode = TR::Node::create(dstArrayRefNode, TR::Goto);
+   gotoNode->setBranchDestination(nextBlock->getEntry());
+
+   TR::TreeTop *gotoTree = TR::TreeTop::create(comp(), gotoNode, NULL, NULL);
+   slowBlock->append(gotoTree);
+
+   TR::TreeTop *ifDstTree = NULL;
+   if (needTestDstArray)
+      {
+      // If the destination array type is null restricted, jump to the slow path (slowBlock)
+      //
+      TR::SymbolReference* const vftSymRef = comp()->getSymRefTab()->findOrCreateVftSymbolRef();
+      TR::Node *vftNode = TR::Node::createWithSymRef(TR::aloadi, 1, 1, dstArrayRefNode, vftSymRef);
+
+      TR::Node *testIsNullRestrictedArray = comp()->fej9()->testIsArrayClassNullRestrictedType(vftNode);
+
+      TR::Node *ifNode = TR::Node::createif(TR::ificmpne, testIsNullRestrictedArray, TR::Node::iconst(0), slowBlock->getEntry());
+
+      ifDstTree = TR::TreeTop::create(comp(), ifNode);
+      prevTT->insertAfter(ifDstTree);
+
+      // Split the block after the ifDstTree
+      prevBlock->split(ifDstTree->getNextTreeTop(), cfg, true, true);
+      }
+
+   // If destination is not null-restricted value type array and array flattening is enabled, we need to check
+   // the source array component type.  If it is null-restricted value type, the current arraycopy instructions
+   // can't handle copying between flattened and non-flattened arrays.
+   if (needTestSrcArray)
+      {
+      // If the destination array type is null restricted, jump to the slow path (slowBlock)
+      //
+      TR::SymbolReference* const vftSymRef = comp()->getSymRefTab()->findOrCreateVftSymbolRef();
+      TR::Node *vftNode = TR::Node::createWithSymRef(TR::aloadi, 1, 1, srcArrayRefNode, vftSymRef);
+
+      TR::Node *testIsNullRestrictedArray = comp()->fej9()->testIsArrayClassNullRestrictedType(vftNode);
+
+      TR::Node *ifNode = TR::Node::createif(TR::ificmpne, testIsNullRestrictedArray, TR::Node::iconst(0), slowBlock->getEntry());
+
+      TR::TreeTop *ifSrcTree = TR::TreeTop::create(comp(), ifNode);
+
+      if (ifDstTree)
+         {
+         ifDstTree->insertAfter(ifSrcTree);
+
+         // Split the block before the ifSrcTree
+         TR::Block *newBlock = prevBlock->split(ifSrcTree, cfg, true, true);
+
+         cfg->addEdge(TR::CFGEdge::createEdge(newBlock, slowBlock, trMemory()));
+         }
+      else
+         {
+         prevTT->insertAfter(ifSrcTree);
+
+         // Split the block after the ifSrcTree
+         prevBlock->split(ifSrcTree->getNextTreeTop(), cfg, true, true);
+
+         cfg->addEdge(TR::CFGEdge::createEdge(prevBlock, slowBlock, trMemory()));
+         }
+      }
+
+   cfg->copyExceptionSuccessors(originBlock, slowBlock);
+
+   if (needTestDstArray)
+      cfg->addEdge(TR::CFGEdge::createEdge(prevBlock, slowBlock, trMemory()));
+   cfg->addEdge(TR::CFGEdge::createEdge(slowBlock, nextBlock, trMemory()));
+   }
+#endif /* J9_PROJECT_SPECIFIC */
 
 static
 const char* transformedTargetName (TR::RecognizedMethod rm)
@@ -3320,24 +3944,24 @@ const char* transformedTargetName (TR::RecognizedMethod rm)
 #ifdef J9_PROJECT_SPECIFIC
    switch ( rm )
       {
-      case TR::sun_nio_cs_UTF_16_Encoder_encodeUTF16Big:
+      case TR::sun_nio_cs_UTF16_Encoder_encodeUTF16Big:
          return "icall  com/ibm/jit/JITHelpers.transformedEncodeUTF16Big(JJI)I";
 
-      case TR::sun_nio_cs_UTF_16_Encoder_encodeUTF16Little:
+      case TR::sun_nio_cs_UTF16_Encoder_encodeUTF16Little:
          return "icall  com/ibm/jit/JITHelpers.transformedEncodeUTF16Little(JJI)I"  ;
 
       default:
          return "arraytranslate";
       }
-#else
+#else /* J9_PROJECT_SPECIFIC */
    return "arraytranslate";
-#endif
+#endif /* J9_PROJECT_SPECIFIC */
    }
 
 #ifdef J9_PROJECT_SPECIFIC
 /**
  * Can be called from doDelayedTransformations when nodes may have been removed from the tree. Issue 6623
- * https://github.com/eclipse/omr/issues/6623
+ * https://github.com/eclipse-omr/omr/issues/6623
  */
 void OMR::ValuePropagation::transformObjectCloneCall(TR::TreeTop *callTree, OMR::ValuePropagation::ObjCloneInfo *cloneInfo)
    {
@@ -3365,7 +3989,7 @@ void OMR::ValuePropagation::transformObjectCloneCall(TR::TreeTop *callTree, OMR:
 
    TR::DebugCounter::prependDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "inlineClone.location/object/(%s)", comp()->signature()), callTree);
    int32_t classNameLength;
-   char *className = TR::Compiler->cls.classNameChars(comp(), j9class, classNameLength);
+   const char *className = TR::Compiler->cls.classNameChars(comp(), j9class, classNameLength);
    TR::DebugCounter::prependDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "inlineClone.type/(%s)/(%s)/%s", className, comp()->signature(), comp()->getHotnessName(comp()->getMethodHotness())), callTree);
 
     // Preserve children for callNode
@@ -3419,15 +4043,15 @@ void OMR::ValuePropagation::transformObjectCloneCall(TR::TreeTop *callTree, OMR:
          comp()->getSymRefTab()->methodSymRefFromName(
             comp()->getMethodSymbol(),
             "com/ibm/jit/JITHelpers",
-            const_cast<char*>("jitHelpers"),
-            const_cast<char*>("()Lcom/ibm/jit/JITHelpers;"),
+            "jitHelpers",
+            "()Lcom/ibm/jit/JITHelpers;",
             TR::MethodSymbol::Static);
    TR::SymbolReference* objCopySymRef =
          comp()->getSymRefTab()->methodSymRefFromName(
             comp()->getMethodSymbol(),
             "com/ibm/jit/JITHelpers",
-            const_cast<char*>(comp()->target().is64Bit() ? "unsafeObjectShallowCopy64" : "unsafeObjectShallowCopy32"),
-            const_cast<char*>(comp()->target().is64Bit() ? "(Ljava/lang/Object;Ljava/lang/Object;J)V" : "(Ljava/lang/Object;Ljava/lang/Object;I)V"),
+            comp()->target().is64Bit() ? "unsafeObjectShallowCopy64" : "unsafeObjectShallowCopy32",
+            comp()->target().is64Bit() ? "(Ljava/lang/Object;Ljava/lang/Object;J)V" : "(Ljava/lang/Object;Ljava/lang/Object;I)V",
             TR::MethodSymbol::Static);
    TR::Node *getHelpers = TR::Node::createWithSymRef(callNode, TR::acall, 0, helperAccessor);
    callTree->insertBefore(TR::TreeTop::create(comp(), TR::Node::create(callNode, TR::treetop, 1, getHelpers)));
@@ -3445,7 +4069,7 @@ void OMR::ValuePropagation::transformObjectCloneCall(TR::TreeTop *callTree, OMR:
 
 /**
  * Can be called from doDelayedTransformations when nodes may have been removed from the tree. Issue 6623
- * https://github.com/eclipse/omr/issues/6623
+ * https://github.com/eclipse-omr/omr/issues/6623
  */
 void OMR::ValuePropagation::transformArrayCloneCall(TR::TreeTop *callTree, OMR::ValuePropagation::ArrayCloneInfo *cloneInfo)
    {
@@ -3488,7 +4112,7 @@ void OMR::ValuePropagation::transformArrayCloneCall(TR::TreeTop *callTree, OMR::
 
    TR::DebugCounter::prependDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "inlineClone.location/array/(%s)", comp()->signature()), callTree);
    int32_t classNameLength;
-   char *className = TR::Compiler->cls.classNameChars(comp(), j9arrayClass, classNameLength);
+   const char *className = TR::Compiler->cls.classNameChars(comp(), j9arrayClass, classNameLength);
    TR::DebugCounter::prependDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "inlineClone.type/(%s)/(%s)/%s", className, comp()->signature(), comp()->getHotnessName(comp()->getMethodHotness())), callTree);
    TR::Node *lenNode = TR::Node::create(callNode, TR::arraylength, 1, objNode);
     // Preserve children for callNode
@@ -3516,7 +4140,7 @@ void OMR::ValuePropagation::transformArrayCloneCall(TR::TreeTop *callTree, OMR::
          }
       else
          {
-         TR::SymbolReference *symRef = comp()->getSymRefTab()->findOrCreateNewArrayNoZeroInitSymbolRef(objNode->getSymbolReference()->getOwningMethodSymbol(comp()));
+         TR::SymbolReference *symRef = comp()->getSymRefTab()->findOrCreateNewArraySymbolRef(objNode->getSymbolReference()->getOwningMethodSymbol(comp()));
          TR::Node::recreateWithoutProperties(callNode, TR::newarray, 2, lenNode, typeConst, symRef);
          callNode->setCanSkipZeroInitialization(true);
          }
@@ -3542,17 +4166,15 @@ void OMR::ValuePropagation::transformArrayCloneCall(TR::TreeTop *callTree, OMR::
    newArray->setIsNonNull(true);
 
    int32_t elementSize = TR::Compiler->om.getSizeOfArrayElement(newArray);
-   TR::Node *lengthInBytes = comp()->target().is64Bit() ?
-      TR::Node::create(callNode, TR::lmul, 2, TR::Node::create(callNode, TR::i2l, 1, lenNode), TR::Node::lconst(lenNode, elementSize)) :
-      TR::Node::create(callNode, TR::imul, 2, lenNode, TR::Node::iconst(lenNode, elementSize));
 
+   TR::Node *lengthInBytes;
+   TR::Node *srcStart;
+   TR::Node *destStart;
 
-   TR::Node *srcStart = comp()->target().is64Bit() ?
-      TR::Node::create(callNode, TR::aladd, 2, objNode, TR::Node::lconst(objNode, TR::Compiler->om.contiguousArrayHeaderSizeInBytes())) :
-      TR::Node::create(callNode, TR::aiadd, 2, objNode, TR::Node::iconst(objNode, TR::Compiler->om.contiguousArrayHeaderSizeInBytes()));
-   TR::Node *destStart = comp()->target().is64Bit() ?
-      TR::Node::create(callNode, TR::aladd, 2, newArray, TR::Node::lconst(newArray, TR::Compiler->om.contiguousArrayHeaderSizeInBytes())) :
-      TR::Node::create(callNode, TR::aiadd, 2, newArray, TR::Node::iconst(newArray, TR::Compiler->om.contiguousArrayHeaderSizeInBytes()));
+   lengthInBytes = TR::TransformUtil::generateConvertArrayElementIndexToOffsetTrees(comp(), lenNode, NULL, elementSize, false);
+   srcStart = TR::TransformUtil::generateFirstArrayElementAddressTrees(comp(), objNode);
+   destStart = TR::TransformUtil::generateFirstArrayElementAddressTrees(comp(), newArray);
+
    TR::Node *arraycopy = NULL;
    if (isPrimitiveClass)
       arraycopy = TR::Node::createArraycopy(srcStart, destStart, lengthInBytes);
@@ -3593,6 +4215,15 @@ void OMR::ValuePropagation::transformArrayCloneCall(TR::TreeTop *callTree, OMR::
 
    callTree->insertBefore(TR::TreeTop::create(comp(), TR::Node::create(callNode, TR::treetop, 1, newArray)));
    callTree->insertBefore(TR::TreeTop::create(comp(), TR::Node::create(callNode, TR::treetop, 1, arraycopy)));
+
+   // Flush after the arraycopy so that the cloned array appears identical to the original before it's made
+   // visible to other threads, and because the obj allocation is allowed to use non-zeroed TLH, we need to
+   // make sure no thread sees stale memory contents from the array element section.
+   if (cg()->getEnforceStoreOrder())
+      {
+      TR::Node *allocationFence = TR::Node::createAllocationFence(newArray, newArray);
+      callTree->insertBefore(TR::TreeTop::create(comp(), allocationFence));
+      }
    }
 
 void OMR::ValuePropagation::transformConverterCall(TR::TreeTop *callTree)
@@ -3646,6 +4277,7 @@ void OMR::ValuePropagation::transformConverterCall(TR::TreeTop *callTree)
    TR_ResolvedMethod *m = symbol->getResolvedMethodSymbol()->getResolvedMethod();
    bool isISO88591Encoder = (rm == TR::sun_nio_cs_ISO_8859_1_Encoder_encodeISOArray
                              || rm == TR::java_lang_StringCoding_implEncodeISOArray);
+   bool isAsciiEncoder = (rm == TR::java_lang_StringCoding_implEncodeAsciiArray);
    int32_t childId = callNode->getFirstArgumentIndex();
    bool hasReciever = symbol->isStatic() ? false : true;
    if (hasReciever)
@@ -3657,13 +4289,13 @@ void OMR::ValuePropagation::transformConverterCall(TR::TreeTop *callTree)
    srcOff = callNode->getChild(childId++);//->createLongIfNeeded();
 
 
-   if (!isISO88591Encoder)
+   if (!(isISO88591Encoder || isAsciiEncoder))
       len = callNode->getChild(childId++);//->createLongIfNeeded();
 
    dstObjNode = callNode->getChild(childId++);
    dstOff = callNode->getChild(childId++);
 
-   if (isISO88591Encoder)
+   if (isISO88591Encoder || isAsciiEncoder)
       len = callNode->getChild(childId++);//->createLongIfNeeded();
 
    if ( (rm == TR::sun_nio_cs_ext_SBCS_Encoder_encodeSBCS) ||
@@ -3778,22 +4410,26 @@ void OMR::ValuePropagation::transformConverterCall(TR::TreeTop *callTree)
 
       int32_t threshold;
 
+      // All converter methods except for sun_nio_cs_ext_SBCS_Encoder_encodeSBCS have default case threshold=0. The names of
+      // all the methods still remain inside the switch for easier searchability in the codebase for these converters and the prior
+      // analysis performed on them.
       switch (rm)
          {
-         case TR::sun_nio_cs_ISO_8859_1_Encoder_encodeISOArray:  threshold = 0; break;
-         case TR::java_lang_StringCoding_implEncodeISOArray:  threshold = 0; break;
-         case TR::sun_nio_cs_ISO_8859_1_Decoder_decodeISO8859_1: threshold = 0; break;
-
-         case TR::sun_nio_cs_US_ASCII_Encoder_encodeASCII: threshold = 0; break;
-         case TR::sun_nio_cs_US_ASCII_Decoder_decodeASCII: threshold = 0; break;
-
-         case TR::sun_nio_cs_ext_SBCS_Encoder_encodeSBCS: threshold = 11; break;
-         case TR::sun_nio_cs_ext_SBCS_Decoder_decodeSBCS: threshold = 0; break;
-
-         case TR::sun_nio_cs_UTF_8_Decoder_decodeUTF_8: threshold = 0; break;
-         case TR::sun_nio_cs_UTF_8_Encoder_encodeUTF_8: threshold = 0; break;
-
-         default: threshold = 0; break;
+         case TR::sun_nio_cs_ext_SBCS_Encoder_encodeSBCS:
+            threshold = 11;
+            break;
+         case TR::sun_nio_cs_ISO_8859_1_Encoder_encodeISOArray:
+         case TR::java_lang_StringCoding_implEncodeISOArray:
+         case TR::sun_nio_cs_ISO_8859_1_Decoder_decodeISO8859_1:
+         case TR::sun_nio_cs_US_ASCII_Encoder_encodeASCII:
+         case TR::sun_nio_cs_US_ASCII_Decoder_decodeASCII:
+         case TR::java_lang_StringCoding_implEncodeAsciiArray:
+         case TR::sun_nio_cs_ext_SBCS_Decoder_decodeSBCS:
+         case TR::sun_nio_cs_UTF_8_Decoder_decodeUTF_8:
+         case TR::sun_nio_cs_UTF_8_Encoder_encodeUTF_8:
+         default:
+            threshold = 0;
+            break;
          }
 
       static const char* overrideThreshold = feGetEnv("TR_ArrayTranslateOverrideThreshold");

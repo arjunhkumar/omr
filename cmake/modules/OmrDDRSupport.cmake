@@ -3,7 +3,7 @@
 #
 # This program and the accompanying materials are made available under
 # the terms of the Eclipse Public License 2.0 which accompanies this
-# distribution and is available at http://eclipse.org/legal/epl-2.0
+# distribution and is available at https://www.eclipse.org/legal/epl-2.0/
 # or the Apache License, Version 2.0 which accompanies this distribution
 # and is available at https://www.apache.org/licenses/LICENSE-2.0.
 #
@@ -16,7 +16,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 #############################################################################
 
 if(_OMR_DDR_SUPPORT)
@@ -39,17 +39,18 @@ endif()
 set(OMR_MODULES_DIR ${CMAKE_CURRENT_LIST_DIR})
 set(DDR_INFO_DIR "${CMAKE_BINARY_DIR}/ddr_info")
 
+if(OMR_OS_WINDOWS AND (OMR_TOOLCONFIG STREQUAL "msvc"))
+	set(USE_PATH_TOOL TRUE)
+else()
+	set(USE_PATH_TOOL FALSE)
+endif()
+
 function(make_ddr_set set_name)
 	set(DDR_TARGET_NAME "${set_name}")
 	set(DDR_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/${DDR_TARGET_NAME}")
 	set(DDR_MACRO_INPUTS_FILE "${DDR_BIN_DIR}/macros.list")
 	set(DDR_TOOLS_EXPORT "${omr_BINARY_DIR}/ddr/tools/DDRTools.cmake")
 	set(DDR_CONFIG_STAMP "${DDR_BIN_DIR}/config.stamp")
-	if((CMAKE_HOST_SYSTEM_NAME STREQUAL "CYGWIN") AND (OMR_TOOLCONFIG STREQUAL "msvc"))
-		set(PATH_TOOL cygpath -w)
-	else()
-		set(PATH_TOOL "")
-	endif()
 
 	# if DDR is not enabled, just skip
 	# Also skip if we are on a multi config generator since it is unsupported at the moment

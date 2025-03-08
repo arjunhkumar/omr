@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/ConstantDataSnippet.hpp"
@@ -258,8 +258,16 @@ OMR::ConstantDataSnippet::emitAddressConstant(PPCConstant<intptr_t> *acursor, ui
             else
                TR_ASSERT_FATAL(false, "Unable to relocate node %p", node);
 
-            TR::Relocation *relo = new (cg()->trHeapMemory()) TR::ExternalRelocation(codeCursor, (uint8_t *)node->getAddress(), (uint8_t*)type, TR_SymbolFromManager, cg());
-            cg()->addExternalRelocation(relo, __FILE__, __LINE__, node);
+            cg()->addExternalRelocation(
+               TR::ExternalRelocation::create(
+                  codeCursor,
+                  (uint8_t *)node->getAddress(),
+                  (uint8_t*)type,
+                  TR_SymbolFromManager,
+                  cg()),
+               __FILE__,
+               __LINE__,
+               node);
             }
          else
             {
@@ -271,8 +279,15 @@ OMR::ConstantDataSnippet::emitAddressConstant(PPCConstant<intptr_t> *acursor, ui
 
             if (kind != TR_NoRelocation)
                {
-               TR::Relocation *relo = new (cg()->trHeapMemory()) TR::ExternalRelocation(codeCursor, (uint8_t *)node, kind, cg());
-               cg()->addExternalRelocation(relo, __FILE__, __LINE__, node);
+               cg()->addExternalRelocation(
+                  TR::ExternalRelocation::create(
+                     codeCursor,
+                     (uint8_t *)node,
+                     kind,
+                     cg()),
+                  __FILE__,
+                  __LINE__,
+                  node);
                }
             }
          }
@@ -285,8 +300,11 @@ OMR::ConstantDataSnippet::emitAddressConstant(PPCConstant<intptr_t> *acursor, ui
          {
          // Register an unload assumption on the lower 32bit of the class constant.
          // The patching code thinks it's low bit tagging an instruction not a class pointer!!
+         int PICOffset = 0; // For LE or BE 32-bit
+         if (cg()->comp()->target().cpu.isBigEndian() && cg()->comp()->target().is64Bit())
+            PICOffset = 4;
          cg()->
-         jitAddPicToPatchOnClassUnload((void *)acursor->getConstantValue(), (void *)(codeCursor+((cg()->comp()->target().is64Bit())?4:0)) );
+         jitAddPicToPatchOnClassUnload((void *)acursor->getConstantValue(), (void *)(codeCursor+PICOffset));
          }
       }
 

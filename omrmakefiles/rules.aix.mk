@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 # rules.aix.mk
@@ -29,38 +29,62 @@ endef
 
 ifeq ($(OMR_ENV_DATA64),1)
   GLOBAL_ARFLAGS += -X64
-  GLOBAL_CFLAGS += -s -q64
-  GLOBAL_CXXFLAGS += -s -q64
   GLOBAL_ASFLAGS += -a64 -many
   GLOBAL_CPPFLAGS += -DPPC64
+
+  ifeq (openxl,$(OMR_TOOLCHAIN))
+    GLOBAL_CFLAGS += -s -m64
+    GLOBAL_CXXFLAGS += -s -m64
+  else
+    GLOBAL_CFLAGS += -s -q64
+    GLOBAL_CXXFLAGS += -s -q64
+  endif
 else
   GLOBAL_ARFLAGS += -X32
-  GLOBAL_CXXFLAGS += -s -q32
-  GLOBAL_CFLAGS += -s -q32
   GLOBAL_ASFLAGS += -a32 -mppc
+
+  ifeq (openxl,$(OMR_TOOLCHAIN))
+    GLOBAL_CXXFLAGS += -s -m32
+    GLOBAL_CFLAGS += -s -m32
+  else
+    GLOBAL_CXXFLAGS += -s -q32
+    GLOBAL_CFLAGS += -s -q32
+  endif
 endif
 
-GLOBAL_CFLAGS += -qarch=ppc -qalias=noansi -qxflag=LTOL:LTOL0 -qsuppress=1506-1108
-GLOBAL_CXXFLAGS+=-qlanglvl=extended0x -qarch=ppc -qalias=noansi -qxflag=LTOL:LTOL0 -qsuppress=1506-1108
+ifeq (openxl,$(OMR_TOOLCHAIN))
+  GLOBAL_CFLAGS += -qarch=ppc -fno-strict-aliasing
+  GLOBAL_CXXFLAGS+=-std=c++11 -qarch=ppc -fno-strict-aliasing
+else
+  GLOBAL_CFLAGS += -qarch=ppc -qalias=noansi -qxflag=LTOL:LTOL0 -qsuppress=1506-1108
+  GLOBAL_CXXFLAGS+=-qlanglvl=extended0x -qarch=ppc -qalias=noansi -qxflag=LTOL:LTOL0 -qsuppress=1506-1108
+endif
 GLOBAL_CPPFLAGS+=-D_XOPEN_SOURCE_EXTENDED=1 -D_ALL_SOURCE -DRS6000 -DAIXPPC -D_LARGE_FILES
 
-ifeq (,$(findstring xlclang,$(notdir $(CC))))
-  # xlc options
-  GLOBAL_CFLAGS+=-q mbcs -qlanglvl=extended -qinfo=pro
-else
+ifeq (openxl,$(OMR_TOOLCHAIN))
+  # openxl options
+  GLOBAL_CFLAGS+=-q mbcs -std=c89 -qinfo=pro
+  GLOBAL_CFLAGS+=-std=c++11
+else ifneq (,$(findstring xlclang,$(notdir $(CC))))
   # xlclang options
   GLOBAL_CFLAGS+=-qlanglvl=extended0x -qxlcompatmacros
+else
+  # xlc options
+  GLOBAL_CFLAGS+=-q mbcs -qlanglvl=extended -qinfo=pro
 endif
 
-ifeq (,$(findstring xlclang++,$(notdir $(CXX))))
-  # xlc++ options
-  GLOBAL_CXXFLAGS+=-q mbcs -qinfo=pro
-else
+ifeq (openxl,$(OMR_TOOLCHAIN))
+  # openxl options
+  GLOBAL_CXXFLAGS+=-fno-exceptions
+else ifneq (,$(findstring xlclang++,$(notdir $(CXX))))
   # xlclang++ options
   GLOBAL_CXXFLAGS+=-qxlcompatmacros -fno-exceptions
   ifeq (0,$(OMR_RTTI))
     GLOBAL_CXXFLAGS+=-fno-rtti
   endif
+else
+  # xlc++ options
+  GLOBAL_CXXFLAGS+=-q mbcs -qinfo=pro
 endif
 
 ifdef I5_VERSION
@@ -90,7 +114,11 @@ endif
 ###
 ifneq (,$(findstring executable,$(ARTIFACT_TYPE)))
   ifeq (1,$(OMR_ENV_DATA64))
-    GLOBAL_LDFLAGS+=-q64
+    ifeq (openxl,$(OMR_TOOLCHAIN))
+      GLOBAL_LDFLAGS+=-m64
+    else
+      GLOBAL_LDFLAGS+=-q64
+    endif
   else
     GLOBAL_LDFLAGS+=-q32
   endif
@@ -175,8 +203,13 @@ endif
 
 ## Warnings as errors
 ifeq ($(OMR_WARNINGS_AS_ERRORS),1)
-  GLOBAL_CFLAGS+=-qhalt=w
-  GLOBAL_CXXFLAGS+=-qhalt=w
+  ifeq (openxl,$(OMR_TOOLCHAIN))
+    GLOBAL_CFLAGS+=-Werror
+    GLOBAL_CXXFLAGS+=-Werror
+  else
+    GLOBAL_CFLAGS+=-qhalt=w
+    GLOBAL_CXXFLAGS+=-qhalt=w
+  endif
 endif
 
 ## Debug Information

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -66,26 +66,18 @@ public:
  * Function members
  */
 private:
-#if defined(OMR_GC_DOUBLE_MAPPING_FOR_SPARSE_HEAP_ALLOCATION)
-	/**
-	 * This is primarily meant for OSX since OSX is very lazy when it comes to releasing memory. Simply calling msync, or
-	 * madvise is not enough to decommit memory. Therefore, we need to force the OS to return the pages to the OS, and
-	 * we do so by mmaping the region in interest.
-	 *
-	 * @param dataSize	uintptr_t	size of region to be mmaped
-	 * @param dataPtr	dataPtr		Region location that'll be mmaped
-	 *
-	 * @return true if sparse region was successfully mmaped, false otherwise
-	 */
-	bool decommitMemoryForDoubleMapping(MM_EnvironmentBase* env, void *dataPtr, uintptr_t dataSize);
-#endif /* OMR_GC_DOUBLE_MAPPING_FOR_SPARSE_HEAP_ALLOCATION */
+	MMINLINE uintptr_t adjustSize(uintptr_t size)
+	{
+		/* Committing and de-committing memory sizes must be a multiple of page size. */
+		return MM_Math::roundToCeiling(_pageSize, size);
+	}
 
 protected:
 	bool initialize(MM_EnvironmentBase* env, uint32_t memoryCategory);
 	void tearDown(MM_EnvironmentBase *env);
 
-	MM_SparseVirtualMemory(MM_EnvironmentBase* env, uintptr_t pageSize, MM_Heap *in_heap)
-		: MM_VirtualMemory(env, env->getExtensions()->heapAlignment, pageSize, env->getExtensions()->requestedPageFlags, 0, OMRPORT_VMEM_MEMORY_MODE_READ | OMRPORT_VMEM_MEMORY_MODE_WRITE)
+	MM_SparseVirtualMemory(MM_EnvironmentBase* env, uintptr_t pageSize, uintptr_t pageFlags, MM_Heap *in_heap)
+		: MM_VirtualMemory(env, env->getExtensions()->heapAlignment, pageSize, pageFlags, 0, OMRPORT_VMEM_MEMORY_MODE_READ | OMRPORT_VMEM_MEMORY_MODE_WRITE)
 		, _heap(in_heap)
 		, _sparseDataPool(NULL)
 		, _largeObjectVirtualMemoryMutex(NULL)
@@ -99,24 +91,17 @@ public:
 
 	/**
 	 * After the in-heap proxy object pointer has moved, update the proxyObjPtr for the sparse data entry associated with the dataPtr.
+	 * Verify if the entry is consistent(the size and associated the object) before updating.
+	 * Assert if no entry is found or the verifying is failed.
 	 *
-	 * @param dataPtr		void*	Data pointer
-	 * @param proxyObjPtr	void*	Updated in-heap proxy object pointer for the data pointer
+	 * @param dataPtr          void*       Data pointer
+	 * @param oldproxyObjPtr   void*       Proxy object associated with dataPtr
+	 * @param size             uintptr_t   Size of region consumed by dataPtr
+	 * @param newProxyObjPtr   void*       Updated in-heap proxy object pointer for the data pointer
 	 *
 	 * @return true if the table entry was successfully updated, false otherwise
 	 */
-	bool updateSparseDataEntryAfterObjectHasMoved(void *dataPtr, void *proxyObjPtr);
-
-#if defined(OMR_GC_DOUBLE_MAPPING_FOR_SPARSE_HEAP_ALLOCATION)
-	/**
-	 * Record J9PortVmemIdentifier associated with data pointer
-	 *
-	 * @param dataPtr		void*	Data pointer
-	 * @param identifier 	J9PortVmemIdentifier for data pointer
-	 */
-	void recordDoubleMapIdentifierForData(void *dataPtr, struct J9PortVmemIdentifier *identifier);
-#endif /* OMR_GC_DOUBLE_MAPPING_FOR_SPARSE_HEAP_ALLOCATION */
-
+	bool updateSparseDataEntryAfterObjectHasMoved(void *dataPtr, void *oldProxyObjPtr, uintptr_t size, void *newProxyObjPtr);
 	/**
 	 * Find free space at sparse heap address space that satisfies the given size
 	 *
@@ -131,13 +116,16 @@ public:
 	 * Once object is collected by GC, we need to free the sparse region associated
 	 * with the object pointer. Therefore we decommit sparse region and return free
 	 * region to the sparse free region pool.
+	 * Verify if the entry is consistent(the size and associated the object) before freeing.
+	 * Assert if no entry is found or the verifying is failed.
 	 *
-	 * @param dataPtr	void*	Data pointer
+	 * @param dataPtr       void*       Data pointer
+	 * @param proxyObjPtr   void*       Proxy object associated with dataPtr
+	 * @param size          uintptr_t   Size of region consumed by dataPtr
 	 *
 	 * @return true if region associated to object was decommited and freed successfully, false otherwise
 	 */
-	bool freeSparseRegionAndUnmapFromHeapObject(MM_EnvironmentBase* env, void *dataPtr);
-
+	bool freeSparseRegionAndUnmapFromHeapObject(MM_EnvironmentBase *env, void *dataPtr, void *proxyObjPtr, uintptr_t size);
 	/**
 	 * Decommits/Releases memory, returning the associated pages to the OS
 	 *

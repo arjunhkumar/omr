@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef VALUENUMBERINFO_INCL
@@ -25,6 +25,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "compile/Compilation.hpp"
+#include "cs2/arrayof.h"
 #include "cs2/hashtab.h"
 #include "env/TRMemory.hpp"
 #include "il/Node.hpp"
@@ -38,7 +39,7 @@ class TR_ValueNumberInfo
    {
 
    public:
-  
+
    static void *operator new(size_t size, TR::Allocator a)
       { return a.allocate(size); }
    static void  operator delete(void *ptr, TR::Allocator a)
@@ -52,8 +53,8 @@ class TR_ValueNumberInfo
    /* Virtual destructor is necessary for the above delete operator to work
     * See "Modern C++ Design" section 4.7
     */
-   virtual ~TR_ValueNumberInfo() {}     
- 
+   virtual ~TR_ValueNumberInfo() {}
+
 
    TR_ValueNumberInfo(TR::Compilation *);
    TR_ValueNumberInfo(TR::Compilation *, TR::Optimizer *, bool requiresGlobals = false, bool prefersGlobals = true, bool noUseDefInfo = false);

@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #if !defined(COLLECTOR_HPP_)
@@ -56,7 +56,7 @@ protected:
 
 	uintptr_t _bytesRequested;
 
-	bool _globalCollector;
+	bool _globalCollector; /**< True for collectors that may GC any subset of the whole heap, but not necessarily always the whole heap */
 	bool _gcCompleted;
 	bool _isRecursiveGC;
 	bool _disableGC;

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 ///////////////////////////////////////////////////////////////////////////
@@ -156,12 +156,12 @@ class TR_InlinerDelimiter
    {
 
    public:
-   TR_InlinerDelimiter(TR_InlinerTracer * tracer, char * tag);
+   TR_InlinerDelimiter(TR_InlinerTracer *tracer, const char *tag);
    ~TR_InlinerDelimiter();
 
    protected:
-   TR_InlinerTracer * _tracer;
-   char *_tag;
+   TR_InlinerTracer *_tracer;
+   const char *_tag;
    };
 
 class TR_Inliner : public TR::Optimization
@@ -332,7 +332,6 @@ class TR_InlinerBase: public TR_HasRandomGenerator
       void getSymbolAndFindInlineTargets(TR_CallStack *, TR_CallSite *, bool findNewTargets=true);
 
       void applyPolicyToTargets(TR_CallStack *, TR_CallSite *);
-      bool callMustBeInlinedRegardlessOfSize(TR_CallSite *callsite);
 
       bool forceInline(TR_CallTarget *calltarget);
       bool forceVarInitInlining(TR_CallTarget *calltarget);
@@ -436,7 +435,7 @@ class TR_DumbInliner : public TR_InlinerBase
    public:
       TR_DumbInliner(TR::Optimizer *, TR::Optimization *, uint32_t initialSize, uint32_t dumbReductionIncrement = 5);
       virtual bool inlineCallTargets(TR::ResolvedMethodSymbol *, TR_CallStack *, TR_InnerPreexistenceInfo *);
-      bool tryToInline(char *message, TR_CallTarget *calltarget);
+      bool tryToInline(const char *message, TR_CallTarget *calltarget);
    protected:
       virtual bool analyzeCallSite(TR_CallStack *, TR::TreeTop *, TR::Node *, TR::Node *);
 

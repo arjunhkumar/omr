@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -47,12 +47,14 @@
 #include "MemoryPoolAddressOrderedList.hpp"
 #include "MemoryPoolAddressOrderedListBase.hpp"
 #include "MemoryPoolSplitAddressOrderedList.hpp"
-#include "MemoryPoolHybrid.hpp"
 #include "MemoryPoolLargeObjects.hpp"
 #include "ParallelGlobalGC.hpp"
 #include "SweepPoolManagerAddressOrderedList.hpp"
 #include "SweepPoolManagerSplitAddressOrderedList.hpp"
 #include "SweepPoolManagerHybrid.hpp"
+#if defined(J9VM_OPT_CRIU_SUPPORT)
+#include "HeapMemoryPoolIterator.hpp"
+#endif /* defined(J9VM_OPT_CRIU_SUPPORT) */
 
 /**
  * Tear down Standard Configuration
@@ -105,7 +107,7 @@ MM_GlobalCollector*
 MM_ConfigurationStandard::createCollectors(MM_EnvironmentBase* env)
 {
 #if defined(OMR_GC_MODRON_CONCURRENT_MARK) || defined(OMR_GC_MODRON_CONCCURENT_SWEEP)
-	MM_GCExtensionsBase *extensions = env->getExtensions();
+	MM_GCExtensionsBase* extensions = env->getExtensions();
 #endif /* OMR_GC_MODRON_CONCURRENT_MARK || OMR_GC_CONCURRENT_SWEEP */
 
 #if defined(OMR_GC_MODRON_CONCURRENT_MARK)
@@ -331,3 +333,24 @@ MM_ConfigurationStandard::createHeapRegionManager(MM_EnvironmentBase* env)
 
 	return heapRegionManager;
 }
+
+#if defined(J9VM_OPT_CRIU_SUPPORT)
+bool
+MM_ConfigurationStandard::reinitializeForRestore(MM_EnvironmentBase* env)
+{
+	MM_GCExtensionsBase* extensions = env->getExtensions();
+
+	MM_Configuration::reinitializeForRestore(env);
+
+	MM_MemoryPool* memoryPool;
+	MM_HeapMemoryPoolIterator poolIterator(env, extensions->heap);
+
+	while (NULL != (memoryPool = poolIterator.nextPool())) {
+		if (!memoryPool->reinitializeForRestore(env)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+#endif /* defined(J9VM_OPT_CRIU_SUPPORT) */

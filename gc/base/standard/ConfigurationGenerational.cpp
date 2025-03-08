@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -299,11 +299,11 @@ MM_ConfigurationGenerational::initializeConcurrentScavengerThreadCount(MM_Enviro
 
 #if defined(J9VM_OPT_CRIU_SUPPORT)
 bool
-MM_ConfigurationGenerational::reinitializeGCThreadCountForRestore(MM_EnvironmentBase* env)
+MM_ConfigurationGenerational::reinitializeForRestore(MM_EnvironmentBase* env)
 {
 	MM_GCExtensionsBase* extensions = env->getExtensions();
 
-	bool result = MM_Configuration::reinitializeGCThreadCountForRestore(env);
+	bool result = MM_ConfigurationStandard::reinitializeForRestore(env);
 
 #if defined(OMR_GC_CONCURRENT_SCAVENGER)
 	initializeConcurrentScavengerThreadCount(env);

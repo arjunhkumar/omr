@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 // On zOS XLC linker can't handle files with same name at link time.
@@ -146,7 +146,7 @@ OMR::Z::CodeGenerator::preLowerTrees()
    {
    OMR::CodeGenerator::preLowerTrees();
 
-   _ialoadUnneeded.init();
+   _aloadiUnneeded.init();
 
    }
 
@@ -173,7 +173,7 @@ OMR::Z::CodeGenerator::lowerTreesWalk(TR::Node * parent, TR::TreeTop * treeTop, 
          self()->lowerTreeIfNeeded(child, childCount, parent, treeTop);
          }
 
-      self()->checkIsUnneededIALoad(parent, child, treeTop);
+      self()->checkIsUnneededAloadi(parent, child, treeTop);
       }
 
    self()->lowerTreesPostChildrenVisit(parent, treeTop, visitCount);
@@ -181,10 +181,10 @@ OMR::Z::CodeGenerator::lowerTreesWalk(TR::Node * parent, TR::TreeTop * treeTop, 
    }
 
 void
-OMR::Z::CodeGenerator::checkIsUnneededIALoad(TR::Node *parent, TR::Node *node, TR::TreeTop *tt)
+OMR::Z::CodeGenerator::checkIsUnneededAloadi(TR::Node *parent, TR::Node *node, TR::TreeTop *tt)
    {
 
-   ListIterator<TR_Pair<TR::Node, int32_t> > listIter(&_ialoadUnneeded);
+   ListIterator<TR_Pair<TR::Node, int32_t> > listIter(&_aloadiUnneeded);
    bool inList = false;
 
    if (node->getOpCodeValue() == TR::aloadi)
@@ -206,18 +206,18 @@ OMR::Z::CodeGenerator::checkIsUnneededIALoad(TR::Node *parent, TR::Node *node, T
          }
       else // Not in list
          {
-         // We only need to track future references to this iaload if refcount  > 1
+         // We only need to track future references to this aloadi if refcount  > 1
          if (node->getReferenceCount() > 1)
             {
             uint32_t *temp ;
             TR_Pair<TR::Node, int32_t> *newEntry = new (self()->trStackMemory()) TR_Pair<TR::Node, int32_t> (node, (int32_t *)1);
-            _ialoadUnneeded.add(newEntry);
+            _aloadiUnneeded.add(newEntry);
             }
-         node->setUnneededIALoad (true);
+         node->setUnneededAloadi (true);
          }
       }
 
-   if (node->isUnneededIALoad())
+   if (node->isUnneededAloadi())
       {
       if (parent->getOpCodeValue() == TR::ifacmpne
          || parent->getOpCodeValue() == TR::ificmpeq
@@ -226,7 +226,7 @@ OMR::Z::CodeGenerator::checkIsUnneededIALoad(TR::Node *parent, TR::Node *node, T
          {
          if (!parent->isNopableInlineGuard() || !self()->getSupportsVirtualGuardNOPing())
             {
-            node->setUnneededIALoad(false);
+            node->setUnneededAloadi(false);
             }
          else
             {
@@ -235,7 +235,7 @@ OMR::Z::CodeGenerator::checkIsUnneededIALoad(TR::Node *parent, TR::Node *node, T
                      && self()->comp()->isVirtualGuardNOPingRequired(virtualGuard))
                && virtualGuard->canBeRemoved())
                {
-               node->setUnneededIALoad(false);
+               node->setUnneededAloadi(false);
                }
             }
          }
@@ -245,11 +245,11 @@ OMR::Z::CodeGenerator::checkIsUnneededIALoad(TR::Node *parent, TR::Node *node, T
          }
       else if (node->getOpCodeValue() == TR::aloadi && !(node->isClassPointerConstant() || node->isMethodPointerConstant()) || parent->getOpCode().isNullCheck())
          {
-         node->setUnneededIALoad(false);
+         node->setUnneededAloadi(false);
          }
       else if ((parent->getOpCodeValue() != TR::ifacmpne || tt->getNode()->getOpCodeValue() != TR::ifacmpne))
          {
-         node->setUnneededIALoad(false);
+         node->setUnneededAloadi(false);
          }
       }
    }
@@ -289,6 +289,10 @@ OMR::Z::CodeGenerator::lowerTreeIfNeeded(
       TR::Node* base = NULL;
       TR::Node* index = NULL;
       TR::ILOpCodes addOp, subOp, constOp;
+      // Need to track if lowered trees are internal pointers
+      // For context: https://github.com/eclipse-omr/omr/issues/4929
+      bool isInternalPointer = false;
+      TR::AutomaticSymbol *pinningArrayPointer = NULL;
 
       if (self()->comp()->target().is64Bit())
          {
@@ -304,14 +308,33 @@ OMR::Z::CodeGenerator::lowerTreeIfNeeded(
          }
 
       if (node->getFirstChild()->getOpCodeValue() == addOp)
+         {
          add1 = node->getFirstChild();
+         if (add1->isInternalPointer())
+            {
+            isInternalPointer = true;
+            pinningArrayPointer = add1->getPinningArrayPointer();
+            }
+         }
       if (add1 && add1->getFirstChild()->getOpCodeValue() == addOp)
          {
          add2 = add1->getFirstChild();
          base = add2->getFirstChild();
+         if (add2->isInternalPointer())
+            {
+            isInternalPointer = true;
+            pinningArrayPointer = add2->getPinningArrayPointer();
+            }
          }
       if (add1 && add1->getSecondChild()->getOpCodeValue() == subOp)
+         {
          sub = add1->getSecondChild();
+         if (add1->isInternalPointer())
+            {
+            isInternalPointer = true;
+            pinningArrayPointer = add1->getPinningArrayPointer();
+            }
+         }
       if (add2 && add2->getSecondChild()->getOpCode().isLoadConst())
          {
          const1 = add2->getSecondChild();
@@ -330,6 +353,11 @@ OMR::Z::CodeGenerator::lowerTreeIfNeeded(
             index = add2->getSecondChild();
             add2 = add2->getFirstChild();
             base = add2->getFirstChild();
+            if (add2->isInternalPointer())
+               {
+               isInternalPointer = true;
+               pinningArrayPointer = add2->getPinningArrayPointer();
+               }
             if (add2->getSecondChild()->getOpCode().isLoadConst())
                const2 = add2->getSecondChild();
             if (const2 && add1->getSecondChild()->getOpCode().isLoadConst())
@@ -363,6 +391,13 @@ OMR::Z::CodeGenerator::lowerTreeIfNeeded(
 
          TR::Node* newAdd2 = TR::Node::create(addOp, 2, base, index);
          TR::Node* newConst = TR::Node::create(constOp, 0);
+         if (isInternalPointer)
+            {
+            newAdd2->setIsInternalPointer(true);
+            if (pinningArrayPointer)
+               newAdd2->setPinningArrayPointer(pinningArrayPointer);
+            }
+
          if (self()->comp()->target().is64Bit())
             newConst->setLongInt(offset);
          else
@@ -373,6 +408,64 @@ OMR::Z::CodeGenerator::lowerTreeIfNeeded(
          }
       }
 
+   static bool disableLXAUncommoning = feGetEnv("TR_disableLXAUncommoning") != NULL;
+
+   if (!disableLXAUncommoning &&
+       (node->getOpCodeValue() == TR::aiadd || node->getOpCodeValue() == TR::aladd) &&
+       !parent->getOpCode().isLoad() &&
+       self()->getUseLXAInstructions())
+      {
+      // To enable generating more LXAs, perform uncommoning on trees that look like this:
+      // axadd
+      //   <address>
+      //   sub/add
+      //     mul/shl
+      //       <index>
+      //       <constant stride>
+      //     <constant offset>
+
+      TR::Node *addChild = node->getSecondChild();
+      if (addChild->getOpCode().isAdd() || addChild->getOpCode().isSub())
+         {
+         TR::Node *offsetChild = addChild->getSecondChild();
+         TR::Node *mulChild = addChild->getFirstChild();
+         if (offsetChild->getOpCode().isLoadConst() &&
+               (mulChild->getOpCode().isMul() || mulChild->getOpCode().isLeftShift()))
+            {
+            TR::Node *indexChild = mulChild->getFirstChild();
+            TR::Node *strideChild = mulChild->getSecondChild();
+            if (strideChild->getOpCode().isLoadConst())
+               {
+               int64_t stride = strideChild->getConstValue();
+               if (mulChild->getOpCode().isLeftShift())
+                  stride = 1 << stride;
+
+               int64_t offset = offsetChild->getConstValue();
+               if ((stride == 1 || stride == 2 || stride == 4 || stride == 8 || stride == 16) &&
+                     offset % stride == 0 &&
+                     self()->isDispInRange(offset / stride))
+                  {
+                  // tree has correct shape, perform uncommoning
+                  if (addChild->getReferenceCount() > 1 &&
+                        performTransformation(self()->comp(), "%sFound LXA shaped axadd tree [%p]; performing uncommoning on add child [%p]\n", OPT_DETAILS, node, addChild))
+                     {
+                     node->setChild(1, addChild->uncommon());
+                     }
+                  if (mulChild->getReferenceCount() > 1 &&
+                        performTransformation(self()->comp(), "%sFound LXA shaped axadd tree [%p]; performing uncommoning on mul child [%p]\n", OPT_DETAILS, node, mulChild))
+                     {
+                     addChild->setChild(0, mulChild->uncommon());
+                     }
+                  if (indexChild->getOpCodeValue() == TR::i2l &&
+                        performTransformation(self()->comp(), "%sFound LXA shaped axadd tree [%p]; removing i2l on index child [%p]\n", OPT_DETAILS, node, indexChild))
+                     {
+                     mulChild->setChild(0, indexChild->uncommon());
+                     }
+                  }
+               }
+            }
+         }
+      }
    }
 
 bool OMR::Z::CodeGenerator::supportsInliningOfIsInstance()
@@ -412,7 +505,7 @@ OMR::Z::CodeGenerator::CodeGenerator(TR::Compilation *comp)
      _previouslyAssignedTo(comp->allocator("LocalRA")),
      _methodBegin(NULL),
      _methodEnd(NULL),
-     _ialoadUnneeded(comp->trMemory())
+     _aloadiUnneeded(comp->trMemory())
    {
    }
 
@@ -479,7 +572,7 @@ OMR::Z::CodeGenerator::initialize()
 
    cg->setUsesRegisterPairsForLongs();
    cg->setSupportsDivCheck();
-   cg->setSupportsLoweringConstIDiv();
+   cg->setSupportsIMulHigh();
    cg->setSupportsTestUnderMask();
 
    // Initialize to be 8 bytes for bodyInfo / methodInfo
@@ -498,12 +591,28 @@ OMR::Z::CodeGenerator::initialize()
       {
       cg->setSupportsVirtualGuardNOPing();
       }
-   if (!comp->getOption(TR_DisableArraySetOpts))
+
+   if (!TR::Compiler->om.canGenerateArraylets())
       {
-      cg->setSupportsArraySet();
+      if (!comp->getOption(TR_DisableArraySetOpts))
+         {
+         cg->setSupportsArraySet();
+         }
+
+      static const bool disableArrayCmp = feGetEnv("TR_DisableArrayCmp") != NULL;
+      if (!disableArrayCmp)
+         {
+         cg->setSupportsArrayCmp();
+         cg->setSupportsArrayCmpSign();
+         }
+
+      static const bool disableArrayCmpLen = feGetEnv("TR_DisableArrayCmpLen") != NULL;
+      if (!disableArrayCmpLen)
+         {
+         cg->setSupportsArrayCmpLen();
+         }
       }
-   cg->setSupportsArrayCmp();
-   cg->setSupportsArrayCmpSign();
+
    if (!comp->compileRelocatableCode())
       {
       cg->setSupportsArrayTranslateTRxx();
@@ -531,7 +640,7 @@ OMR::Z::CodeGenerator::initialize()
 
    if (comp->target().cpu.isAtLeast(OMR_PROCESSOR_S390_ZEC12))
       {
-      if (comp->target().cpu.supportsFeature(OMR_FEATURE_S390_TE) && !comp->getOption(TR_DisableTM))
+      if (comp->target().cpu.supportsTransactionalMemoryInstructions() && !comp->getOption(TR_DisableTM))
          cg->setSupportsTM();
       }
 
@@ -540,6 +649,15 @@ OMR::Z::CodeGenerator::initialize()
       comp->setOption(TR_DisableVectorBCD);
       }
 
+   static bool canEmulateLXA = TR::InstOpCode(TR::InstOpCode::LXAB).canEmulate() &&
+                                     TR::InstOpCode(TR::InstOpCode::LXAH).canEmulate() &&
+                                     TR::InstOpCode(TR::InstOpCode::LXAF).canEmulate() &&
+                                     TR::InstOpCode(TR::InstOpCode::LXAG).canEmulate() &&
+                                     TR::InstOpCode(TR::InstOpCode::LXAQ).canEmulate();
+   if (canEmulateLXA || comp->target().cpu.isAtLeast(OMR_PROCESSOR_S390_ZNEXT))
+      {
+      cg->setUseLXAInstructions(true);
+      }
    // Be pessimistic until we can prove we don't exit after doing code-generation
    cg->setExitPointsInMethod(true);
 
@@ -4781,6 +4899,8 @@ bool OMR::Z::CodeGenerator::getSupportsOpCodeForAutoSIMD(TR::CPU *cpu, TR::ILOpC
       case TR::vxor:
       case TR::vor:
       case TR::vand:
+      case TR::vnotz:
+      case TR::vnolz:
          if (et == TR::Int8 || et == TR::Int16 || et == TR::Int32 || et == TR::Int64)
             return true;
          else

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef BITMANIP_H
@@ -98,7 +98,7 @@ static inline bool contiguousBits(uint64_t lmask)
    return contiguousBits((int64_t) lmask);
    }
 
-#if defined(TR_HOST_POWER)  && (defined(__IBMC__) || defined(__IBMCPP__) || defined(__ibmxl__))
+#if defined(TR_HOST_POWER) && (defined(__IBMC__) || defined(__IBMCPP__) || defined(__ibmxl__) || defined(__open_xl__))
 #include <builtins.h>
 
 // Return a count 0..32 of leading zeroes in the given word
@@ -394,10 +394,31 @@ static inline bool isNonPositivePowerOf2(int32_t input)
    return (input & -input) == -input;
    }
 
+/**
+ * \brief Tests whether the operand is a power of 2
+ *
+ * \param input The 32-bit signed integer value to be tested
+ *
+ * \return \c true, if the operand is a power of 2;
+ *         \c false, otherwise
+ */
 static inline bool isPowerOf2(int32_t input)
    {
    input = input < 0 ? -input : input;
    return (input & -input) == input;
+   }
+
+/**
+ * \brief Tests whether the operand is a power of 2
+ *
+ * \param input The 32-bit unsigned integer value to be tested
+ *
+ * \return \c true, if the operand is a power of 2;
+ *         \c false, otherwise
+ */
+static inline bool isPowerOf2(uint32_t input)
+   {
+   return (input != 0) && (input & (input-1)) == 0;
    }
 
 static inline bool isNonNegativePowerOf2(int64_t input)
@@ -417,10 +438,31 @@ static inline bool isNonPositivePowerOf2(int64_t input)
    return (input & -input) == -input;
    }
 
+/**
+ * \brief Tests whether the operand is a power of 2
+ *
+ * \param input The 64-bit signed integer value to be tested
+ *
+ * \return \c true, if the operand is a power of 2;
+ *         \c false, otherwise
+ */
 static inline bool isPowerOf2(int64_t input)
    {
    input = input < 0 ? -input : input;
    return (input & -input) == input;
+   }
+
+/**
+ * \brief Tests whether the operand is a power of 2
+ *
+ * \param input The 64-bit unsigned integer value to be tested
+ *
+ * \return \c true, if the operand is a power of 2;
+ *         \c false, otherwise
+ */
+static inline bool isPowerOf2(uint64_t input)
+   {
+   return (input != 0) && (input & (input-1)) == 0;
    }
 
 #if defined(OSX)

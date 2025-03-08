@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*
@@ -1161,7 +1161,7 @@
    VLBRREP,             // vector load byte reversed element and replicate
    VLEBRF,              // vector load byte reversed element (32)
    VLEBRG,              // vector load byte reversed element (64)
-   VLEBRH,              // vector load byte reversed element (16)   
+   VLEBRH,              // vector load byte reversed element (16)
    VLER,                // vector load elements reversed
    VLLEBRZ,             // vector load byte reversed element and zero
    VSTBR,               // vector store byte reversed elements
@@ -1179,4 +1179,28 @@
    VUPKZL,              // VECTOR UNPACK ZONED LOW
    VUPKZH,              // VECTOR UNPACK ZONED HIGH
 
-   S390LastOp = VUPKZH,
+   /* zNext Instructions */
+   BDEPG,               // BIT DEPOSIT
+   BEXTG,               // BIT EXTRACT
+   CLZG,                // COUNT LEADING ZEROS
+   CTZG,                // COUNT TRAILING ZEROS
+   LLXAB,               // LOAD LOGICAL INDEXED ADDRESS (8)
+   LLXAF,               // LOAD LOGICAL INDEXED ADDRESS (32)
+   LLXAG,               // LOAD LOGICAL INDEXED ADDRESS (64)
+   LLXAH,               // LOAD LOGICAL INDEXED ADDRESS (16)
+   LLXAQ,               // LOAD LOGICAL INDEXED ADDRESS (128)
+   LXAB,                // LOAD INDEXED ADDRESS (8)
+   LXAF,                // LOAD INDEXED ADDRESS (32)
+   LXAG,                // LOAD INDEXED ADDRESS (64)
+   LXAH,                // LOAD INDEXED ADDRESS (16)
+   LXAQ,                // LOAD INDEXED ADDRESS (128)
+   VBLEND,              // VECTOR BLEND
+   VEVAL,               // VECTOR EVALUATE
+   VD,                  // VECTOR DIVIDE
+   VDL,                 // VECTOR DIVIDE LOGICAL
+   VGEM,                // VECTOR GENERATE ELEMENT MASKS
+   VR,                  // VECTOR REMAINDER
+   VRL,                 // VECTOR REMAINDER LOGICAL
+   VTZ,                 // VECTOR TEST ZONED
+
+   S390LastOp = VTZ,

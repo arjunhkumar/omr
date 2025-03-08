@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "codegen/Relocation.hpp"
@@ -39,7 +39,7 @@
 #include "infra/Link.hpp"
 #include "runtime/Runtime.hpp"
 
-void TR::Relocation::apply(TR::CodeGenerator *codeGen)
+void TR::Relocation::apply(TR::CodeGenerator *cg)
    {
    TR_ASSERT(0, "Should never get here");
    }
@@ -68,40 +68,40 @@ void TR::LabelRelocation::assertLabelDefined()
       _label);
    }
 
-void TR::LabelRelative8BitRelocation::apply(TR::CodeGenerator *codeGen)
+void TR::LabelRelative8BitRelocation::apply(TR::CodeGenerator *cg)
    {
    assertLabelDefined();
-   codeGen->apply8BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel());
+   cg->apply8BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel());
    }
 
-void TR::LabelRelative12BitRelocation::apply(TR::CodeGenerator *codeGen)
+void TR::LabelRelative12BitRelocation::apply(TR::CodeGenerator *cg)
    {
    assertLabelDefined();
-   codeGen->apply12BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel(), isCheckDisp());
+   cg->apply12BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel(), isCheckDisp());
    }
 
-void TR::LabelRelative16BitRelocation::apply(TR::CodeGenerator *codeGen)
+void TR::LabelRelative16BitRelocation::apply(TR::CodeGenerator *cg)
    {
    assertLabelDefined();
    if (getAddressDifferenceDivisor() == 1)
-      codeGen->apply16BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel());
+      cg->apply16BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel());
    else
-      codeGen->apply16BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel(), getAddressDifferenceDivisor(), isInstructionOffset());
+      cg->apply16BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel(), getAddressDifferenceDivisor(), isInstructionOffset());
    }
 
-void TR::LabelRelative24BitRelocation::apply(TR::CodeGenerator *codeGen)
+void TR::LabelRelative24BitRelocation::apply(TR::CodeGenerator *cg)
    {
    assertLabelDefined();
-   codeGen->apply24BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel());
+   cg->apply24BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel());
    }
 
-void TR::LabelRelative32BitRelocation::apply(TR::CodeGenerator *codeGen)
+void TR::LabelRelative32BitRelocation::apply(TR::CodeGenerator *cg)
    {
    assertLabelDefined();
-   codeGen->apply32BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel());
+   cg->apply32BitLabelRelativeRelocation((int32_t *)getUpdateLocation(), getLabel());
    }
 
-void TR::LabelAbsoluteRelocation::apply(TR::CodeGenerator *codeGen)
+void TR::LabelAbsoluteRelocation::apply(TR::CodeGenerator *cg)
    {
    intptr_t *cursor = (intptr_t *)getUpdateLocation();
    assertLabelDefined();
@@ -183,11 +183,11 @@ uint8_t TR::ExternalRelocation::collectModifier()
    return 0;
    }
 
-void TR::ExternalRelocation::addExternalRelocation(TR::CodeGenerator *codeGen)
+void TR::ExternalRelocation::addExternalRelocation(TR::CodeGenerator *cg)
    {
    TR::AheadOfTimeCompile::interceptAOTRelocation(this);
 
-   TR_LinkHead<TR::IteratedExternalRelocation>& aot = codeGen->getAheadOfTimeCompile()->getAOTRelocationTargets();
+   TR_LinkHead<TR::IteratedExternalRelocation>& aot = cg->getAheadOfTimeCompile()->getAOTRelocationTargets();
    uint32_t narrowSize = getNarrowSize();
    uint32_t wideSize = getWideSize();
    flags8_t modifier(collectModifier());
@@ -231,8 +231,8 @@ void TR::ExternalRelocation::addExternalRelocation(TR::CodeGenerator *codeGen)
       }
 
    TR::IteratedExternalRelocation *temp =   _targetAddress2 ?
-      new (codeGen->trHeapMemory()) TR::IteratedExternalRelocation(_targetAddress, _targetAddress2, _kind, modifier, codeGen) :
-      new (codeGen->trHeapMemory()) TR::IteratedExternalRelocation(_targetAddress, _kind, modifier, codeGen);
+      new (cg->trHeapMemory()) TR::IteratedExternalRelocation(_targetAddress, _targetAddress2, _kind, modifier, cg) :
+      new (cg->trHeapMemory()) TR::IteratedExternalRelocation(_targetAddress, _kind, modifier, cg);
 
    aot.add(temp);
 
@@ -242,9 +242,9 @@ void TR::ExternalRelocation::addExternalRelocation(TR::CodeGenerator *codeGen)
    _relocationRecord = temp;
    }
 
-void TR::ExternalRelocation::apply(TR::CodeGenerator *codeGen)
+void TR::ExternalRelocation::apply(TR::CodeGenerator *cg)
    {
-   TR::Compilation *comp = codeGen->comp();
+   TR::Compilation *comp = cg->comp();
    uint8_t * relocatableMethodCodeStart = (uint8_t *)comp->getRelocatableMethodCodeStart();
    getRelocationRecord()->addRelocationEntry((uint32_t)(getUpdateLocation() - relocatableMethodCodeStart));
    }
@@ -286,7 +286,7 @@ TR::ExternalOrderedPair32BitRelocation::ExternalOrderedPair32BitRelocation(
                  uint8_t                         *location2,
                  uint8_t                         *target,
                  TR_ExternalRelocationTargetKind  k,
-                 TR::CodeGenerator                *codeGen) :
+                 TR::CodeGenerator                *cg) :
    TR::ExternalRelocation(), _update2Location(location2)
    {
    setUpdateLocation(location1);
@@ -294,6 +294,20 @@ TR::ExternalOrderedPair32BitRelocation::ExternalOrderedPair32BitRelocation(
    setTargetKind(k);
    }
 
+TR::ExternalOrderedPair32BitRelocation::ExternalOrderedPair32BitRelocation(
+                 uint8_t                         *location1,
+                 uint8_t                         *location2,
+                 uint8_t                         *target,
+                 uint8_t                         *target2,
+                 TR_ExternalRelocationTargetKind  k,
+                 TR::CodeGenerator                *cg) :
+   TR::ExternalRelocation(), _update2Location(location2)
+   {
+   setUpdateLocation(location1);
+   setTargetAddress(target);
+   setTargetAddress2(target2);
+   setTargetKind(k);
+   }
 
 uint8_t TR::ExternalOrderedPair32BitRelocation::collectModifier()
    {
@@ -305,7 +319,8 @@ uint8_t TR::ExternalOrderedPair32BitRelocation::collectModifier()
 
    if (comp->target().cpu.isPower() &&
           (kind == TR_ArrayCopyHelper || kind == TR_ArrayCopyToc || kind == TR_RamMethod || kind == TR_GlobalValue || kind == TR_BodyInfoAddressLoad || kind == TR_DataAddress
-           || kind == TR_DebugCounter || kind == TR_BlockFrequency || kind == TR_RecompQueuedFlag))
+           || kind == TR_DebugCounter || kind == TR_BlockFrequency || kind == TR_RecompQueuedFlag || kind == TR_CatchBlockCounter || kind == TR_MethodEnterExitHookAddress
+           || kind == TR_CallsiteTableEntryAddress || kind == TR_MethodTypeTableEntryAddress))
       {
       TR::Instruction *instr = (TR::Instruction *)getUpdateLocation();
       TR::Instruction *instr2 = (TR::Instruction *)getLocation2();
@@ -322,22 +337,23 @@ uint8_t TR::ExternalOrderedPair32BitRelocation::collectModifier()
    int32_t iLoc2 = static_cast<int32_t>(updateLocation2 - relocatableMethodCodeStart);
 
    if ( (iLoc < MIN_SHORT_OFFSET  || iLoc > MAX_SHORT_OFFSET ) || (iLoc2 < MIN_SHORT_OFFSET || iLoc2 > MAX_SHORT_OFFSET ) )
-      return RELOCATION_TYPE_WIDE_OFFSET | RELOCATION_TYPE_ORDERED_PAIR;
+      return RELOCATION_TYPE_WIDE_OFFSET | ITERATED_RELOCATION_TYPE_ORDERED_PAIR;
 
-   return RELOCATION_TYPE_ORDERED_PAIR;
+   return ITERATED_RELOCATION_TYPE_ORDERED_PAIR;
    }
 
 
-void TR::ExternalOrderedPair32BitRelocation::apply(TR::CodeGenerator *codeGen)
+void TR::ExternalOrderedPair32BitRelocation::apply(TR::CodeGenerator *cg)
    {
-   TR::Compilation *comp = codeGen->comp();
+   TR::Compilation *comp = cg->comp();
 
    TR::IteratedExternalRelocation *rec = getRelocationRecord();
    uint8_t *codeStart = (uint8_t *)comp->getRelocatableMethodCodeStart();
    TR_ExternalRelocationTargetKind kind = getRelocationRecord()->getTargetKind();
    if (comp->target().cpu.isPower() &&
       (kind == TR_ArrayCopyHelper || kind == TR_ArrayCopyToc || kind == TR_RamMethodSequence || kind == TR_GlobalValue || kind == TR_BodyInfoAddressLoad || kind == TR_DataAddress
-       || kind == TR_DebugCounter || kind == TR_BlockFrequency || kind == TR_RecompQueuedFlag))
+       || kind == TR_DebugCounter || kind == TR_BlockFrequency || kind == TR_RecompQueuedFlag || kind == TR_CatchBlockCounter || kind == TR_MethodEnterExitHookAddress
+       || kind == TR_CallsiteTableEntryAddress || kind == TR_MethodTypeTableEntryAddress))
       {
       TR::Instruction *instr = (TR::Instruction *)getUpdateLocation();
       TR::Instruction *instr2 = (TR::Instruction *)getLocation2();
@@ -467,6 +483,13 @@ const char *TR::ExternalRelocation::_externalRelocationTargetKindNames[TR_NumExt
    "TR_ValidateJ2IThunkFromMethod (110)",
    "TR_StaticDefaultValueInstance (111)",
    "TR_ValidateIsClassVisible (112)",
+   "TR_CatchBlockCounter (113)",
+   "TR_StartPC (114)",
+   "TR_MethodEnterExitHookAddress (115)",
+   "TR_ValidateDynamicMethodFromCallsiteIndex (116)",
+   "TR_ValidateHandleMethodFromCPIndex (117)",
+   "TR_CallsiteTableEntryAddress (118)",
+   "TR_MethodTypeTableEntryAddress (119)",
    };
 
 uintptr_t TR::ExternalRelocation::_globalValueList[TR_NumGlobalValueItems] =
@@ -480,7 +503,7 @@ uintptr_t TR::ExternalRelocation::_globalValueList[TR_NumGlobalValueItems] =
    0           // TR_HeapSizeForBarrierRange0
    };
 
-char *TR::ExternalRelocation::_globalValueNames[TR_NumGlobalValueItems] =
+const char *TR::ExternalRelocation::_globalValueNames[TR_NumGlobalValueItems] =
    {
    "not used (0)",
    "TR_CountForRecompile (1)",
@@ -492,7 +515,7 @@ char *TR::ExternalRelocation::_globalValueNames[TR_NumGlobalValueItems] =
    };
 
 
-TR::IteratedExternalRelocation::IteratedExternalRelocation(uint8_t *target, TR_ExternalRelocationTargetKind k, flags8_t modifier, TR::CodeGenerator *codeGen)
+TR::IteratedExternalRelocation::IteratedExternalRelocation(uint8_t *target, TR_ExternalRelocationTargetKind k, flags8_t modifier, TR::CodeGenerator *cg)
       : TR_Link<TR::IteratedExternalRelocation>(),
         _numberOfRelocationSites(0),
         _targetAddress(target),
@@ -500,14 +523,14 @@ TR::IteratedExternalRelocation::IteratedExternalRelocation(uint8_t *target, TR_E
         _relocationData(NULL),
         _relocationDataCursor(NULL),
         // initial size is size of header for this type
-        _sizeOfRelocationData(codeGen->getAheadOfTimeCompile()->getSizeOfAOTRelocationHeader(k)),
+        _sizeOfRelocationData(cg->getAheadOfTimeCompile()->getSizeOfAOTRelocationHeader(k)),
         _recordModifier(modifier.getValue()),
         _full(false),
         _kind(k)
       {
       }
 
-TR::IteratedExternalRelocation::IteratedExternalRelocation(uint8_t *target, uint8_t *target2, TR_ExternalRelocationTargetKind k, flags8_t modifier, TR::CodeGenerator *codeGen)
+TR::IteratedExternalRelocation::IteratedExternalRelocation(uint8_t *target, uint8_t *target2, TR_ExternalRelocationTargetKind k, flags8_t modifier, TR::CodeGenerator *cg)
       : TR_Link<TR::IteratedExternalRelocation>(),
         _numberOfRelocationSites(0),
         _targetAddress(target),
@@ -515,16 +538,16 @@ TR::IteratedExternalRelocation::IteratedExternalRelocation(uint8_t *target, uint
         _relocationData(NULL),
         _relocationDataCursor(NULL),
         // initial size is size of header for this type
-        _sizeOfRelocationData(codeGen->getAheadOfTimeCompile()->getSizeOfAOTRelocationHeader(k)),
+        _sizeOfRelocationData(cg->getAheadOfTimeCompile()->getSizeOfAOTRelocationHeader(k)),
         _recordModifier(modifier.getValue()),
         _full(false),
         _kind(k)
       {
       }
 
-void TR::IteratedExternalRelocation::initializeRelocation(TR::CodeGenerator *codeGen)
+void TR::IteratedExternalRelocation::initializeRelocation(TR::CodeGenerator *cg)
    {
-   _relocationDataCursor = codeGen->getAheadOfTimeCompile()->initializeAOTRelocationHeader(this);
+   _relocationDataCursor = cg->getAheadOfTimeCompile()->initializeAOTRelocationHeader(this);
    }
 
 void TR::IteratedExternalRelocation::addRelocationEntry(uint32_t locationOffset)
@@ -540,4 +563,23 @@ void TR::IteratedExternalRelocation::addRelocationEntry(uint32_t locationOffset)
       *(uint32_t *)_relocationDataCursor = locationOffset;
       _relocationDataCursor += 4;
       }
+   }
+
+TR::ExternalRelocation *TR::ExternalRelocation::create(
+      uint8_t *codeAddress,
+      uint8_t *targetAddress,
+      TR_ExternalRelocationTargetKind kind,
+      TR::CodeGenerator *cg)
+   {
+   return new (cg->trHeapMemory()) TR::ExternalRelocation(codeAddress, targetAddress, kind, cg);
+   }
+
+TR::ExternalRelocation *TR::ExternalRelocation::create(
+      uint8_t *codeAddress,
+      uint8_t *targetAddress,
+      uint8_t *targetAddress2,
+      TR_ExternalRelocationTargetKind kind,
+      TR::CodeGenerator *cg)
+   {
+   return new (cg->trHeapMemory()) TR::ExternalRelocation(codeAddress, targetAddress, targetAddress2, kind, cg);
    }

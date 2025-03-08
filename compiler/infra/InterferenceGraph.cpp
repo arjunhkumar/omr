@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "infra/InterferenceGraph.hpp"
@@ -25,7 +25,6 @@
 #include <string.h>
 #include "env/StackMemoryRegion.hpp"
 #include "compile/Compilation.hpp"
-#include "cs2/bitvectr.h"
 #include "env/TRMemory.hpp"
 #include "infra/Array.hpp"
 #include "infra/Assert.hpp"
@@ -392,7 +391,6 @@ bool TR_InterferenceGraph::simplify()
       TR_ASSERT(!notColourableDegreeSet->isEmpty(),
              "not colourable set must contain at least one member\n");
 
-      //CS2::ABitVector<TR::Allocator>::Cursor notColourableCursor(notColourableDegreeSet);
       TR_BitVectorIterator bvi;
       if (!notColourableDegreeSet->isEmpty())
          {
@@ -417,7 +415,7 @@ bool TR_InterferenceGraph::simplify()
                }
             }
 
-         TR_ASSERT(bestSpillNode, "Could not find a spill candidate.\n");
+         TR_ASSERT_FATAL(bestSpillNode, "Could not find a spill candidate");
 
          virtualRemoveNodeFromIG(bestSpillNode);
          workingSet->reset(bestSpillNode->getIndex());
@@ -503,7 +501,7 @@ bool TR_InterferenceGraph::select()
 
 
 #ifdef DEBUG
-void TR_InterferenceGraph::dumpIG(char *msg)
+void TR_InterferenceGraph::dumpIG(const char *msg)
    {
    if (msg)
       {

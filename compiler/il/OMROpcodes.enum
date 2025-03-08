@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 OPCODE_MACRO(\
@@ -7196,12 +7196,30 @@ OPCODE_MACRO(\
    /* .properties4          = */ 0, \
    /* .dataType             = */ TR::Int32, \
    /* .typeProperties       = */ ILTypeProp::Size_4 | ILTypeProp::Integer, \
-   /* .childProperties      = */ THREE_CHILD(TR::Address, TR::Address, TR::Int32), \
+   /* .childProperties      = */ THREE_CHILD(TR::Address, TR::Address, TR::Int64), \
    /* .swapChildrenOpCode   = */ TR::BadILOp, \
    /* .reverseBranchOpCode  = */ TR::BadILOp, \
    /* .booleanCompareOpCode = */ TR::BadILOp, \
    /* .ifCompareOpCode      = */ TR::BadILOp, \
-   /* .description          =    Inline code for memory comparison of part of an array */ \
+   /* .description          =    Compare two blocks of memory and returning a lexical ordering constant. */ \
+   /*                            The constant indicates whether the first child is lesser, equal, or greater than the second child. */ \
+   /*                            When the arrayCmpSign flag is set, the lesser/equal/greater constants are -1/0/1, otherwise the constants are 1/0/2 */ \
+)
+OPCODE_MACRO(\
+   /* .opcode               = */ arraycmplen, \
+   /* .name                 = */ "arraycmplen", \
+   /* .properties1          = */ ILProp1::Call | ILProp1::HasSymbolRef, \
+   /* .properties2          = */ 0, \
+   /* .properties3          = */ ILProp3::LikeUse | ILProp3::LikeDef | ILProp3::SkipDynamicLitPoolOnInts, \
+   /* .properties4          = */ 0, \
+   /* .dataType             = */ TR::Int64, \
+   /* .typeProperties       = */ ILTypeProp::Size_8 | ILTypeProp::Integer | ILTypeProp::Unsigned, \
+   /* .childProperties      = */ THREE_CHILD(TR::Address, TR::Address, TR::Int64), \
+   /* .swapChildrenOpCode   = */ TR::BadILOp, \
+   /* .reverseBranchOpCode  = */ TR::BadILOp, \
+   /* .booleanCompareOpCode = */ TR::BadILOp, \
+   /* .ifCompareOpCode      = */ TR::BadILOp, \
+   /* .description          =    Compare two blocks of memory and returning the index of the first mismatched byte */ \
 )
 OPCODE_MACRO(\
    /* .opcode               = */ allocationFence, \
@@ -8210,6 +8228,134 @@ OPCODE_MACRO(\
    /* .booleanCompareOpCode = */ TR::BadILOp, \
    /* .ifCompareOpCode      = */ TR::BadILOp, \
    /* .description          = */ \
+)
+OPCODE_MACRO(\
+   /* .operation            = */ bcompressbits, \
+   /* .name                 = */ "bcompressbits", \
+   /* .properties1          = */ 0, \
+   /* .properties2          = */ ILProp2::SupportedForPRE, \
+   /* .properties3          = */ 0, \
+   /* .properties4          = */ 0, \
+   /* .dataType             = */ TR::Int8, \
+   /* .typeProperties       = */ ILTypeProp::Size_1 | ILTypeProp::Integer, \
+   /* .childProperties      = */ TWO_SAME_CHILD(TR::Int8), \
+   /* .swapChildrenOpCode   = */ TR::BadILOp, \
+   /* .reverseBranchOpCode  = */ TR::BadILOp, \
+   /* .booleanCompareOpCode = */ TR::BadILOp, \
+   /* .ifCompareOpCode      = */ TR::BadILOp, \
+   /* .description          = compress bits from child1 selected by 1 bits in child2 into low bits of result */
+)
+OPCODE_MACRO(\
+   /* .operation            = */ scompressbits, \
+   /* .name                 = */ "scompressbits", \
+   /* .properties1          = */ 0, \
+   /* .properties2          = */ ILProp2::SupportedForPRE, \
+   /* .properties3          = */ 0, \
+   /* .properties4          = */ 0, \
+   /* .dataType             = */ TR::Int16, \
+   /* .typeProperties       = */ ILTypeProp::Size_2 | ILTypeProp::Integer, \
+   /* .childProperties      = */ TWO_SAME_CHILD(TR::Int16), \
+   /* .swapChildrenOpCode   = */ TR::BadILOp, \
+   /* .reverseBranchOpCode  = */ TR::BadILOp, \
+   /* .booleanCompareOpCode = */ TR::BadILOp, \
+   /* .ifCompareOpCode      = */ TR::BadILOp, \
+   /* .description          = compress bits from child1 selected by 1 bits in child2 into low bits of result */
+)
+OPCODE_MACRO(\
+   /* .operation            = */ icompressbits, \
+   /* .name                 = */ "icompressbits", \
+   /* .properties1          = */ 0, \
+   /* .properties2          = */ ILProp2::SupportedForPRE, \
+   /* .properties3          = */ 0, \
+   /* .properties4          = */ 0, \
+   /* .dataType             = */ TR::Int32, \
+   /* .typeProperties       = */ ILTypeProp::Size_4 | ILTypeProp::Integer, \
+   /* .childProperties      = */ TWO_SAME_CHILD(TR::Int32), \
+   /* .swapChildrenOpCode   = */ TR::BadILOp, \
+   /* .reverseBranchOpCode  = */ TR::BadILOp, \
+   /* .booleanCompareOpCode = */ TR::BadILOp, \
+   /* .ifCompareOpCode      = */ TR::BadILOp, \
+   /* .description          = compress bits from child1 selected by 1 bits in child2 into low bits of result */
+)
+OPCODE_MACRO(\
+   /* .operation            = */ lcompressbits, \
+   /* .name                 = */ "lcompressbits", \
+   /* .properties1          = */ 0, \
+   /* .properties2          = */ ILProp2::SupportedForPRE, \
+   /* .properties3          = */ 0, \
+   /* .properties4          = */ 0, \
+   /* .dataType             = */ TR::Int64, \
+   /* .typeProperties       = */ ILTypeProp::Size_8 | ILTypeProp::Integer, \
+   /* .childProperties      = */ TWO_SAME_CHILD(TR::Int64), \
+   /* .swapChildrenOpCode   = */ TR::BadILOp, \
+   /* .reverseBranchOpCode  = */ TR::BadILOp, \
+   /* .booleanCompareOpCode = */ TR::BadILOp, \
+   /* .ifCompareOpCode      = */ TR::BadILOp, \
+   /* .description          = compress bits from child1 selected by 1 bits in child2 into low bits of result */
+)
+OPCODE_MACRO(\
+   /* .operation            = */ bexpandbits, \
+   /* .name                 = */ "bexpandbits", \
+   /* .properties1          = */ 0, \
+   /* .properties2          = */ ILProp2::SupportedForPRE, \
+   /* .properties3          = */ 0, \
+   /* .properties4          = */ 0, \
+   /* .dataType             = */ TR::Int8, \
+   /* .typeProperties       = */ ILTypeProp::Size_1 | ILTypeProp::Integer, \
+   /* .childProperties      = */ TWO_SAME_CHILD(TR::Int8), \
+   /* .swapChildrenOpCode   = */ TR::BadILOp, \
+   /* .reverseBranchOpCode  = */ TR::BadILOp, \
+   /* .booleanCompareOpCode = */ TR::BadILOp, \
+   /* .ifCompareOpCode      = */ TR::BadILOp, \
+   /* .description          = starting from lowest bit, deposit bits from child1 into bits of result selected by 1 bits in child2 */
+)
+OPCODE_MACRO(\
+   /* .operation            = */ sexpandbits, \
+   /* .name                 = */ "sexpandbits", \
+   /* .properties1          = */ 0, \
+   /* .properties2          = */ ILProp2::SupportedForPRE, \
+   /* .properties3          = */ 0, \
+   /* .properties4          = */ 0, \
+   /* .dataType             = */ TR::Int16, \
+   /* .typeProperties       = */ ILTypeProp::Size_2 | ILTypeProp::Integer, \
+   /* .childProperties      = */ TWO_SAME_CHILD(TR::Int16), \
+   /* .swapChildrenOpCode   = */ TR::BadILOp, \
+   /* .reverseBranchOpCode  = */ TR::BadILOp, \
+   /* .booleanCompareOpCode = */ TR::BadILOp, \
+   /* .ifCompareOpCode      = */ TR::BadILOp, \
+   /* .description          = starting from lowest bit, deposit bits from child1 into bits of result selected by 1 bits in child2 */
+)
+OPCODE_MACRO(\
+   /* .operation            = */ iexpandbits, \
+   /* .name                 = */ "iexpandbits", \
+   /* .properties1          = */ 0, \
+   /* .properties2          = */ ILProp2::SupportedForPRE, \
+   /* .properties3          = */ 0, \
+   /* .properties4          = */ 0, \
+   /* .dataType             = */ TR::Int32, \
+   /* .typeProperties       = */ ILTypeProp::Size_4 | ILTypeProp::Integer, \
+   /* .childProperties      = */ TWO_SAME_CHILD(TR::Int32), \
+   /* .swapChildrenOpCode   = */ TR::BadILOp, \
+   /* .reverseBranchOpCode  = */ TR::BadILOp, \
+   /* .booleanCompareOpCode = */ TR::BadILOp, \
+   /* .ifCompareOpCode      = */ TR::BadILOp, \
+   /* .description          = starting from lowest bit, deposit bits from child1 into bits of result selected by 1 bits in child2 */
+)
+OPCODE_MACRO(\
+   /* .operation            = */ lexpandbits, \
+   /* .name                 = */ "lexpandbits", \
+   /* .properties1          = */ 0, \
+   /* .properties2          = */ ILProp2::SupportedForPRE, \
+   /* .properties3          = */ 0, \
+   /* .properties4          = */ 0, \
+   /* .dataType             = */ TR::Int64, \
+   /* .typeProperties       = */ ILTypeProp::Size_8 | ILTypeProp::Integer, \
+   /* .childProperties      = */ TWO_SAME_CHILD(TR::Int64), \
+   /* .swapChildrenOpCode   = */ TR::BadILOp, \
+   /* .reverseBranchOpCode  = */ TR::BadILOp, \
+   /* .booleanCompareOpCode = */ TR::BadILOp, \
+   /* .ifCompareOpCode      = */ TR::BadILOp, \
+   /* .description          = starting from lowest bit, deposit bits from child1 into bits of result selected by 1 bits in child2 */
 )
 OPCODE_MACRO(\
    /* .opcode               = */ sbyteswap, \

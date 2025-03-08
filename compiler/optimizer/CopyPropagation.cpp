@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/CopyPropagation.hpp"
@@ -30,7 +30,6 @@
 #include "compile/SymbolReferenceTable.hpp"
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
-#include "cs2/bitvectr.h"
 #include "cs2/sparsrbit.h"
 #include "env/IO.hpp"
 #include "env/StackMemoryRegion.hpp"
@@ -1088,11 +1087,11 @@ void TR_CopyPropagation::commonIndirectLoadsFromAutos()
       if (!currentTree->getNextTreeTop())
           break;
       TR::Node *nextNode = currentTree->getNextTreeTop()->getNode();
-      //   iistore M
+      //   istorei M
       //      loadaddr A
       //      X
       //   istore TMP              ==> istore TMP
-      //        iiload M                   X
+      //        iloadi M                   X
       //           loadaddr A
 
       if (node->getOpCode().isStoreIndirect() &&
@@ -1117,6 +1116,19 @@ void TR_CopyPropagation::commonIndirectLoadsFromAutos()
       comp()->dumpMethodTrees("Trees after commoning of indirect loads from autos");
 
    }
+
+
+static void preserveKnownObjectInfo(TR::Compilation *comp, TR::Node *node, TR::SymbolReference *oldSymRef, TR::SymbolReference *newSymRef)
+   {
+   if (oldSymRef->hasKnownObjectIndex() &&
+      !node->hasKnownObjectIndex() &&
+      !newSymRef->hasKnownObjectIndex())
+     {
+     node->setKnownObjectIndex(oldSymRef->getKnownObjectIndex());
+     dumpOptDetails(comp, "%s   Set known-object obj%d for node : %p\n", OPT_DETAILS, oldSymRef->getKnownObjectIndex(), node);
+     }
+   }
+
 
 /*
    replaceCopySymbolReferenceByOriginalIn uses a slightly different visitCount idiom --
@@ -1159,9 +1171,7 @@ void TR_CopyPropagation::replaceCopySymbolReferenceByOriginalIn(TR::SymbolRefere
       if (node->getOpCode().hasSymbolReference())
          {
          TR::SymbolReference *symRef = node->getSymbolReference();
-#ifndef PROPAGATE_GLOBALS
          if (symRef->getReferenceNumber() == copySymbolReference->getReferenceNumber())
-#endif
             {
             if (node->getOpCode().isLoadIndirect())
                {
@@ -1171,6 +1181,8 @@ void TR_CopyPropagation::replaceCopySymbolReferenceByOriginalIn(TR::SymbolRefere
 
             if (origNode->getOpCode().isLoadIndirect())
                {
+               preserveKnownObjectInfo(comp(), node, symRef, origNode->getSymbolReference());
+
                if(baseAddrAvail && baseAddrNode != NULL)
                   {
                   node->setAndIncChild(0, baseAddrNode);
@@ -1230,12 +1242,15 @@ void TR_CopyPropagation::replaceCopySymbolReferenceByOriginalIn(TR::SymbolRefere
                if (origNode->getNumChildren() == 2)
                   {
                   twoChildrenCase = true;
-                  TR_ASSERT(0, "Only in WCode we can add extra children\n");
+                  TR_ASSERT_FATAL(false, "Cannot add extra children");
                   }
                else
                   {
                   if (origNode->getOpCode().hasSymbolReference() && node->getOpCode().hasSymbolReference())
+                     {
+                     preserveKnownObjectInfo(comp(), node, node->getSymbolReference(), origNode->getSymbolReference());
                      node->setSymbolReference(origNode->getSymbolReference());
+                     }
                   int32_t nodePrecision = node->getDecimalPrecision();
                   int32_t nodeSize = node->getSize();
                   int32_t origSymSize = origNode->getSymbolReference()->getSymbol()->getSize();
@@ -1391,18 +1406,19 @@ void TR_CopyPropagation::replaceCopySymbolReferenceByOriginalIn(TR::SymbolRefere
                   }
 
                if (origNode->getOpCode().hasSymbolReference() && node->getOpCode().hasSymbolReference())
+                  {
+                  preserveKnownObjectInfo(comp(), node, node->getSymbolReference(), origNode->getSymbolReference());
                   node->setSymbolReference(origNode->getSymbolReference());
+                  }
                }
             }
          }
 
-#ifndef PROPAGATE_GLOBALS
       for (int i = 0; i < node->getNumChildren(); i++)
          {
          TR::Node *child = node->getChild(i);
          replaceCopySymbolReferenceByOriginalIn(copySymbolReference, origNode, child, defNode);
          }
-#endif
       }
    }
 
@@ -1589,21 +1605,11 @@ TR::Node *TR_CopyPropagation::areAllDefsInCorrectForm(TR::Node *useNode, const T
 
       TR::SymbolReference *copySymbolReference = defNode->getSymbolReference();
 
-#ifdef PROPAGATE_GLOBALS
-      if (!defNode->getOpCode().isStore())
-         return NULL;
-#else
       if (!defNode->getOpCode().isStoreDirect())
          return NULL;
-#endif
 
-#ifdef PROPAGATE_GLOBALS
-      if (!useDefInfo->isPreciseDef(defNode, useNode))
-         return NULL;
-#else
       if (!defNode->getSymbolReference()->getSymbol()->isAutoOrParm())
          return NULL;
-#endif
 
       if (defNode->getDataType() != useNode->getDataType() ||
           defNode->getSize() != useNode->getSize())
@@ -1927,15 +1933,9 @@ bool TR_CopyPropagation::isCorrectToPropagate(TR::Node *useNode, TR::Node *store
          {
          return true;
          }
-#ifdef PROPAGATE_GLOBALS
-      else if (_lookForOriginalDefs &&
-               currentNode->getOpCode().isStore() &&
-               defs.ValueAt(currentNode->getUseDefIndex()-useDefInfo->getFirstDefIndex()))
-#else
       else if (_lookForOriginalDefs &&
               currentNode->getOpCode().isStoreDirect() &&
               currentNode->getSymbolReference() == storeNode->getSymbolReference())
-#endif
          {
          return true;
          }
@@ -2014,15 +2014,9 @@ bool TR_CopyPropagation::isRedefinedBetweenStoreTreeAnd(TR::list< TR::Node *> & 
             visitPredecessors = false;
             break;
             }
-#ifdef PROPAGATE_GLOBALS
-         else if (_lookForOriginalDefs &&
-                  currentNode->getOpCode().isStore() &&
-                  defs.ValueAt(currentNode->getUseDefIndex()-useDefInfo->getFirstDefIndex()))
-#else
          else if (_lookForOriginalDefs &&
                  currentNode->getOpCode().isStoreDirect() &&
                  currentNode->getSymbolReference() == storeNode->getSymbolReference())
-#endif
             {
             visitPredecessors = false;
             break;
@@ -2091,15 +2085,9 @@ bool TR_CopyPropagation::recursive_isRedefinedBetweenStoreTreeAnd(TR::list< TR::
          {
          return false;
          }
-#ifdef PROPAGATE_GLOBALS
-      else if (_lookForOriginalDefs &&
-               currentNode->getOpCode().isStore() &&
-               defs.ValueAt(currentNode->getUseDefIndex()-useDefInfo->getFirstDefIndex()))
-#else
       else if (_lookForOriginalDefs &&
               currentNode->getOpCode().isStoreDirect() &&
               currentNode->getSymbolReference() == storeNode->getSymbolReference())
-#endif
          {
          return false;
          }
@@ -2352,7 +2340,7 @@ TR::Node * TR_CopyPropagation::isCheapRematerializationCandidate(TR::Node * defN
 
    // 1) indirect loads where the base ptr is on the stack or a location pointer
    //
-   //  iaload <refined-array-shadow> [id=238:"PSALIT2"] [#1.64 Shadow] [flags 0x80000607 0x0 ]  [0x2B026BFC] bci=[-1,37,329] rc=2 vc=9438 vn=- sti=- udi=331 nc=1 addr=4
+   //  aloadi <refined-array-shadow> [id=238:"PSALIT2"] [#1.64 Shadow] [flags 0x80000607 0x0 ]  [0x2B026BFC] bci=[-1,37,329] rc=2 vc=9438 vn=- sti=- udi=331 nc=1 addr=4
    //    aiadd (internalPtr )                                                            [0x2B016B20] bci=[-1,37,329] rc=1 vc=9438 vn=- sti=- udi=- nc=2 addr=4 flg=0x8000
    //      loadaddr <auto slot 40> [id=152:"PSA"] [#1.63 Auto] [flags 0x4000008 0x0 ]    [0x2B016AD0] bci=[-1,37,329] rc=1 vc=9438 vn=- sti=- udi=- nc=0 addr=4
    //      iconst 1212 (X!=0 X>=0 )                                                      [0x2B016B70] bci=[-1,37,329] rc=1 vc=9438 vn=- sti=- udi=- nc=0 flg=0x104

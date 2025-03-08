@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "env/FrontEnd.hpp"
@@ -158,7 +158,7 @@ TR_FrontEnd::getFormattedName(
 
 
 TR_OpaqueMethodBlock*
-TR_FrontEnd::getMethodFromName(char * className, char *methodName, char *signature)
+TR_FrontEnd::getMethodFromName(const char *className, const char *methodName, const char *signature)
    {
    TR_UNIMPLEMENTED();
    return 0;
@@ -182,6 +182,13 @@ TR_FrontEnd::getComponentClassFromArrayClass(TR_OpaqueClassBlock *arrayClass)
 
 TR_OpaqueClassBlock *
 TR_FrontEnd::getArrayClassFromComponentClass(TR_OpaqueClassBlock * componentClass)
+   {
+   TR_UNIMPLEMENTED();
+   return 0;
+   }
+
+TR_OpaqueClassBlock *
+TR_FrontEnd::getNullRestrictedArrayClassFromComponentClass(TR_OpaqueClassBlock * componentClass)
    {
    TR_UNIMPLEMENTED();
    return 0;
@@ -276,15 +283,22 @@ TR_FrontEnd::getClassFromMethodBlock(TR_OpaqueMethodBlock *mb)
    return NULL;
    }
 
-intptr_t
+int32_t
 TR_FrontEnd::getStringUTF8Length(uintptr_t objectPointer)
    {
    TR_UNIMPLEMENTED();
    return -1;
    }
 
+uint64_t
+TR_FrontEnd::getStringUTF8UnabbreviatedLength(uintptr_t objectPointer)
+   {
+   TR_UNIMPLEMENTED();
+   return -1;
+   }
+
 char *
-TR_FrontEnd::getStringUTF8(uintptr_t objectPointer, char *buffer, intptr_t bufferSize)
+TR_FrontEnd::getStringUTF8(uintptr_t objectPointer, char *buffer, uintptr_t bufferSize)
    {
    TR_UNIMPLEMENTED();
    return NULL;
@@ -310,4 +324,16 @@ TR_FrontEnd::methodTrampolineLookup(TR::Compilation *comp, TR::SymbolReference *
    {
    TR_UNIMPLEMENTED();
    return 0;
+   }
+
+void
+TR_FrontEnd::setIsSafeToFreeOptionsOnShutdown(bool isSafe)
+   {
+   _isSafeToFreeOptionsOnShutdown = isSafe;
+   }
+
+bool
+TR_FrontEnd::isSafeToFreeOptionsOnShutdown()
+   {
+   return _isSafeToFreeOptionsOnShutdown;
    }

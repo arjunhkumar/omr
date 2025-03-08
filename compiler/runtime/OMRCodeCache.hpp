@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_CODECACHE_INCL
@@ -40,6 +40,7 @@ namespace OMR { typedef CodeCache CodeCacheConnector; }
 #include "runtime/CodeCacheConfig.hpp"
 #include "runtime/Runtime.hpp"
 #include "runtime/CodeCacheTypes.hpp"
+#include "runtime/OMRRSSReport.hpp"
 #include "OMR/Bytes.hpp"
 
 class TR_OpaqueMethodBlock;
@@ -57,7 +58,7 @@ class OMR_EXTENSIBLE CodeCache
    TR::CodeCache *self();
 
 public:
-   CodeCache() { }
+   CodeCache() : _coldCodeRSSRegion(NULL) { }
 
    void *operator new(size_t s, TR::CodeCache *cache) { return cache; }
    void operator delete(void *p, TR::CodeCache *cache) { /* do nothing */ }
@@ -229,7 +230,7 @@ private:
 public:
    bool                       addFreeBlock2WithCallSite(uint8_t *start,
                                                         uint8_t *end,
-                                                        char *file,
+                                                        const char *file,
                                                         uint32_t lineNumber);
 
    /**
@@ -416,6 +417,11 @@ public:
 
    CodeCacheFreeCacheBlock *_freeBlockList;
 
+   /**
+   * @brief Returns pointer to the cold code RSS Region
+   */
+   OMR::RSSRegion *getColdCodeRSSRegion() { return _coldCodeRSSRegion; }
+
    // This is used in an attempt to enforce mutually exclusive ownership.
    // flag accessed under mutex <== This is deceiving! There are two different monitors we may hold (not at the same time!) when we write to this.
    // We can either be holding the code cache monitor *OR* the manager's code cache list monitor.
@@ -450,6 +456,8 @@ public:
 
    TR_YesNoMaybe _almostFull;
    CodeCacheMethodHeader *_lastAllocatedBlock; // used for error detection (RAS)
+
+   OMR::RSSRegion   *_coldCodeRSSRegion;
    };
 
 } // namespace OMR

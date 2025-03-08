@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_SIMPLIFIERHANDLERS_INCL
@@ -137,32 +137,163 @@
                   node);                                                           \
       }
 
-/**
- * Binary identity or zero operation
- *
- * If the second child is a constant that represents an identity operation,
- * replace this node with the first child.
- *
- * If the second child is a constant that represents a zero operation,
- * replace this node with the second child.
- */
-#define BINARY_IDENTITY_OR_ZERO_OP(ConstType,Type,NullValue,ZeroValue)\
-   if(secondChild->getOpCode().isLoadConst())\
-      {\
-      ConstType value = secondChild->get##Type();\
-      if(value == NullValue)\
-         return s->replaceNodeWithChild(node, firstChild, s->_curTree, block);\
-      if(value == ZeroValue)\
-         {\
-         if(performTransformation(s->comp(), "%sFound op with iconst in node [" POINTER_PRINTF_FORMAT "]\n", s->optDetailString(),node))\
-            {\
-            s->anchorChildren(node, s->_curTree);\
-            s->prepareToReplaceNode(node, secondChild->getOpCodeValue());\
-            node->set##Type(value);\
-            return node;\
-            }\
-         }\
+struct BinaryOpSimplifierHelpers
+   {
+   static int8_t getNodeByteValue(TR::Node * node)
+      {
+      return node->getByte();
       }
+
+   static int16_t getNodeShortValue(TR::Node * node)
+      {
+      return node->getShortInt();
+      }
+
+   static int32_t getNodeIntValue(TR::Node * node)
+      {
+      return node->getInt();
+      }
+
+   static int64_t getNodeLongValue(TR::Node * node)
+      {
+      return node->getLongInt();
+      }
+
+   static uint32_t getNodeFloatBits(TR::Node * node)
+      {
+      return node->getFloatBits();
+      }
+
+   static uint64_t getNodeDoubleBits(TR::Node * node)
+      {
+      return node->getDoubleBits();
+      }
+
+   static void setNodeByteValue(TR::Node * node, int8_t value)
+      {
+      node->setByte(value);
+      }
+
+   static void setNodeShortValue(TR::Node * node, int16_t value)
+      {
+      node->setShortInt(value);
+      }
+
+   static void setNodeIntValue(TR::Node * node, int32_t value)
+      {
+      node->setInt(value);
+      }
+
+   static void setNodeLongValue(TR::Node * node, int64_t value)
+      {
+      node->setLongInt(value);
+      }
+
+   static void setNodeFloatBits(TR::Node * node, uint32_t bits)
+      {
+      node->setFloatBits(bits);
+      }
+
+   static void setNodeDoubleBits(TR::Node * node, uint64_t bits)
+      {
+      node->setDoubleBits(bits);
+      }
+   };
+
+template <typename T>
+struct BinaryOpSimplifier
+   {
+   typedef T (* Getter)(TR::Node *);
+   typedef void (* Setter)(TR::Node *, T);
+   TR::Simplifier * s;
+   Getter getNodeValue;
+   Setter setNodeValue;
+
+   BinaryOpSimplifier(TR::Simplifier * simplifier, Getter getter, Setter setter): s(simplifier), getNodeValue(getter), setNodeValue(setter) {}
+
+   /**
+    * Binary identity operation
+    *
+    * If the second child is a constant that represents an identity operand
+    * for the operation, replace this node with the first child.
+    */
+   inline TR::Node * tryToSimplifyIdentityOp(TR::Node * node, T identityValue)
+      {
+      auto secondChild = node->getSecondChild();
+      if (!secondChild || !secondChild->getOpCode().isLoadConst())
+         return NULL;
+
+      if (getNodeValue(secondChild) != identityValue)
+         return NULL;
+
+      return s->replaceNode(node, node->getFirstChild(), s->_curTree);
+      }
+
+   /**
+    * Binary identity or zero operation
+    *
+    * If the second child is a constant that represents an identity operand
+    * for the operation, replace this node with the first child.
+    * Binary zero operation
+    *
+    * If the second child is a constant that represents a zero operation,
+    * replace this node with the second child.
+    */
+   inline TR::Node * tryToSimplifyIdentityOrZeroOp(TR::Block * block, TR::Node * node, T identityValue, T zeroValue)
+      {
+      auto secondChild = node->getSecondChild();
+      if (!secondChild || !secondChild->getOpCode().isLoadConst())
+         return NULL;
+
+      auto value = getNodeValue(secondChild);
+      if (value == identityValue)
+         return s->replaceNodeWithChild(node, node->getFirstChild(), s->_curTree, block);
+
+      if (value != zeroValue)
+         return NULL;
+
+      if (performTransformation(s->comp(), "%sFound op with %s in node [" POINTER_PRINTF_FORMAT "]\n", s->optDetailString(), node->getOpCode().getName(), node))
+         {
+         s->anchorChildren(node, s->_curTree);
+         s->prepareToReplaceNode(node, secondChild->getOpCodeValue());
+
+         setNodeValue(node, value);
+         return node;
+         }
+
+      return NULL;
+      }
+   };
+
+BinaryOpSimplifier<int8_t> getByteBinaryOpSimplifier(TR::Simplifier * s)
+   {
+   return BinaryOpSimplifier<int8_t>(s, BinaryOpSimplifierHelpers::getNodeByteValue, BinaryOpSimplifierHelpers::setNodeByteValue);
+   }
+
+BinaryOpSimplifier<int16_t> getShortBinaryOpSimplifier(TR::Simplifier * s)
+   {
+   return BinaryOpSimplifier<int16_t>(s, BinaryOpSimplifierHelpers::getNodeShortValue, BinaryOpSimplifierHelpers::setNodeShortValue);
+   }
+
+BinaryOpSimplifier<int32_t> getIntBinaryOpSimplifier(TR::Simplifier * s)
+   {
+   return BinaryOpSimplifier<int32_t>(s, BinaryOpSimplifierHelpers::getNodeIntValue, BinaryOpSimplifierHelpers::setNodeIntValue);
+   }
+
+BinaryOpSimplifier<int64_t> getLongBinaryOpSimplifier(TR::Simplifier * s)
+   {
+   return BinaryOpSimplifier<int64_t>(s, BinaryOpSimplifierHelpers::getNodeLongValue, BinaryOpSimplifierHelpers::setNodeLongValue);
+   }
+
+BinaryOpSimplifier<uint32_t> getFloatBitsBinaryOpSimplifier(TR::Simplifier * s)
+   {
+   return BinaryOpSimplifier<uint32_t>(s, BinaryOpSimplifierHelpers::getNodeFloatBits, BinaryOpSimplifierHelpers::setNodeFloatBits);
+   }
+
+BinaryOpSimplifier<uint64_t> getDoubleBitsBinaryOpSimplifier(TR::Simplifier * s)
+   {
+   return BinaryOpSimplifier<uint64_t>(s, BinaryOpSimplifierHelpers::getNodeDoubleBits, BinaryOpSimplifierHelpers::setNodeDoubleBits);
+   }
 
 static TR::ILOpCodes addOps[TR::NumAllTypes] = { TR::BadILOp,
                                                TR::badd,    TR::sadd,    TR::iadd,    TR::ladd,
@@ -192,76 +323,6 @@ static TR::ILOpCodes negOps[TR::NumAllTypes] = { TR::BadILOp,
 /*
  * Local helper functions
  */
-
-
-template <typename T>
-inline void setCCAddSigned(T value, T operand1, T operand2, TR::Node *node, TR::Simplifier * s)
-   {
-   // for an add (T = A + B) an overflow occurs iff the sign(A) == sign(B) and sign(T) != sign(A)
-   if (((operand1<0) == (operand2<0)) &&
-       !((value<0) == (operand1<0)))
-      s->setCC(node, OMR::ConditionCode3);
-   else if ( value < 0 )
-      s->setCC(node, OMR::ConditionCode1);
-   else if ( value > 0 )
-      s->setCC(node, OMR::ConditionCode2);
-   else
-      s->setCC(node, OMR::ConditionCode0);
-   }
-
-template <typename T>
-inline void setCCAddUnsigned(T value, T operand1, TR::Node *node, TR::Simplifier * s)
-   {
-   bool carry = value < operand1;
-
-   if (value == 0 && !carry)
-      s->setCC(node, OMR::ConditionCode0);
-   else if (value != 0 && !carry)
-      s->setCC(node, OMR::ConditionCode1);
-   else if (value == 0 && carry)
-      s->setCC(node, OMR::ConditionCode2);
-   else
-      s->setCC(node, OMR::ConditionCode3);
-   }
-
-template <typename T>
-inline void setCCSubSigned(T value, T operand1, T operand2, TR::Node *node, TR::Simplifier * s)
-   {
-   // for a sub (T = A - B) an overflow occurs iff the sign(A) != sign(B) and sign(T) == sign(B)
-   if (!((operand1<0) == (operand2<0)) &&
-       ((value<0) == (operand2<0)))
-      s->setCC(node, OMR::ConditionCode3);
-   else if ( value < 0 )
-      s->setCC(node, OMR::ConditionCode1);
-   else if ( value > 0 )
-      s->setCC(node, OMR::ConditionCode2);
-   else
-      s->setCC(node, OMR::ConditionCode0);
-   }
-
-template <typename T>
-inline void setCCSubUnsigned(T value, T operand1, TR::Node *node, TR::Simplifier * s)
-   {
-   bool borrow = value > operand1;
-
-   if (value != 0 && borrow)
-      s->setCC(node, OMR::ConditionCode1);
-   else if (value == 0 && !borrow)
-      s->setCC(node, OMR::ConditionCode2);
-   else if (value != 0 && !borrow)
-      s->setCC(node, OMR::ConditionCode3);
-   else
-      TR_ASSERT(0,"condition code of 0 is not possible for logical sub");
-   }
-
-template <typename T>
-inline void setCCOr(T value, TR::Node *node, TR::Simplifier *s)
-   {
-   if (value == (T)0)
-      s->setCC(node, OMR::ConditionCode0);
-   else
-      s->setCC(node, OMR::ConditionCode1);
-   }
 
 static void convertToTestUnderMask(TR::Node *node, TR::Block *block, TR::Simplifier *s)
    {
@@ -733,7 +794,7 @@ static TR::Node *addSimplifierCommon(TR::Node* node, TR::Block * block, TR::Simp
 
             setExprInvariant(region, newSecondChild);
 
-            simplifyChildren(node, block, s);
+            s->simplifyChildren(node, block);
             }
          }
       // R9_2:
@@ -818,7 +879,7 @@ static TR::Node *addSimplifierCommon(TR::Node* node, TR::Block * block, TR::Simp
 template <class T>
 static TR::Node *addSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (node->getOpCodeValue() == TR::iuaddc)
       return node;
@@ -1145,7 +1206,7 @@ TR::Node *subSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
    scount_t futureUseCountOfFirstChild = node->getFirstChild()->getFutureUseCount();
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (node->getOpCodeValue() == TR::iusubb)
       return node;
@@ -1534,40 +1595,6 @@ static void normalizeConstantShiftAmount(TR::Node * node, int32_t shiftMask, TR:
       }
    }
 
-static void normalizeShiftAmount(TR::Node * node, int32_t normalizationConstant, TR::Simplifier * s)
-   {
-   if (s->comp()->cg()->needsNormalizationBeforeShifts() &&
-       !node->isNormalizedShift())
-      {
-      TR::Node * secondChild = node->getSecondChild();
-      //
-      // Some platforms like IA32 obey Java semantics for shifts even if the
-      // shift amount is greater than 31. However other platforms like PPC need
-      // to normalize the shift amount to range (0, 31) before shifting in order
-      // to obey Java semantics. This can be captured in the IL and commoning/hoisting
-      // can be done (look at Compressor.compress).
-      //
-      if ((secondChild->getOpCodeValue() != TR::iconst) &&
-          ((secondChild->getOpCodeValue() != TR::iand) ||
-           (secondChild->getSecondChild()->getOpCodeValue() != TR::iconst) ||
-           (secondChild->getSecondChild()->getInt() != normalizationConstant)))
-         {
-         if (performTransformation(s->comp(), "%sPlatform specific normalization of shift node [%s]\n", s->optDetailString(), node->getName(s->getDebug())))
-            {
-            //
-            // Not normalized yet
-            //
-            TR::Node * secondChild = node->getSecondChild();
-            TR::Node * normalizedNode = TR::Node::create(TR::iand, 2, secondChild, TR::Node::create(secondChild, TR::iconst, 0, normalizationConstant));
-            secondChild->recursivelyDecReferenceCount();
-            node->setAndIncChild(1, normalizedNode);
-            node->setNormalizedShift(true);
-            s->_alteredBlock = true;
-            }
-         }
-      }
-   }
-
 static void orderChildrenByHighWordZero(TR::Node * node, TR::Node * & firstChild, TR::Node * & secondChild, TR::Simplifier * s)
    {
    if (!secondChild->getOpCode().isLoadConst() &&
@@ -1625,6 +1652,7 @@ static bool reduceLongOp(TR::Node * node, TR::Block * block, TR::Simplifier * s,
       case TR::land: newOp = TR::iand; break;
       case TR::lor:  newOp = TR::ior;  break;
       case TR::lxor: newOp = TR::ixor; break;
+      case TR::lexpandbits: newOp = TR::iexpandbits; break;
       case TR::lushr:
          isUnsigned = true;
       case TR::lshr:
@@ -1671,7 +1699,7 @@ static bool reduceLongOp(TR::Node * node, TR::Block * block, TR::Simplifier * s,
                   TR::Node::recreate(node, newConversionOp);
                   }
                s->_alteredBlock = true;
-               simplifyChildren(node, block, s);
+               s->simplifyChildren(node, block);
                return true;
                }
             }
@@ -1694,7 +1722,7 @@ static bool reduceLongOp(TR::Node * node, TR::Block * block, TR::Simplifier * s,
             TR::Node::recreate(node, newConversionOp);
             }
          s->_alteredBlock = true;
-         simplifyChildren(node, block, s);
+         s->simplifyChildren(node, block);
          return true;
          }
       break;
@@ -1741,7 +1769,7 @@ static bool reduceLongOp(TR::Node * node, TR::Block * block, TR::Simplifier * s,
       }
 
    s->_alteredBlock = true;
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    return true;
    }
 
@@ -1780,7 +1808,7 @@ static void fold2SmallerIntConstant(TR::Node * node, TR::Node *child, TR::DataTy
 
 static TR::Node *intDemoteSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::ILOpCode op = node->getOpCode();
 
@@ -1863,7 +1891,7 @@ static TR::Node *intDemoteSimplifier(TR::Node * node, TR::Block * block, TR::Sim
    //    /     \
    // subtree  lconst 22
    //
-   int64_t andVal;
+   int64_t andVal = 0;
    switch (targetSize)
       {
       case 1: andVal = 0xFF; break;
@@ -2172,12 +2200,15 @@ static bool processSubTreeLeavesForISelectCompare(TR::NodeChecklist &visited, TR
  *
  * \param s
  *    The simplifier object.
+ *
+ * \return
+ *    True if a transformation was performed. False otherwise.
  */
-static void simplifyISelectCompare(TR::Node *compare, TR::Simplifier *s)
+static bool simplifyISelectCompare(TR::Node *compare, TR::Simplifier *s)
    {
    static char *disableISelectCompareSimplification = feGetEnv("TR_disableISelectCompareSimplification");
    if (disableISelectCompareSimplification)
-      return;
+      return false;
 
    if (compare->getOpCode().isBooleanCompare()
        && compare->getSecondChild()->getOpCode().isLoadConst()
@@ -2199,9 +2230,11 @@ static void simplifyISelectCompare(TR::Node *compare, TR::Simplifier *s)
             compare->setAndIncChild(1, TR::Node::createConstZeroValue(compare->getSecondChild(), compare->getSecondChild()->getDataType()));
             constVal->decReferenceCount();
             TR::Node::recreate(compare, TR::ILOpCode(TR::ILOpCode::compareOpCode(compare->getFirstChild()->getDataType(), TR_cmpNE, isUnsignedCompare)).convertCmpToIfCmp());
+            return true;
             }
          }
       }
+   return false;
    }
 
 // We handle two kind of cases here:
@@ -3216,7 +3249,7 @@ static void decomposeMultiply(TR::Node *node, TR::Simplifier *s, bool isLong)
    int count = 0;
    int i;
    char bitPosition[64];
-   char operationType[64];
+   char operationType[128];
    char temp;
 
    count = decomposeConstant(bitPosition, operationType, isLong?secondChild->getLongInt():secondChild->getInt(), isLong?64:32);
@@ -3324,7 +3357,7 @@ TR::Node *getQuotientUsingMagicNumberMultiply(TR::Node *node, TR::Block *block, 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
    // the node we'll create and return to the caller
-   TR::Node * replacementNode;
+   TR::Node * replacementNode = NULL;
 
    if(node->getOpCodeValue() == TR::idiv || node->getOpCodeValue() == TR::irem)
       {
@@ -5050,8 +5083,8 @@ static bool isDeletedLabelLoadaddr(TR::Node * node)
 // They are for testing if a particular bit is ON or OFF
 // ifbcmpne                           ifbcmpne
 //  band                               band
-//    bshl                              ibload
-//      ibload           ===>             loadaddr
+//    bshl                              bloadi
+//      bloadi           ===>             loadaddr
 //        loadaddr                      bconst N>>s
 //      iconst s                       bconst M>>s
 //    bconst N
@@ -5452,19 +5485,19 @@ TR::Node *dftSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
    if (node->getOpCode().isBranch() && (removeIfToFollowingBlock(node, block, s) == NULL))
       return NULL;
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    return node;
    }
 
 TR::Node *lstoreSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    return node;
    }
 
 TR::Node *directLoadSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s); // For all those direct loads with child nodes...
+   s->simplifyChildren(node, block); // For all those direct loads with child nodes...
    TR::TransformUtil::transformDirectLoad(s->comp(), node);
    return node;
    }
@@ -5474,7 +5507,7 @@ TR::Node *indirectLoadSimplifier(TR::Node * node, TR::Block * block, TR::Simplif
    if (node->getOpCode().isLoadIndirect())
       node->getFirstChild()->setIsNonNegative(true);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    // Give the FrontEnd the first shot at this
    //
@@ -5606,7 +5639,7 @@ TR::Node *indirectStoreSimplifier(TR::Node * node, TR::Block * block, TR::Simpli
    if (node->getOpCode().isStoreIndirect())
       node->getFirstChild()->setIsNonNegative(true);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node *firstChild = node->getFirstChild();
    TR::Node *secondChild = node->getSecondChild();
@@ -5716,7 +5749,7 @@ TR::Node *indirectStoreSimplifier(TR::Node * node, TR::Block * block, TR::Simpli
             }
 
          if (removeWrtBar && !s->comp()->getOptions()->realTimeGC() &&
-             performTransformation(s->comp(), "%sFolded indirect write barrier to iastore because GC could not have occurred enough times to require iwrtbar [" POINTER_PRINTF_FORMAT "]\n", s->optDetailString(), node))
+             performTransformation(s->comp(), "%sFolded indirect write barrier to astorei because GC could not have occurred enough times to require iwrtbar [" POINTER_PRINTF_FORMAT "]\n", s->optDetailString(), node))
             {
             TR::Node::recreate(node, TR::astorei);
             node->getChild(2)->recursivelyDecReferenceCount();
@@ -5769,7 +5802,7 @@ TR::Node *indirectStoreSimplifier(TR::Node * node, TR::Block * block, TR::Simpli
 
 TR::Node *astoreSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    // Check if we are storing an address of a deleted label
    if (isDeletedLabelLoadaddr(node->getFirstChild()) &&
@@ -5783,7 +5816,7 @@ TR::Node *astoreSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *directStoreSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * child = node->getFirstChild();
    TR::SymbolReference * symRef = node->getSymbolReference();
    if (child->getOpCode().isLoadVar()  &&
@@ -5940,7 +5973,7 @@ TR::Node *vsetelemSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
       return s->simplify(vsplatsNode, block);
       }
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    return node;
    }
@@ -5963,25 +5996,25 @@ TR::Node *gotoSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *ifdCallSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    return s->simplifyiCallMethods(node, block);
    }
 
 TR::Node *lcallSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    return s->simplifylCallMethods(node, block);
    }
 
 TR::Node *acallSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    return s->simplifyaCallMethods(node, block);
    }
 
 TR::Node *vcallSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    return node;
    }
 
@@ -6035,7 +6068,7 @@ TR::Node *treetopSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 // for anchors: compressed pointers
 TR::Node *anchorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    if (!s->comp()->useAnchors())
       return node;
 
@@ -6079,7 +6112,7 @@ TR::Node *anchorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *iaddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (node->getOpCodeValue() == TR::iuaddc)
       return node;
@@ -6120,7 +6153,11 @@ TR::Node *iaddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
       }
 
-   BINARY_IDENTITY_OP(Int, 0)
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
    TR::ILOpCodes secondChildOp = secondChild->getOpCodeValue();
    TR::ILOpCodes nodeOp        = node->getOpCodeValue();
@@ -6512,7 +6549,7 @@ TR::Node *iaddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *laddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (node->getOpCodeValue() == TR::luaddc)
       return node;
@@ -6551,7 +6588,11 @@ TR::Node *laddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
       }
 
-   BINARY_IDENTITY_OP(LongInt, 0L)
+   auto binOpSimplifier = getLongBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0L);
+   if (identity)
+      return identity;
+
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
    TR::ILOpCodes secondChildOp = secondChild->getOpCodeValue();
    // normalize adds of positive constants to be isubs.  Have to do it this way because
@@ -6787,7 +6828,7 @@ TR::Node *laddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *faddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -6803,27 +6844,19 @@ TR::Node *faddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
    orderChildren(node, firstChild, secondChild, s);
 
-   // In IEEE FP Arithmetic, f + 0.0 is f
-   // Pretend to be an int before doing the comparison
-   // The simplification was removed because when f=-0.0
-   // the result of f+(+0.0) is +0.0 (and not f)
-   // If we would have ranges about f we might use the simplification in some cases
-   //   BINARY_IDENTITY_OP(Int, FLOAT_POS_ZERO)
-
    // In IEEE FP Arithmetic, f + -0.0 is f
    // Pretend to be an int before doing the comparison
-   //
-   BINARY_IDENTITY_OP(FloatBits, FLOAT_NEG_ZERO)
-
-   firstChild = node->getFirstChild();
-   secondChild = node->getSecondChild();
+   auto binOpSimplifier = getFloatBitsBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, FLOAT_NEG_ZERO);
+   if (identity)
+      return identity;
 
    return node;
    }
 
 TR::Node *daddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -6841,13 +6874,10 @@ TR::Node *daddSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
    // In IEEE FP Arithmetic, d + 0.0 is d
    // Pretend to be an int before doing the comparison
-   //
-   // According to the java spec -0.0 + 0.0 == 0.0
-   // BINARY_IDENTITY_OP(LongInt, DOUBLE_POS_ZERO)
-   // In IEEE FP Arithmetic, d + -0.0 is d
-   // Pretend to be an int before doing the comparison
-   //
-   BINARY_IDENTITY_OP(LongInt, DOUBLE_NEG_ZERO)
+   auto binOpSimplifier = getDoubleBitsBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, DOUBLE_NEG_ZERO);
+   if (identity)
+      return identity;
 
    return node;
    }
@@ -6870,7 +6900,7 @@ TR::Node *isubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
    scount_t futureUseCountOfFirstChild = node->getFirstChild()->getFutureUseCount();
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (node->getOpCodeValue() == TR::iusubb)
       return node;
@@ -6898,8 +6928,14 @@ TR::Node *isubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
       }
 
-   if (!node->nodeRequiresConditionCodes()) // don't do identity op on cc nodes on zemulator
-      BINARY_IDENTITY_OP(Int, 0)
+   // don't do identity op on cc nodes on zemulator
+   if (!node->nodeRequiresConditionCodes())
+      {
+      auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+      auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+      if (identity)
+         return identity;
+      }
 
    TR::ILOpCodes secondChildOp = secondChild->getOpCodeValue();
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
@@ -7330,7 +7366,7 @@ TR::Node *isubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *lsubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (node->getOpCodeValue() == TR::lusubb)
       return node;
@@ -7351,7 +7387,12 @@ TR::Node *lsubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    if (!node->nodeRequiresConditionCodes())
-      BINARY_IDENTITY_OP(LongInt, 0L)
+      {
+      auto binOpSimplifier = getLongBinaryOpSimplifier(s);
+      auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0L);
+      if (identity)
+         return identity;
+      }
 
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
    TR::ILOpCodes secondChildOp = secondChild->getOpCodeValue();
@@ -7728,7 +7769,19 @@ TR::Node *lsubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       TR::Node * i2lNode = firstChild;
       firstChild = i2lNode->getFirstChild();
       firstChildOp = firstChild->getOpCodeValue();
-      if (firstChildOp == TR::iadd || firstChildOp == TR::isub)
+
+      /*
+       *  lsub         // node
+       *    i2l        // i2lNode
+       *      iadd     // firstChild
+       *        iload  // llChild
+       *        iconst // lrChild, iValue, lValue
+       *    lconst     // secondChild
+       *
+       *  If firstChild can overflow or underflow, the isub node should not be simplified.
+       */
+      if ((firstChildOp == TR::iadd || firstChildOp == TR::isub) &&
+           firstChild->cannotOverflow())
          {
          if (secondChildOp == TR::lconst)
             {
@@ -7894,7 +7947,7 @@ TR::Node *lsubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *fsubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -7910,25 +7963,17 @@ TR::Node *fsubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
    // In IEEE FP Arithmetic, f - 0.0 is f
    // Pretend to be an int before doing the comparison
-   //
-   BINARY_IDENTITY_OP(FloatBits, FLOAT_POS_ZERO)
-
-   // In IEEE FP Arithmetic, f - -0.0 is f
-   // Pretend to be an int before doing the comparison
-   // The simplification was removed because when f=-0.0
-   // the result of f-(-0.0) is +0.0 (and not f)
-   // If we would have ranges about f we might use the simplification in some cases
-   // BINARY_IDENTITY_OP(Int, FLOAT_NEG_ZERO)
-
-   firstChild  = node->getFirstChild();
-   secondChild = node->getSecondChild();
+   auto binOpSimplifier = getFloatBitsBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, FLOAT_POS_ZERO);
+   if (identity)
+      return identity;
 
    return node;
    }
 
 TR::Node *dsubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -7944,13 +7989,10 @@ TR::Node *dsubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
    // In IEEE FP Arithmetic, d - 0.0 is d
    // Pretend to be an int before doing the comparison
-   //
-   // According to the java spec -0.0 - (-0.0) == 0.0
-   // BINARY_IDENTITY_OP(LongInt, DOUBLE_NEG_ZERO)
-   // In IEEE FP Arithmetic, d - -0.0 is d
-   // Pretend to be an int before doing the comparison
-   //
-   BINARY_IDENTITY_OP(LongInt, DOUBLE_POS_ZERO)
+   auto binOpSimplifier = getDoubleBitsBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, DOUBLE_POS_ZERO);
+   if (identity)
+      return identity;
 
    return node;
    }
@@ -7971,7 +8013,7 @@ TR::Node *ssubSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *imulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -7989,7 +8031,11 @@ TR::Node *imulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    orderChildren(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OR_ZERO_OP(int32_t, Int, 1, 0)
+
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, 1, 0);
+   if (result)
+      return result;
 
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
    TR::ILOpCodes secondChildOp = secondChild->getOpCodeValue();
@@ -8336,7 +8382,7 @@ TR::Node *imulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *lmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (node->isAdjunct())
       {
@@ -8354,7 +8400,11 @@ TR::Node *lmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
    orderChildren(node, firstChild, secondChild, s);
    orderChildrenByHighWordZero(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OR_ZERO_OP(int64_t, LongInt, 1L, 0L)
+
+   auto binOpSimplifier = getLongBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, 1L, 0L);
+   if (result)
+      return result;
 
    // TODO - strength reduction
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
@@ -8549,7 +8599,7 @@ TR::Node *lmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *fmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -8570,8 +8620,10 @@ TR::Node *fmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       {
       // In IEEE FP Arithmetic, f * 1.0 is f
       // Pretend to be an int before doing the comparison
-      //
-      BINARY_IDENTITY_OP(FloatBits, FLOAT_ONE)
+      auto binOpSimplifier = getFloatBitsBinaryOpSimplifier(s);
+      auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, FLOAT_ONE);
+      if (identity)
+         return identity;
       }
 
    firstChild  = node->getFirstChild();
@@ -8596,7 +8648,7 @@ TR::Node *fmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *dmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -8618,15 +8670,17 @@ TR::Node *dmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       {
       // In IEEE FP Arithmetic, d * 1.0 is d
       // Pretend to be an int before doing the comparison
-      //
-      BINARY_IDENTITY_OP(LongInt, DOUBLE_ONE)
+      auto binOpSimplifier = getDoubleBitsBinaryOpSimplifier(s);
+      auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, DOUBLE_ONE);
+      if (identity)
+         return identity;
       }
    return node;
    }
 
 TR::Node *bmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -8637,7 +8691,11 @@ TR::Node *bmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    orderChildren(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OR_ZERO_OP(int8_t, Byte, 1, 0)
+
+   auto binOpSimplifier = getByteBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, 1, 0);
+   if (result)
+      return result;
 
    // TODO - strength reduction
 
@@ -8646,7 +8704,7 @@ TR::Node *bmulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *smulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -8657,7 +8715,11 @@ TR::Node *smulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    orderChildren(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OR_ZERO_OP(int16_t, ShortInt, 1, 0)
+
+   auto binOpSimplifier = getShortBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, 1, 0);
+   if (result)
+      return result;
 
    // TODO - strength reduction
 
@@ -8668,9 +8730,52 @@ TR::Node *smulSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 // Divide simplifiers
 //
 
+/**
+ * Determines whether the context permits a division or remainder operation
+ * to be simplified if the divisor is known to be a non-zero constant.  In
+ * particular, if the parent of the subject node is a \c DIVCHK operation,
+ * permission to simplify the \c DIVCHK is required in order to consider
+ * simplifying the division or remainder operation itself.
+ *
+ * \param[in] s    The \ref TR::Simplifier object
+ * \param[in] node The \ref TR::Node of division or remainder operation
+ *
+ * \return \c false if the parent node of the division or remainder is a \c DIVCHK
+ *         and \ref permitTransformation returns \c false;
+ *         otherwise, \c true.
+ */
+static bool permitSimplificationOfConstantDivisor(TR::Simplifier *s, TR::Node *node)
+   {
+   bool maySimplify = true;
+   TR::Node *treetopNode = s->_curTree->getNode();
+
+   if (treetopNode->getOpCodeValue() == TR::DIVCHK
+       && treetopNode->getFirstChild() == node)
+      {
+      if (performTransformation(s->comp(), "%sConstant non-zero divisor for %s [" POINTER_PRINTF_FORMAT "] allows parent DIVCHK [" POINTER_PRINTF_FORMAT "] to be removed\n", s->optDetailString(), node->getOpCode().getName(), node, treetopNode))
+         {
+         // Division by non-zero constant value, so any parent DIVCHK is no longer needed
+         s->_nodeToDivchk = NULL;
+         }
+      else
+         {
+         maySimplify = false;
+         }
+      }
+
+   return maySimplify;
+   }
+
 TR::Node *idivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+
+   // Handshake with divchkSimplifier:  If simplifying the child of a DIVCHK
+   // results in a node that still needs to have a DIVCHK applied, place that
+   // node in _nodeToDivchk.  If the simplification leaves no node that needs
+   // to have a DIVCHK applied, set _nodeToDivchk to NULL.
+   //
+   s->_nodeToDivchk = node;
 
    if (node->getOpCodeValue() == TR::iudiv)
       {
@@ -8691,7 +8796,7 @@ TR::Node *idivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       {
       int32_t divisor = secondChild->getInt();
       int32_t shftAmnt = -1;
-      if (divisor != 0)
+      if (divisor != 0 && permitSimplificationOfConstantDivisor(s, node))
          {
          if (firstChild->getOpCode().isLoadConst())
             {
@@ -8728,12 +8833,17 @@ TR::Node *idivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
             else
                {
                if (divisor == -1 && dividend == TR::getMinSigned<TR::Int32>())
+                  {
                   return s->replaceNode(node, firstChild, s->_curTree);
+                  }
+
                foldIntConstant(node, dividend/divisor, s, false /* !anchorChildren*/);
                }
             }   // first child is constant
          else if (divisor == 1)
+            {
             return s->replaceNode(node, firstChild, s->_curTree);
+            }
          else if (!secondChild->getOpCode().isUnsigned() && divisor == -1)
             {
             if (performTransformation(s->comp(), "%sReduced idiv by -1 with ineg in node [%s]\n", s->optDetailString(), node->getName(s->getDebug())))
@@ -8794,7 +8904,7 @@ TR::Node *idivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
                }
             node->getFirstChild()->incReferenceCount();
             }
-         else if (s->cg()->getSupportsLoweringConstIDiv() && !isPowerOf2(divisor) &&
+         else if (s->cg()->getSupportsIMulHigh() && !isPowerOf2(divisor) &&
                   performTransformation(s->comp(), "%sMagic number idiv opt in node %p\n", s->optDetailString(), node))
             {
              // leave idiv as is if the divisor is 2^n. CodeGen generates a fast instruction squence for it.
@@ -8884,7 +8994,14 @@ TR::Node *idivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *ldivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+
+   // Handshake with divchkSimplifier:  If simplifying the child of a DIVCHK
+   // results in a node that still needs to have a DIVCHK applied, place that
+   // node in _nodeToDivchk.  If the simplification leaves no node that needs
+   // to have a DIVCHK applied, set _nodeToDivchk to NULL.
+   //
+   s->_nodeToDivchk = node;
 
    if (node->getOpCodeValue() == TR::ludiv)
       {
@@ -8904,17 +9021,22 @@ TR::Node *ldivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    if (secondChild->getOpCode().isLoadConst())
       {
       int64_t divisor = secondChild->getLongInt();
-      if (divisor != 0)
+      if (divisor != 0 && permitSimplificationOfConstantDivisor(s, node))
          {
          if (firstChild->getOpCode().isLoadConst())
             {
             int64_t dividend = firstChild->getLongInt();
             if (divisor == -1 && dividend == TR::getMinSigned<TR::Int64>())
+               {
                return s->replaceNode(node, firstChild, s->_curTree);
+               }
+
             foldLongIntConstant(node, dividend / divisor, s, false /* !anchorChildren */);
             }
          else if (divisor == 1)
+            {
             return s->replaceNode(node, firstChild, s->_curTree);
+            }
          else if (divisor == -1)
             {
             if (performTransformation(s->comp(), "%sReduced ldiv by -1 with lneg in node [%p]\n", s->optDetailString(), node))
@@ -9085,7 +9207,7 @@ TR::Node *ldivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
                node->getFirstChild()->incReferenceCount();
                }
             }       // end power of 2
-         else if (s->cg()->getSupportsLoweringConstLDiv() && !isPowerOf2(divisor))
+         else if (s->cg()->getSupportsLMulHigh() && !isPowerOf2(divisor))
             {
              // otherwise, expose the magic number squence to allow optimization
              // lowered tree will look like this:
@@ -9150,13 +9272,11 @@ TR::Node *ldivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       firstChild = node->getFirstChild();
       secondChild = node->getSecondChild();
       if ((firstChild->getOpCodeValue() == TR::i2l) && (secondChild->getOpCodeValue() == TR::i2l) &&
+          // Make sure the generated idiv won't be able to overflow
+          (firstChild->isNonNegative() || secondChild->isNonNegative()) &&
           performTransformation(s->comp(), "%sReduced ldiv [%p] of two i2l children to i2l of idiv \n", s->optDetailString(), node))
          {
          TR::TreeTop *curTree = s->_curTree;
-         TR::Node *divCheckParent = NULL;
-         if ((curTree->getNode()->getOpCodeValue() == TR::DIVCHK) &&
-             (curTree->getNode()->getFirstChild() == node))
-            divCheckParent = curTree->getNode();
 
          TR::Node *divNode = TR::Node::create(TR::idiv, 2, firstChild->getFirstChild(), secondChild->getFirstChild());
 
@@ -9168,12 +9288,9 @@ TR::Node *ldivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
          node->setAndIncChild(0, divNode);
          node->setNumChildren(1);
 
-         if (divCheckParent)
-            {
-            divCheckParent->setAndIncChild(0, divNode);
-            node->recursivelyDecReferenceCount();
-            return divNode;
-            }
+         // Division has been transformed, but still needs to be checked for division by zero
+         // if the current node was the child of a DIVCHK
+         s->_nodeToDivchk = divNode;
          }
 
       if (secondChild->getOpCode().isLoadConst() && secondChild->getLongInt() == 10 &&
@@ -9181,23 +9298,14 @@ TR::Node *ldivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
           node->getFirstChild()->getOpCode().isLoadVar() &&     //transformToLongDiv creates a tonne of nodes.  Not good to do this recursively if you have chained divides
           performTransformation(s->comp(), "%sReduced ldiv by 10 [%p] to bitwise ops\n", s->optDetailString(), node))
          {
-         TR::TreeTop *curTree = s->_curTree;
-         TR::Node *divCheckParent = NULL;
-         if ((curTree->getNode()->getOpCodeValue() == TR::DIVCHK) &&
-             (curTree->getNode()->getFirstChild() == node))
-            divCheckParent = curTree->getNode();
+         // Division by ten using bit manipulation - any DIVCHK parent must be removed
+         s->_nodeToDivchk = NULL;
 
          transformToLongDivBy10Bitwise(node, node, s);
          TR::Node::recreate(node, TR::ladd);
          firstChild->recursivelyDecReferenceCount();
          secondChild->recursivelyDecReferenceCount();
-
-         if (divCheckParent)
-            {
-            divCheckParent->setAndIncChild(0, node);
-            node->recursivelyDecReferenceCount();
-            return node;
-            }
+         return node;
          }
       }
 
@@ -9206,7 +9314,7 @@ TR::Node *ldivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *fdivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -9241,8 +9349,10 @@ TR::Node *fdivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
    // In IEEE FP Arithmetic, f / 1.0 is f
    // Pretend to be an int before doing the comparison
-   //
-   BINARY_IDENTITY_OP(FloatBits, FLOAT_ONE)
+   auto binOpSimplifier = getFloatBitsBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, FLOAT_ONE);
+   if (identity)
+      return identity;
 
    firstChild  = node->getFirstChild();
    secondChild = node->getSecondChild();
@@ -9266,7 +9376,7 @@ TR::Node *fdivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *ddivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -9299,39 +9409,78 @@ TR::Node *ddivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    // In IEEE FP Arithmetic, d / 1.0 is d
    // Pretend to be an int before doing the comparison
    //
-   BINARY_IDENTITY_OP(LongInt, DOUBLE_ONE)
+   auto binOpSimplifier = getDoubleBitsBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, DOUBLE_ONE);
+   if (identity)
+      return identity;
+
    return node;
    }
 
 TR::Node *bdivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+
+   // Handshake with divchkSimplifier:  If simplifying the child of a DIVCHK
+   // results in a node that still needs to have a DIVCHK applied, place that
+   // node in _nodeToDivchk.  If the simplification leaves no node that needs
+   // to have a DIVCHK applied, set _nodeToDivchk to NULL.
+   s->_nodeToDivchk = node;
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
-   if (firstChild->getOpCode().isLoadConst() && secondChild->getOpCode().isLoadConst())
+   if (secondChild->getOpCode().isLoadConst()
+       && (secondChild->getByte() != 0)
+       && permitSimplificationOfConstantDivisor(s, node))
       {
-      foldByteConstant(node, (int8_t)(firstChild->getByte() / secondChild->getByte()), s, false /* !anchorChildren*/);
-      return node;
+      if (firstChild->getOpCode().isLoadConst())
+         {
+         foldByteConstant(node, (int8_t)(firstChild->getByte() / secondChild->getByte()), s, false /* !anchorChildren*/);
+         return node;
+         }
+
+      // Handle the possibility of a division by constant value one
+      auto binOpSimplifier = getByteBinaryOpSimplifier(s);
+      auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 1);
+      if (identity)
+         return identity;
       }
 
-   BINARY_IDENTITY_OP(Byte, 1)
    return node;
    }
 
 TR::Node *sdivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+
+   // Handshake with divchkSimplifier:  If simplifying the child of a DIVCHK
+   // results in a node that still needs to have a DIVCHK applied, place that
+   // node in _nodeToDivchk.  If the simplification leaves no node that needs
+   // to have a DIVCHK applied, set _nodeToDivchk to NULL.
+   s->_nodeToDivchk = node;
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
-   if (firstChild->getOpCode().isLoadConst() && secondChild->getOpCode().isLoadConst())
+   if (secondChild->getOpCode().isLoadConst()
+       && (secondChild->getShortInt() != 0)
+       && permitSimplificationOfConstantDivisor(s, node))
       {
-      foldShortIntConstant(node, (int16_t)(firstChild->getShortInt() / secondChild->getShortInt()), s, false /* !anchorChildren */);
-      return node;
+      // Division by a non-zero constant - any parent DIVCHK is no longer needed
+      s->_nodeToDivchk = NULL;
+
+      if (firstChild->getOpCode().isLoadConst())
+         {
+         foldShortIntConstant(node, (int16_t)(firstChild->getShortInt() / secondChild->getShortInt()), s, false /* !anchorChildren */);
+         return node;
+         }
+
+      // Handle the possibility of a division by constant value one
+      auto binOpSimplifier = getShortBinaryOpSimplifier(s);
+      auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 1);
+      if (identity)
+         return identity;
       }
 
-   BINARY_IDENTITY_OP(ShortInt, 1)
    return node;
    }
 
@@ -9342,7 +9491,13 @@ TR::Node *sdivSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 TR::Node *iremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
    bool isUnsigned = node->getOpCode().isUnsigned();
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+
+   // Handshake with divchkSimplifier:  If simplifying the child of a DIVCHK
+   // results in a node that still needs to have a DIVCHK applied, place that
+   // node in _nodeToDivchk.  If the simplification leaves no node that needs
+   // to have a DIVCHK applied, set _nodeToDivchk to NULL.
+   s->_nodeToDivchk = node;
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -9356,7 +9511,7 @@ TR::Node *iremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       int32_t dividend = firstChild->getInt();
       int32_t divisor = secondChild->getInt();
       int32_t shftAmnt = -1;
-      if (divisor != 0)
+      if (divisor != 0 && permitSimplificationOfConstantDivisor(s, node))
          {
          if (divisor == 1 || (!isUnsigned && (divisor == -1)))
             {
@@ -9424,7 +9579,7 @@ TR::Node *iremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
                }
             }
          else if (node->getOpCodeValue() == TR::irem &&
-                  s->cg()->getSupportsLoweringConstIDiv() && !isPowerOf2(divisor) &&
+                  s->cg()->getSupportsIMulHigh() && !isPowerOf2(divisor) &&
                   !skipRemLowering(divisor, s) &&
                   performTransformation(s->comp(), "%sMagic number irem opt in node %p\n", s->optDetailString(), node))
             {
@@ -9475,7 +9630,14 @@ TR::Node *iremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *lremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+
+   // Handshake with divchkSimplifier:  If simplifying the child of a DIVCHK
+   // results in a node that still needs to have a DIVCHK applied, place that
+   // node in _nodeToDivchk.  If the simplification leaves no node that needs
+   // to have a DIVCHK applied, set _nodeToDivchk to NULL.
+   //
+   s->_nodeToDivchk = node;
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -9490,7 +9652,7 @@ TR::Node *lremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       int32_t shftAmnt = -1;
       uint64_t udivisor = divisor;
       bool upwr2 = (udivisor & (udivisor - 1)) == 0;
-      if (divisor != 0)
+      if (divisor != 0 && permitSimplificationOfConstantDivisor(s, node))
          {
          if (divisor == 1 || (divisor == -1))
             {
@@ -9549,7 +9711,7 @@ TR::Node *lremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
             }
          // Disabled pending approval of design 1055.
 #ifdef TR_DESIGN_1055
-         else if (s->cg()->getSupportsLoweringConstLDiv() && !isPowerOf2(divisor) && !skipRemLowering(divisor, s))
+         else if (s->cg()->getSupportsLMulHigh() && !isPowerOf2(divisor) && !skipRemLowering(divisor, s))
             {
             // otherwise, expose the magic number squence to allow optimization
             // lowered tree will look like this:
@@ -9595,10 +9757,6 @@ TR::Node *lremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
           performTransformation(s->comp(), "%sReduced lrem [%p] of two i2l children to i2l of irem \n", s->optDetailString(), node))
          {
          TR::TreeTop *curTree = s->_curTree;
-         TR::Node *divCheckParent = NULL;
-         if ((curTree->getNode()->getOpCodeValue() == TR::DIVCHK) &&
-             (curTree->getNode()->getFirstChild() == node))
-            divCheckParent = curTree->getNode();
 
          TR::Node *remNode = TR::Node::create(TR::irem, 2, firstChild->getFirstChild(), secondChild->getFirstChild());
 
@@ -9609,12 +9767,10 @@ TR::Node *lremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
          node->setAndIncChild(0, remNode);
          node->setNumChildren(1);
 
-         if (divCheckParent)
-            {
-            divCheckParent->setAndIncChild(0, remNode);
-            node->recursivelyDecReferenceCount();
-            return remNode;
-            }
+         // Remainder operation has been transformed, but still needs to be checked
+         // for division by zero if the current node was the child of a DIVCHK
+         s->_nodeToDivchk = remNode;
+
          return node;
          }
 
@@ -9623,14 +9779,13 @@ TR::Node *lremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
           node->getFirstChild()->getOpCode().isLoadVar() &&
           performTransformation(s->comp(), "%sReduced lrem by 10 [%p] to sequence of bitwise operations\n", s->optDetailString(), node))
          {
+         // Division by ten using bit manipulation - any DIVCHK parent must be removed
+         s->_nodeToDivchk = NULL;
+
          TR::TreeTop *curTree = s->_curTree;
-         TR::Node *divCheckParent = NULL;
-         if ((curTree->getNode()->getOpCodeValue() == TR::DIVCHK) &&
-             (curTree->getNode()->getFirstChild() == node))
-            divCheckParent = curTree->getNode();
 
          // Create the long divide tree
-        TR::Node * ldivNode = TR::Node::create(node, TR::ladd);
+         TR::Node * ldivNode = TR::Node::create(node, TR::ladd);
          transformToLongDivBy10Bitwise(node, ldivNode, s);
 
          // Modify the lrem node
@@ -9641,12 +9796,6 @@ TR::Node *lremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
          firstChild->recursivelyDecReferenceCount();
          secondChild->recursivelyDecReferenceCount();
 
-         if (divCheckParent)
-            {
-            divCheckParent->setAndIncChild(0, node);
-            node->recursivelyDecReferenceCount();
-            return node;
-            }
          return node;
          }
       }
@@ -9658,7 +9807,7 @@ TR::Node *lremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *fremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -9694,7 +9843,7 @@ TR::Node *fremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *dremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -9713,11 +9862,19 @@ TR::Node *dremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+
+   // Handshake with divchkSimplifier:  If simplifying the child of a DIVCHK
+   // results in a node that still needs to have a DIVCHK applied, place that
+   // node in _nodeToDivchk.  If the simplification leaves no node that needs
+   // to have a DIVCHK applied, set _nodeToDivchk to NULL.
+   s->_nodeToDivchk = node;
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
-   if (firstChild->getOpCode().isLoadConst() && secondChild->getOpCode().isLoadConst())
+   if (firstChild->getOpCode().isLoadConst() && secondChild->getOpCode().isLoadConst()
+       && (secondChild->getByte() != 0)
+       && permitSimplificationOfConstantDivisor(s, node))
       {
       foldByteConstant(node, (int8_t)(firstChild->getByte() % secondChild->getByte()), s, false /* !anchorChildren*/);
       return node;
@@ -9728,11 +9885,19 @@ TR::Node *bremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *sremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+
+   // Handshake with divchkSimplifier:  If simplifying the child of a DIVCHK
+   // results in a node that still needs to have a DIVCHK applied, place that
+   // node in _nodeToDivchk.  If the simplification leaves no node that needs
+   // to have a DIVCHK applied, set _nodeToDivchk to NULL.
+   s->_nodeToDivchk = node;
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
-   if (firstChild->getOpCode().isLoadConst() && secondChild->getOpCode().isLoadConst())
+   if (firstChild->getOpCode().isLoadConst() && secondChild->getOpCode().isLoadConst()
+       && (secondChild->getShortInt() != 0)
+       && permitSimplificationOfConstantDivisor(s, node))
       {
       foldShortIntConstant(node, (int16_t)(firstChild->getShortInt() % secondChild->getShortInt()), s, false /* !anchorChildren */);
       return node;
@@ -9747,7 +9912,7 @@ TR::Node *sremSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *inegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -9804,7 +9969,7 @@ TR::Node *inegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *lnegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -9842,7 +10007,7 @@ TR::Node *lnegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *fnegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -9928,7 +10093,7 @@ TR::Node *fnegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *dnegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -9981,7 +10146,7 @@ TR::Node *dnegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bnegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node *firstChild = node->getFirstChild();
 
@@ -9995,7 +10160,7 @@ TR::Node *bnegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *snegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -10007,7 +10172,7 @@ TR::Node *snegSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *constSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    return node;
    }
@@ -10020,7 +10185,7 @@ TR::Node *lconstSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *ilfdabsSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    static bool AllowFlagBasedTransformationForFloatOrDouble = feGetEnv("TR_AllowFlagBasedTransformationForFloatOrDouble") != NULL;
 
@@ -10078,7 +10243,7 @@ TR::Node *ilfdabsSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *ishlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10089,9 +10254,18 @@ TR::Node *ishlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    normalizeConstantShiftAmount(node, INT_SHIFT_MASK, secondChild, s);
-   BINARY_IDENTITY_OP(Int, 0)
 
-   if (secondChild->getOpCode().isLoadConst() &&
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+   else if (secondChild->getOpCode().isLoadConst() &&
        performTransformation(s->comp(), "%sChanged ishl by const into imul by const in node [%s]\n", s->optDetailString(), node->getName(s->getDebug())))
       {
       // Normalize shift by a constant into multiply by a constant
@@ -10116,7 +10290,7 @@ TR::Node *ishlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *lshlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10127,9 +10301,18 @@ TR::Node *lshlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    normalizeConstantShiftAmount(node, LONG_SHIFT_MASK, secondChild, s);
-   BINARY_IDENTITY_OP(Int, 0)
 
-   if (secondChild->getOpCode().isLoadConst())
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getLongInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+   else if (secondChild->getOpCode().isLoadConst())
       {
       // Canonicalize shift by a constant into multiply by a constant
       //
@@ -10158,7 +10341,7 @@ TR::Node *lshlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bshlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10168,13 +10351,23 @@ TR::Node *bshlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
       }
 
-   BINARY_IDENTITY_OP(Int, 0)
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getByte() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+
    return node;
    }
 
 TR::Node *sshlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10183,7 +10376,18 @@ TR::Node *sshlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       foldShortIntConstant(node, firstChild->getShortInt()<<(secondChild->getInt() & INT_SHIFT_MASK), s, false /* !anchorChildren */);
       return node;
       }
-   BINARY_IDENTITY_OP(Int, 0)
+
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getShortInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+
    return node;
    }
 
@@ -10193,7 +10397,7 @@ TR::Node *sshlSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *ishrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10204,16 +10408,26 @@ TR::Node *ishrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    normalizeConstantShiftAmount(node, INT_SHIFT_MASK, secondChild, s);
-   BINARY_IDENTITY_OP(Int, 0)
 
-   normalizeShiftAmount(node, 31, s);
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+   else
+      normalizeShiftAmount(node, 31, s);
 
    return node;
    }
 
 TR::Node *lshrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10224,15 +10438,26 @@ TR::Node *lshrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    normalizeConstantShiftAmount(node, LONG_SHIFT_MASK, secondChild, s);
-   BINARY_IDENTITY_OP(Int, 0)
 
-   normalizeShiftAmount(node, 63, s);
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getLongInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+   else
+      normalizeShiftAmount(node, 63, s);
+
    return node;
    }
 
 TR::Node *bshrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10242,13 +10467,23 @@ TR::Node *bshrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
       }
 
-   BINARY_IDENTITY_OP(Int, 0)
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getByte() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+
    return node;
    }
 
 TR::Node *sshrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10257,7 +10492,18 @@ TR::Node *sshrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       foldShortIntConstant(node, firstChild->getShortInt()>>(secondChild->getInt() & INT_SHIFT_MASK), s, false /* !anchorChildren */);
       return node;
       }
-   BINARY_IDENTITY_OP(Int, 0)
+
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getShortInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+
    return node;
    }
 
@@ -10267,7 +10513,7 @@ TR::Node *sshrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *iushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10278,8 +10524,11 @@ TR::Node *iushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s
       }
 
    normalizeConstantShiftAmount(node, INT_SHIFT_MASK, secondChild, s);
-   BINARY_IDENTITY_OP(Int, 0)
 
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
 
    // look for bogus code sequence used in compress to zero extend a short
    // using two shifts.  Also catches pairs of shifts that can be performed
@@ -10347,7 +10596,14 @@ TR::Node *iushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s
          }
       }
 
-   normalizeShiftAmount(node, 31, s);
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getUnsignedInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+   else
+      normalizeShiftAmount(node, 31, s);
+
    return node;
    }
 
@@ -10393,7 +10649,7 @@ TR::Node *lushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s
          }
       }
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    firstChild = node->getFirstChild();
    secondChild = node->getSecondChild();
@@ -10405,7 +10661,11 @@ TR::Node *lushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s
       }
 
    normalizeConstantShiftAmount(node, LONG_SHIFT_MASK, secondChild, s);
-   BINARY_IDENTITY_OP(Int, 0)
+
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
 
    // look for bogus code sequence used in compress to zero extend a short
    // using two shifts.  Also catches pairs of shifts that can be performed
@@ -10484,13 +10744,20 @@ TR::Node *lushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s
          }
       }
 
-   normalizeShiftAmount(node, 63, s);
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getUnsignedLongInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+   else
+      normalizeShiftAmount(node, 63, s);
+
    return node;
    }
 
 TR::Node *bushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10500,13 +10767,23 @@ TR::Node *bushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s
       return node;
       }
 
-   BINARY_IDENTITY_OP(Int, 0)
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getUnsignedByte() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+
    return node;
    }
 
 TR::Node *sushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10515,7 +10792,18 @@ TR::Node *sushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s
       foldShortIntConstant(node, firstChild->getUnsignedShortInt()>>(secondChild->getInt() & INT_SHIFT_MASK), s, false /* !anchorChildren */);
       return node;
       }
-   BINARY_IDENTITY_OP(Int, 0)
+
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
+   // Replace shift of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getUnsignedShortInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+
    return node;
    }
 
@@ -10525,7 +10813,7 @@ TR::Node *sushrSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s
 
 TR::Node *irolSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node *firstChild  = node->getFirstChild();
    TR::Node *secondChild = node->getSecondChild();
 
@@ -10544,13 +10832,19 @@ TR::Node *irolSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return s->replaceNode(node, firstChild, s->_curTree);
       }
 
-   normalizeShiftAmount(node, 31, s);
+   // Replace rotate of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+   else
+      normalizeShiftAmount(node, 31, s);
    return node;
    }
 
 TR::Node *lrolSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node *firstChild = node->getFirstChild();
    TR::Node *secondChild = node->getSecondChild();
@@ -10568,7 +10862,13 @@ TR::Node *lrolSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return s->replaceNode(node, firstChild, s->_curTree);
       }
 
-   normalizeShiftAmount(node, 63, s);
+   // Replace rotate of constant zero with constant zero
+   if (firstChild->getOpCode().isLoadConst() && firstChild->getLongInt() == 0)
+      {
+      return s->replaceNode(node, firstChild, s->_curTree);
+      }
+   else
+      normalizeShiftAmount(node, 63, s);
    return node;
    }
 
@@ -10578,7 +10878,7 @@ TR::Node *lrolSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *iandSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10589,7 +10889,11 @@ TR::Node *iandSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    orderChildren(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OR_ZERO_OP(int32_t, Int, -1, 0)
+
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, -1, 0);
+   if (result)
+      return result;
 
    if (TR::Node* foldedNode = tryFoldAndWidened(s, node))
       {
@@ -10725,7 +11029,7 @@ TR::Node *iandSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *landSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10737,7 +11041,11 @@ TR::Node *landSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
    orderChildren(node, firstChild, secondChild, s);
    orderChildrenByHighWordZero(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OR_ZERO_OP(int64_t, LongInt, -1L, 0L)
+
+   auto binOpSimplifier = getLongBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, -1L, 0L);
+   if (result)
+      return result;
 
    if (TR::Node* foldedNode = tryFoldAndWidened(s, node))
       {
@@ -10923,7 +11231,7 @@ TR::Node *landSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bandSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10934,13 +11242,18 @@ TR::Node *bandSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    orderChildren(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OR_ZERO_OP(int8_t, Byte, -1, 0)
+
+   auto binOpSimplifier = getByteBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, -1, 0);
+   if (result)
+      return result;
+
    return node;
    }
 
 TR::Node *sandSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -10950,7 +11263,11 @@ TR::Node *sandSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
       }
    orderChildren(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OR_ZERO_OP(int16_t, ShortInt, -1, 0)
+
+   auto binOpSimplifier = getShortBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, -1, 0);
+   if (result)
+      return result;
 
    if (TR::Node* foldedNode = tryFoldAndWidened(s, node))
       {
@@ -11081,7 +11398,7 @@ TR::Node *removeRedundantIntegralOrPattern2(TR::Node * node, TR::Block * block, 
 
 TR::Node *iorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -11114,7 +11431,10 @@ TR::Node *iorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
       }
 
-   BINARY_IDENTITY_OR_ZERO_OP(int32_t, Int, 0, -1)
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, 0, -1);
+   if (result)
+      return result;
 
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
    TR::ILOpCodes secondChildOp = secondChild->getOpCodeValue();
@@ -11231,7 +11551,7 @@ TR::Node *iorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *lorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -11255,7 +11575,10 @@ TR::Node *lorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
       }
 
-   BINARY_IDENTITY_OR_ZERO_OP(int64_t, LongInt, 0L, -1L)
+   auto binOpSimplifier = getLongBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, 0L, -1L);
+   if (result)
+      return result;
 
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
    TR::ILOpCodes secondChildOp = secondChild->getOpCodeValue();
@@ -11383,7 +11706,7 @@ TR::Node *lorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *borSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -11411,19 +11734,19 @@ TR::Node *borSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    // bor
    //   band
    //      bshl
-   //         ibload (1)
+   //         bloadi (1)
    //         iconst
    //      bconst (1)
    //   band
-   //      ibload (2)
+   //      bloadi (2)
    //      bconst (2)
    //
    // Will get transformed to:
    // icall
-   //    ibload (1)
+   //    bloadi (1)
    //    iconst
    //    bconst (1)
-   //    ibload (2)
+   //    bloadi (2)
 
    //check for pattern like
    // bor                                  bor
@@ -11446,13 +11769,18 @@ TR::Node *borSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       node->setVisitCount(0);
       s->_alteredBlock = true;
       }
-   BINARY_IDENTITY_OR_ZERO_OP(int8_t, Byte, 0, -1)
+
+   auto binOpSimplifier = getByteBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, 0, -1);
+   if (result)
+      return result;
+
    return node;
    }
 
 TR::Node *sorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -11475,7 +11803,10 @@ TR::Node *sorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
       }
 
-   BINARY_IDENTITY_OR_ZERO_OP(int16_t, ShortInt, 0, -1)
+   auto binOpSimplifier = getShortBinaryOpSimplifier(s);
+   auto result = binOpSimplifier.tryToSimplifyIdentityOrZeroOp(block, node, 0, -1);
+   if (result)
+      return result;
 
    return node;
    }
@@ -11486,7 +11817,7 @@ TR::Node *sorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *ixorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
    if (firstChild == secondChild)
@@ -11514,7 +11845,11 @@ TR::Node *ixorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
 
    orderChildren(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OP(Int, 0)
+
+   auto binOpSimplifier = getIntBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
 
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
    TR::ILOpCodes secondChildOp = secondChild->getOpCodeValue();
@@ -11575,7 +11910,7 @@ TR::Node *ixorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *lxorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
    if (firstChild == secondChild)
@@ -11597,7 +11932,11 @@ TR::Node *lxorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       return node;
    orderChildren(node, firstChild, secondChild, s);
    orderChildrenByHighWordZero(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OP(LongInt, 0L)
+
+   auto binOpSimplifier = getLongBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0L);
+   if (identity)
+      return identity;
 
    TR::ILOpCodes firstChildOp  = firstChild->getOpCodeValue();
    TR::ILOpCodes secondChildOp = secondChild->getOpCodeValue();
@@ -11699,7 +12038,7 @@ TR::Node *lxorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bxorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -11710,13 +12049,18 @@ TR::Node *bxorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    orderChildren(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OP(Byte, 0)
+
+   auto binOpSimplifier = getByteBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
+
    return node;
    }
 
 TR::Node *sxorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -11727,7 +12071,11 @@ TR::Node *sxorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
 
    orderChildren(node, firstChild, secondChild, s);
-   BINARY_IDENTITY_OP(ShortInt, 0)
+
+   auto binOpSimplifier = getShortBinaryOpSimplifier(s);
+   auto identity = binOpSimplifier.tryToSimplifyIdentityOp(node, 0);
+   if (identity)
+      return identity;
 
    return node;
    }
@@ -11738,7 +12086,7 @@ TR::Node *sxorSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 template <class T>
 inline TR::Node* sqrtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node* child = node->getChild(0);
    if (child->getOpCode().isLoadConst() &&
        performTransformation(s->comp(), "%sSimplify sqrt of const child at [" POINTER_PRINTF_FORMAT "]\n", s->optDetailString(), node))
@@ -11764,7 +12112,7 @@ TR::Node *dsqrtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s
 
 TR::Node *i2lSimplifier(TR::Node * node, TR::Block *  block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -11843,7 +12191,7 @@ TR::Node *i2lSimplifier(TR::Node * node, TR::Block *  block, TR::Simplifier * s)
 
 TR::Node *i2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -11857,7 +12205,7 @@ TR::Node *i2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *i2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -11871,7 +12219,7 @@ TR::Node *i2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *i2bSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -11906,7 +12254,7 @@ TR::Node *i2bSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *i2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -11940,7 +12288,7 @@ TR::Node *i2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *i2aSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12010,7 +12358,7 @@ TR::Node *i2aSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *iu2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12053,7 +12401,7 @@ TR::Node *iu2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *iu2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12067,7 +12415,7 @@ TR::Node *iu2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *iu2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12090,7 +12438,7 @@ TR::Node *l2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *l2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12109,7 +12457,7 @@ TR::Node *l2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *l2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCodeValue() == TR::lconst)
@@ -12133,7 +12481,7 @@ TR::Node *l2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *l2aSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12215,7 +12563,7 @@ TR::Node *l2aSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *lu2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12234,7 +12582,7 @@ TR::Node *lu2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *lu2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCodeValue() == TR::lconst)
@@ -12255,7 +12603,7 @@ TR::Node *f2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 #ifdef TR_HOST_X86
    return dftSimplifier(node, block, s);
 #else
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12274,7 +12622,7 @@ TR::Node *f2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 #ifdef TR_HOST_X86
    return dftSimplifier(node, block, s);
 #else
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12290,7 +12638,7 @@ TR::Node *f2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *f2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12305,7 +12653,7 @@ TR::Node *f2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *f2bSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12320,7 +12668,7 @@ TR::Node *f2bSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *f2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12339,7 +12687,7 @@ TR::Node *f2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *d2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12364,7 +12712,7 @@ TR::Node *d2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *d2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12379,7 +12727,7 @@ TR::Node *d2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *d2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12410,7 +12758,7 @@ TR::Node *d2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *d2bSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12425,7 +12773,7 @@ TR::Node *d2bSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *d2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12444,7 +12792,7 @@ TR::Node *d2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *b2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -12456,7 +12804,7 @@ TR::Node *b2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *b2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -12468,7 +12816,7 @@ TR::Node *b2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *b2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
    if (firstChild->getOpCode().isLoadConst())
       {
@@ -12480,7 +12828,7 @@ TR::Node *b2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *b2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12494,7 +12842,7 @@ TR::Node *b2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *b2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -12510,7 +12858,7 @@ TR::Node *b2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bu2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12561,7 +12909,7 @@ TR::Node *bu2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
       }
    else if (firstChild->getOpCodeValue() == TR::i2b &&
             (firstChild->getFirstChild()->getOpCodeValue() == TR::butest ||
-             firstChild->getFirstChild()->getOpCodeValue() == TR::arraycmp ||
+             (firstChild->getFirstChild()->getOpCodeValue() == TR::arraycmp && !firstChild->getFirstChild()->isArrayCmpSign()) ||
              firstChild->getFirstChild()->getOpCodeValue() == TR::icmpeq ||
              firstChild->getFirstChild()->getOpCodeValue() == TR::lcmpeq ||
              firstChild->getFirstChild()->getOpCodeValue() == TR::icmpne ||
@@ -12598,7 +12946,7 @@ TR::Node *bu2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bu2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -12679,7 +13027,7 @@ TR::Node *bu2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bu2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
    if (firstChild->getOpCode().isLoadConst())
       {
@@ -12692,7 +13040,7 @@ TR::Node *bu2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bu2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
    if (firstChild->getOpCode().isLoadConst())
@@ -12705,7 +13053,7 @@ TR::Node *bu2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *bu2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -12721,7 +13069,7 @@ TR::Node *bu2sSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *s2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12764,7 +13112,7 @@ TR::Node *s2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *s2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -12806,7 +13154,7 @@ TR::Node *s2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *s2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -12818,7 +13166,7 @@ TR::Node *s2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *s2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12831,7 +13179,7 @@ TR::Node *s2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *s2bSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12860,7 +13208,7 @@ TR::Node *s2bSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *su2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild();
    TR::Node * firstGrandChild;
 
@@ -12905,7 +13253,7 @@ TR::Node *su2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *su2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -12920,7 +13268,7 @@ TR::Node *su2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *su2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node *firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -12932,7 +13280,7 @@ TR::Node *su2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *su2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node *firstChild = node->getFirstChild();
 
    if (firstChild->getOpCode().isLoadConst())
@@ -13134,6 +13482,100 @@ TR::Node* removeArithmeticsUnderIntegralCompare(TR::Node* node,
    return node;
    }
 
+static TR::Node *simplifyIficmpneHelper(TR::Node *node, TR::Block *block, TR::Simplifier *s)
+   {
+      TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
+
+   if (firstChild == secondChild)
+      {
+      s->conditionalToUnconditional(node, block, false);
+      return node;
+      }
+
+   makeConstantTheRightChild(node, firstChild, secondChild, s);
+
+   if (firstChild->getOpCode().isLoadConst() && conditionalBranchFold((firstChild->getInt()!=secondChild->getInt()), node, firstChild, secondChild, block, s))
+      return node;
+
+   if (conditionalZeroComparisonBranchFold (node, firstChild, secondChild, block, s))
+      return node;
+
+   simplifyIntBranchArithmetic(node, firstChild, secondChild, s);
+
+   //We will change a if ( a >> C != 0 ) to a if ( a >= 2^C )
+   if ( firstChild->getOpCode().isRightShift() && //First child is a right shift
+
+        firstChild->getSecondChild()->getOpCode().isLoadConst() &&
+        firstChild->getSecondChild()->getInt() <= 31 &&
+        firstChild->getSecondChild()->getInt() >= 0 && //Shift value is a positive constant of reasonable size
+
+        ( firstChild->getOpCodeValue() == TR::iushr ||
+          firstChild->getFirstChild()->isNonNegative()
+        ) && //Either a logical shift or a positive first child to guarantee zero-extend
+
+        secondChild->getOpCode().isLoadConst() &&
+        secondChild->getInt() == 0 //Second child is a const 0
+      )
+      {
+      //Change if type
+      TR::Node::recreate(node, TR::ifiucmpge);
+
+      TR::Node *newSecondChild = TR::Node::create(node, TR::iconst, 0, 1 << firstChild->getSecondChild()->getInt());
+      node->setAndIncChild(1, newSecondChild);
+
+      node->setAndIncChild(0, firstChild->getFirstChild());
+
+      firstChild->recursivelyDecReferenceCount();
+      secondChild->recursivelyDecReferenceCount();
+
+      return node;
+      }
+
+   bitwiseToLogical(node, block, s);
+
+   if (firstChild->getOpCode().isBooleanCompare() &&
+       (secondChild->getOpCode().isLoadConst()) &&
+       ((secondChild->getInt() == 0) || (secondChild->getInt() == 1)) &&
+       (firstChild->getOpCode().convertCmpToIfCmp() != TR::BadILOp) &&
+       (s->comp()->cg()->getSupportsJavaFloatSemantics() || !(firstChild->getNumChildren()>1 && firstChild->getFirstChild()->getOpCode().isFloatingPoint())) &&
+       performTransformation(s->comp(), "%sChanging if opcode %p because first child %p is a comparison opcode\n", s->optDetailString(), node, firstChild))
+      {
+      TR::Node::recreate(node, firstChild->getOpCode().convertCmpToIfCmp());
+      node->setAndIncChild(0, firstChild->getFirstChild());
+      node->setAndIncChild(1, firstChild->getSecondChild());
+      if (secondChild->getInt() == 1)
+         TR::Node::recreate(node, node->getOpCode().getOpCodeForReverseBranch());
+      firstChild->recursivelyDecReferenceCount();
+      secondChild->recursivelyDecReferenceCount();
+      return node;
+      }
+
+   if ((firstChild->getOpCodeValue() == TR::lcmp) &&
+         ((secondChild->getOpCode().isLoadConst()) &&
+            secondChild->getInt() == 0) &&
+         performTransformation(s->comp(), "%sChanging if opcode %p because first child %p is an lcmp\n", s->optDetailString(), node, firstChild))
+      {
+      TR::Node::recreate(node, TR::iflcmpne); //change to iflcmp since operands are longs
+      node->setAndIncChild(0, firstChild->getFirstChild());
+      node->setAndIncChild(1, firstChild->getSecondChild());
+      firstChild->recursivelyDecReferenceCount();
+      secondChild->recursivelyDecReferenceCount();
+      return node;
+      }
+
+   if (node->getOpCodeValue() == TR::ificmpne)
+      intCompareNarrower(node, s, TR::ifscmpne, TR::ifscmpne, TR::ifbcmpne);
+   else
+      unsignedIntCompareNarrower(node, s, TR::ifscmpne, TR::ifbcmpne);
+
+
+   addressCompareConversion(node, s);
+   removeArithmeticsUnderIntegralCompare(node, s);
+   partialRedundantCompareElimination(node, block, s);
+
+   return node;
+   }
+
 //---------------------------------------------------------------------
 // Integer if compare equal (signed and unsigned)
 //
@@ -13143,9 +13585,12 @@ TR::Node *ificmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIficmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13271,100 +13716,11 @@ TR::Node *ificmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // further transformations to be done on the children.
    simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
-   TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
-
-   if (firstChild == secondChild)
-      {
-      s->conditionalToUnconditional(node, block, false);
-      return node;
-      }
-
-   makeConstantTheRightChild(node, firstChild, secondChild, s);
-
-   if (firstChild->getOpCode().isLoadConst() && conditionalBranchFold((firstChild->getInt()!=secondChild->getInt()), node, firstChild, secondChild, block, s))
-      return node;
-
-   if (conditionalZeroComparisonBranchFold (node, firstChild, secondChild, block, s))
-      return node;
-
-   simplifyIntBranchArithmetic(node, firstChild, secondChild, s);
-
-   //We will change a if ( a >> C != 0 ) to a if ( a >= 2^C )
-   if ( firstChild->getOpCode().isRightShift() && //First child is a right shift
-
-        firstChild->getSecondChild()->getOpCode().isLoadConst() &&
-        firstChild->getSecondChild()->getInt() <= 31 &&
-        firstChild->getSecondChild()->getInt() >= 0 && //Shift value is a positive constant of reasonable size
-
-        ( firstChild->getOpCodeValue() == TR::iushr ||
-          firstChild->getFirstChild()->isNonNegative()
-        ) && //Either a logical shift or a positive first child to guarantee zero-extend
-
-        secondChild->getOpCode().isLoadConst() &&
-        secondChild->getInt() == 0 //Second child is a const 0
-      )
-      {
-      //Change if type
-      TR::Node::recreate(node, TR::ifiucmpge);
-
-      TR::Node *newSecondChild = TR::Node::create(node, TR::iconst, 0, 1 << firstChild->getSecondChild()->getInt());
-      node->setAndIncChild(1, newSecondChild);
-
-      node->setAndIncChild(0, firstChild->getFirstChild());
-
-      firstChild->recursivelyDecReferenceCount();
-      secondChild->recursivelyDecReferenceCount();
-
-      return node;
-      }
-
-   bitwiseToLogical(node, block, s);
-
-   if (firstChild->getOpCode().isBooleanCompare() &&
-       (secondChild->getOpCode().isLoadConst()) &&
-       ((secondChild->getInt() == 0) || (secondChild->getInt() == 1)) &&
-       (firstChild->getOpCode().convertCmpToIfCmp() != TR::BadILOp) &&
-       (s->comp()->cg()->getSupportsJavaFloatSemantics() || !(firstChild->getNumChildren()>1 && firstChild->getFirstChild()->getOpCode().isFloatingPoint())) &&
-       performTransformation(s->comp(), "%sChanging if opcode %p because first child %p is a comparison opcode\n", s->optDetailString(), node, firstChild))
-      {
-      TR::Node::recreate(node, firstChild->getOpCode().convertCmpToIfCmp());
-      node->setAndIncChild(0, firstChild->getFirstChild());
-      node->setAndIncChild(1, firstChild->getSecondChild());
-      if (secondChild->getInt() == 1)
-         TR::Node::recreate(node, node->getOpCode().getOpCodeForReverseBranch());
-      firstChild->recursivelyDecReferenceCount();
-      secondChild->recursivelyDecReferenceCount();
-      return node;
-      }
-
-   if ((firstChild->getOpCodeValue() == TR::lcmp) &&
-         ((secondChild->getOpCode().isLoadConst()) &&
-            secondChild->getInt() == 0) &&
-         performTransformation(s->comp(), "%sChanging if opcode %p because first child %p is an lcmp\n", s->optDetailString(), node, firstChild))
-      {
-      TR::Node::recreate(node, TR::iflcmpne); //change to iflcmp since operands are longs
-      node->setAndIncChild(0, firstChild->getFirstChild());
-      node->setAndIncChild(1, firstChild->getSecondChild());
-      firstChild->recursivelyDecReferenceCount();
-      secondChild->recursivelyDecReferenceCount();
-      return node;
-      }
-
-   if (node->getOpCodeValue() == TR::ificmpne)
-      intCompareNarrower(node, s, TR::ifscmpne, TR::ifscmpne, TR::ifbcmpne);
-   else
-      unsignedIntCompareNarrower(node, s, TR::ifscmpne, TR::ifbcmpne);
-
-
-   addressCompareConversion(node, s);
-   removeArithmeticsUnderIntegralCompare(node, s);
-   partialRedundantCompareElimination(node, block, s);
-
-   return node;
+   return simplifyIficmpneHelper(node, block, s);
    }
 
 //---------------------------------------------------------------------
@@ -13376,9 +13732,12 @@ TR::Node *ificmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIficmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13425,9 +13784,12 @@ TR::Node *ificmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIficmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13474,9 +13836,12 @@ TR::Node *ificmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIficmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13523,9 +13888,12 @@ TR::Node *ificmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIficmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13566,6 +13934,37 @@ TR::Node *ificmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    return node;
    }
 
+TR::Node *simplifyIflcmpneHelper(TR::Node * node, TR::Block * block, TR::Simplifier * s)
+   {
+   TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
+
+   if (firstChild == secondChild)
+      {
+      s->conditionalToUnconditional(node, block, false);
+      return node;
+      }
+
+   makeConstantTheRightChild(node, firstChild, secondChild, s);
+
+   if (firstChild->getOpCode().isLoadConst() && conditionalBranchFold((firstChild->getLongInt()!=secondChild->getLongInt()), node, firstChild, secondChild, block, s))
+      return node;
+
+   if (conditionalZeroComparisonBranchFold (node, firstChild, secondChild, block, s))
+      return node;
+
+   simplifyLongBranchArithmetic(node, firstChild, secondChild, s);
+
+   if (node->getOpCodeValue() == TR::iflcmpne)
+      {
+      longCompareNarrower(node, s, TR::ificmpne, TR::ifscmpne, TR::ifscmpne, TR::ifbcmpne);
+      }
+   addressCompareConversion(node, s);
+   removeArithmeticsUnderIntegralCompare(node, s);
+
+   partialRedundantCompareElimination(node, block, s);
+   return node;
+   }
+
 //---------------------------------------------------------------------
 // Long integer if compare equal (signed and unsigned)
 //
@@ -13575,9 +13974,12 @@ TR::Node *iflcmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIflcmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13621,37 +14023,11 @@ TR::Node *iflcmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // further transformations to be done on the children.
    simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
-   TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
-
-   if (firstChild == secondChild)
-      {
-      s->conditionalToUnconditional(node, block, false);
-      return node;
-      }
-
-   makeConstantTheRightChild(node, firstChild, secondChild, s);
-
-   if (firstChild->getOpCode().isLoadConst() && conditionalBranchFold((firstChild->getLongInt()!=secondChild->getLongInt()), node, firstChild, secondChild, block, s))
-      return node;
-
-   if (conditionalZeroComparisonBranchFold (node, firstChild, secondChild, block, s))
-      return node;
-
-   simplifyLongBranchArithmetic(node, firstChild, secondChild, s);
-
-   if (node->getOpCodeValue() == TR::iflcmpne)
-      {
-      longCompareNarrower(node, s, TR::ificmpne, TR::ifscmpne, TR::ifscmpne, TR::ifbcmpne);
-      }
-   addressCompareConversion(node, s);
-   removeArithmeticsUnderIntegralCompare(node, s);
-
-   partialRedundantCompareElimination(node, block, s);
-   return node;
+   return simplifyIflcmpneHelper(node, block, s);
    }
 
 //---------------------------------------------------------------------
@@ -13663,9 +14039,12 @@ TR::Node *iflcmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIflcmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13705,9 +14084,12 @@ TR::Node *iflcmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIflcmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13747,9 +14129,12 @@ TR::Node *iflcmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIflcmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13789,9 +14174,12 @@ TR::Node *iflcmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIflcmpneHelper(node, block, s);
+
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
 
@@ -13837,7 +14225,7 @@ TR::Node *normalizeCmpSimplifier(TR::Node * node, TR::Block * block, TR::Simplif
    if (node->getOpCode().isBranch() && (removeIfToFollowingBlock(node, block, s) == NULL))
       return NULL;
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14046,6 +14434,32 @@ TR::Node *normalizeCmpSimplifier(TR::Node * node, TR::Block * block, TR::Simplif
    return node;
    }
 
+static TR::Node *simplifyIfacmpneHelper(TR::Node * node, TR::Block * block, TR::Simplifier * s)
+   {
+   TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
+
+   if (firstChild == secondChild)
+      {
+      s->conditionalToUnconditional(node, block, false);
+      return node;
+      }
+
+   makeConstantTheRightChild(node, firstChild, secondChild, s);
+   if (firstChild->getOpCodeValue() == TR::aconst && conditionalBranchFold((firstChild->getAddress()!=secondChild->getAddress()), node, firstChild, secondChild, block, s))
+      return node;
+
+   // weak symbols aren't necessarily defined, so we have to do the test
+   if (!(firstChild->getOpCode().hasSymbolReference() && firstChild->getSymbol()->isWeakSymbol()) &&
+       conditionalZeroComparisonBranchFold (node, firstChild, secondChild, block, s))
+      return node;
+
+   partialRedundantCompareElimination(node, block, s);
+
+   ifjlClassSimplifier(node, s);
+
+   return node;
+   }
+
 //---------------------------------------------------------------------
 // Address if compare equal
 //
@@ -14055,11 +14469,13 @@ TR::Node *ifacmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
    // Perform a simplification for the case where an iselect is compared to a
    // constant. This is done before simplifyChildren because it may allow
    // further transformations to be done on the children.
-   simplifyISelectCompare(node, s);
+   bool opChangedToCmpNE = simplifyISelectCompare(node, s);
 
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
+   if (opChangedToCmpNE)
+      return simplifyIfacmpneHelper(node, block, s);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14097,30 +14513,9 @@ TR::Node *ifacmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
 
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
-   TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
-
-   if (firstChild == secondChild)
-      {
-      s->conditionalToUnconditional(node, block, false);
-      return node;
-      }
-
-   makeConstantTheRightChild(node, firstChild, secondChild, s);
-   if (firstChild->getOpCodeValue() == TR::aconst && conditionalBranchFold((firstChild->getAddress()!=secondChild->getAddress()), node, firstChild, secondChild, block, s))
-      return node;
-
-   // weak symbols aren't necessarily defined, so we have to do the test
-   if (!(firstChild->getOpCode().hasSymbolReference() && firstChild->getSymbol()->isWeakSymbol()) &&
-       conditionalZeroComparisonBranchFold (node, firstChild, secondChild, block, s))
-      return node;
-
-   partialRedundantCompareElimination(node, block, s);
-
-   ifjlClassSimplifier(node, s);
-
-   return node;
+   return simplifyIfacmpneHelper(node, block, s);
    }
 
 //---------------------------------------------------------------------
@@ -14131,7 +14526,7 @@ TR::Node *ifCmpWithEqualitySimplifier(TR::Node * node, TR::Block * block, TR::Si
    {
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14239,7 +14634,7 @@ TR::Node *ifCmpWithoutEqualitySimplifier(TR::Node * node, TR::Block * block, TR:
    {
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14336,7 +14731,7 @@ TR::Node *ifCmpWithoutEqualitySimplifier(TR::Node * node, TR::Block * block, TR:
 
 TR::Node *icmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14487,7 +14882,7 @@ TR::Node *icmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *icmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14510,7 +14905,7 @@ TR::Node *icmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *icmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14533,7 +14928,7 @@ TR::Node *icmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *icmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14556,7 +14951,7 @@ TR::Node *icmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *icmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14579,7 +14974,7 @@ TR::Node *icmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *icmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14606,7 +15001,7 @@ TR::Node *icmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *lcmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14678,7 +15073,7 @@ TR::Node *lcmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *lcmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14772,7 +15167,7 @@ TR::Node *lcmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *lcmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14811,7 +15206,7 @@ TR::Node *lcmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *lcmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14834,7 +15229,7 @@ TR::Node *lcmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *lcmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14857,7 +15252,7 @@ TR::Node *lcmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *lcmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14884,7 +15279,7 @@ TR::Node *lcmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *lucmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14905,7 +15300,7 @@ TR::Node *lucmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *lucmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14926,7 +15321,7 @@ TR::Node *lucmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *lucmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14947,7 +15342,7 @@ TR::Node *lucmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *lucmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14972,7 +15367,7 @@ TR::Node *lucmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *acmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -14993,7 +15388,7 @@ TR::Node *acmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *acmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15018,7 +15413,7 @@ TR::Node *acmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *bcmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15039,7 +15434,7 @@ TR::Node *bcmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *bcmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15070,7 +15465,7 @@ TR::Node *bcmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *bcmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15092,7 +15487,7 @@ TR::Node *bcmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *bcmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15114,7 +15509,7 @@ TR::Node *bcmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *bcmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15136,7 +15531,7 @@ TR::Node *bcmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *bcmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15162,7 +15557,7 @@ TR::Node *bcmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *scmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15183,7 +15578,7 @@ TR::Node *scmpeqSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *scmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15204,7 +15599,7 @@ TR::Node *scmpneSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *scmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15226,7 +15621,7 @@ TR::Node *scmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *scmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15247,7 +15642,7 @@ TR::Node *scmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *scmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15268,7 +15663,7 @@ TR::Node *scmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *scmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15289,7 +15684,7 @@ TR::Node *scmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *sucmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15310,7 +15705,7 @@ TR::Node *sucmpltSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *sucmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15331,7 +15726,7 @@ TR::Node *sucmpgeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *sucmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15352,7 +15747,7 @@ TR::Node *sucmpgtSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *sucmpleSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
 
@@ -15389,7 +15784,7 @@ TR::Node *passThroughSimplifier(TR::Node * node, TR::Block * block, TR::Simplifi
    {
    // Collapse multiple levels of pass-through
    //
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -15602,7 +15997,7 @@ static bool isBooleanExpression(TR::Node *node)
 
 TR::Node *selectSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (node->getFirstChild()->getOpCode().isLoadConst())
       {
@@ -15650,9 +16045,17 @@ TR::Node *selectSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
                {
                if (performTransformation(s->comp(), "%sReplacing select with children of constant values 0 and 1 at [" POINTER_PRINTF_FORMAT "] with its condition reversed\n", s->optDetailString(), node))
                   {
-                  TR::Node *replacement = node->getFirstChild();
-                  TR::Node::recreate(replacement, replacement->getOpCode().getOpCodeForReverseBranch());
-                  return s->replaceNode(node, replacement, s->_curTree);
+                  TR::Node *oldFirstChild = node->getFirstChild();
+                  // we will remove the two consts from the node
+                  node->getChild(1)->recursivelyDecReferenceCount();
+                  node->getChild(2)->recursivelyDecReferenceCount();
+                  int32_t numChildren = oldFirstChild->getNumChildren();
+                  TR::Node::recreateWithoutProperties(node, oldFirstChild->getOpCode().getOpCodeForReverseBranch(), numChildren);
+                  for (int i = 0; i < numChildren; ++i)
+                    node->setAndIncChild(i, oldFirstChild->getChild(i));
+
+                  oldFirstChild->recursivelyDecReferenceCount();
+                  return node;
                   }
                }
             else
@@ -15677,9 +16080,13 @@ TR::Node *selectSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
       //       condition
       //       const 0/1
       //       boolean expression
-      else if ((node->getChild(2)->getOpCode().isLoadConst()
+      else if (((node->getChild(2)->getOpCode().isLoadConst()
+                    && (node->getChild(2)->get64bitIntegralValue() == 0
+                        || node->getChild(2)->get64bitIntegralValue() == 1))
                 && isBooleanExpression(node->getChild(1)))
-               || (node->getChild(1)->getOpCode().isLoadConst()
+               || ((node->getChild(1)->getOpCode().isLoadConst()
+                    && (node->getChild(1)->get64bitIntegralValue() == 0
+                        || node->getChild(1)->get64bitIntegralValue() == 1))
                    && isBooleanExpression(node->getChild(2))))
          {
          TR::Node *replacement = NULL;
@@ -15736,7 +16143,7 @@ TR::Node *selectSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 
 TR::Node *a2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -15757,7 +16164,7 @@ TR::Node *a2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *a2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -15792,7 +16199,7 @@ TR::Node *a2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 //
 TR::Node *switchSimplifier(TR::Node * node, TR::Block * block, bool isTableSwitch, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -16025,30 +16432,6 @@ static void foldUnsignedLongIntConstant(TR::Node * node, uint64_t value, TR::Sim
       dumpOptDetails(s->comp(), " 0x%x%08x\n", node->getLongIntHigh(), node->getLongIntLow());
    }
 
-inline OMR::TR_ConditionCodeNumber calculateSignedCC(int64_t result, bool overflow)
-   {
-   if ((result == 0) && !overflow)
-      return OMR::ConditionCode0;
-   else if ((result < 0) && !overflow)
-      return OMR::ConditionCode1;
-   else if ((result > 0) && !overflow)
-      return OMR::ConditionCode2;
-   else // (overflow)
-      return OMR::ConditionCode3;
-   }
-
-inline OMR::TR_ConditionCodeNumber calculateUnsignedCC(uint64_t result, bool carryNotBorrow)
-   {
-   if (result == 0 && !carryNotBorrow)
-      return OMR::ConditionCode0;
-   else if ((result != 0) && !carryNotBorrow)
-      return OMR::ConditionCode1;
-   else if ((result == 0) && carryNotBorrow)
-      return OMR::ConditionCode2;
-   else // if ((result != 0) && carryNotBorrow)
-      return OMR::ConditionCode3;
-   }
-
 // Both lmulh and lmulhu are adapted from Hackers Delight, Figure 8-2, pg. 132
 // uses the simple digit by digit multiplication
 //
@@ -16103,28 +16486,6 @@ static uint64_t lmulhu(uint64_t op1, uint64_t op2)
    t = u1 * v1 + w2 + (w1 >> 32);
 
    return t;
-   }
-
-static void foldUByteConstant(TR::Node * node, uint8_t value, TR::Simplifier * s, bool anchorChildrenP)
-   {
-   if (!performTransformationSimplifier(node, s)) return;
-
-   if (anchorChildrenP) s->anchorChildren(node, s->_curTree);
-
-   s->prepareToReplaceNode(node, TR::bconst);
-   node->setUnsignedByte(value);
-   dumpOptDetails(s->comp(), " to %s %d\n", node->getOpCode().getName(), node->getUnsignedByte());
-   }
-
-static void foldCharConstant(TR::Node * node, uint16_t value, TR::Simplifier * s, bool anchorChildrenP)
-   {
-   if (!performTransformationSimplifier(node, s)) return;
-
-   if (anchorChildrenP) s->anchorChildren(node, s->_curTree);
-
-   s->prepareToReplaceNode(node, TR::sconst);
-   node->setConst<uint16_t>(value);
-   dumpOptDetails(s->comp(), " to %s %d\n", node->getOpCode().getName(), node->getConst<uint16_t>());
    }
 
 static void removeRestOfBlock(TR::TreeTop *curTree, TR::Compilation *compilation)
@@ -16203,7 +16564,7 @@ TR::Node *checkcastSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier
          }
       }
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    return node;
    }
 
@@ -16222,7 +16583,7 @@ TR::Node *checkcastAndNULLCHKSimplifier(TR::Node * node, TR::Block * block, TR::
 
 TR::Node *variableNewSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (  node->getOpCodeValue() == TR::variableNew
       && node->getFirstChild()->getOpCodeValue() == TR::loadaddr
@@ -16241,7 +16602,7 @@ TR::Node *variableNewSimplifier(TR::Node * node, TR::Block * block, TR::Simplifi
 
 TR::Node * imulhSimplifier(TR::Node * node, TR::Block *block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    TR::Node * firstChild = node->getFirstChild(), * secondChild = node->getSecondChild();
    orderChildren(node, firstChild, secondChild, s);
 
@@ -16327,7 +16688,7 @@ TR::Node * imulhSimplifier(TR::Node * node, TR::Block *block, TR::Simplifier * s
 
 TR::Node *lmulhSimplifier(TR::Node * node, TR::Block *block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    if (node->isDualHigh())
       {
@@ -16364,7 +16725,7 @@ TR::Node *lmulhSimplifier(TR::Node * node, TR::Block *block, TR::Simplifier * s)
 
 TR::Node *f2cSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -16383,7 +16744,7 @@ TR::Node *f2cSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 
 TR::Node *d2cSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -16402,7 +16763,7 @@ TR::Node *d2cSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
 //
 TR::Node *ibits2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -16426,7 +16787,7 @@ TR::Node *ibits2fSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *lbits2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -16450,7 +16811,7 @@ TR::Node *lbits2dSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *fbits2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -16480,7 +16841,7 @@ TR::Node *fbits2iSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *dbits2lSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
 
@@ -16512,7 +16873,7 @@ TR::Node *ifxcmpoSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
    {
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::ILOpCodes opCode = node->getOpCodeValue();
    TR_ASSERT((opCode == TR::ificmpo) || (opCode == TR::ificmpno) || (opCode == TR::iflcmpo) || (opCode == TR::iflcmpno), "unsupported ifxcmpo opcode");
@@ -16537,7 +16898,7 @@ TR::Node *ifxcmnoSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
    {
    if (removeIfToFollowingBlock(node, block, s) == NULL)
       return NULL;
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::ILOpCodes opCode = node->getOpCodeValue();
    TR_ASSERT((opCode == TR::ificmno) || (opCode == TR::ificmnno) || (opCode == TR::iflcmno) || (opCode == TR::iflcmnno), "unsupported ifxcmno opcode");
@@ -16586,10 +16947,10 @@ TR::Node *nullchkSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
        nullCheckRefOp == TR::multianewarray)
       {
       TR::Node::recreate(node, TR::treetop);
-      simplifyChildren(node, block, s);
+      s->simplifyChildren(node, block);
       return node;
       }
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Compilation *comp = TR::comp();
    if (node->getFirstChild()->getNumChildren() == 0)
@@ -16665,25 +17026,126 @@ TR::Node *nullchkSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 //
 TR::Node *divchkSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   // Remember the original child of the divchk. If simplification of this
-   // child causes it to be replaced by another node, the divchk is no longer
-   // needed.
-   // The child of the divchk may no longer be a divide node, due to commoning.
-   // In this case the divchk is no longer needed.
-   //
-   TR::Node *originalChild = node->getFirstChild();
-   /////TR::ILOpCodes originalChildOpCode = originalChild->getOpCode().getOpCodeValue();
-   /////TR_ASSERT(originalChild->getVisitCount() != s->comp()->getVisitCount(),"Simplifier, bad divchk node");
-   TR::Node * child = originalChild;
-   if (originalChild->getVisitCount() != s->comp()->getVisitCount())
-      child = s->simplify(originalChild, block);
+   TR::Node * child = node->getFirstChild();
+   TR::Node * origChild = child;
+   TR::ILOpCode childOpCode = child->getOpCode();
 
-   if (child != originalChild ||
-       !(child->getOpCode().isDiv() || child->getOpCode().isRem()))
+   // Check whether the child has already been simplified
+   //
+   if (child->getVisitCount() != s->comp()->getVisitCount())
       {
-      TR::Node::recreate(node, TR::treetop);
-      node->setFirst(child);
-      return node;
+      if (childOpCode.isDiv() || childOpCode.isRem())
+         {
+         s->_nodeToDivchk = NULL;
+
+         child = s->simplify(child, block);
+
+         // Handshake with division and remainder simplifiers:  If simplifying the
+         // child of a DIVCHK results in a node that still needs to have a DIVCHK
+         // applied, those simplififiers will place that node in _nodeToDivchk.  If
+         // the simplification leaves no node that needs to have a DIVCHK applied,
+         // they will set _nodeToDivchk to NULL.  If _nodeToDivchk is non-null, that
+         // is used as the child of the DIVCHK; otherwise, the DIVCHK is simplified
+         // to a treetop node.
+         //
+         // Note that the division and remainder simplifiers will set _nodeToDivchk
+         // only after recursively simplifying their own children, so any setting of
+         // _nodeToDivchk by division or remainder operations that are deeper in the
+         // trees will not be seen upon returning to this method.
+         //
+         // For example, before simplifying the DIVCHK child, n98n, we might have the
+         // trees on the left and after, the trees on the right.  Notice that the
+         // ldiv child of the DIVCHK has been replaced with an idiv that must still
+         // be checked for division by zero.  The ldivSimplifier will set
+         // _nodeToDivchk to refer to node n100n so that divchkSimplifier
+         // can update the DIVCHK node to refer to the correct child node.
+         //
+         // n99n  DIVCHK                    n99n  DIVCHK
+         // n98n    ldiv                    n100n   idiv
+         // n97n      i2l
+         // n96n        iload a             n96n      iload a
+         // n95n      i2l
+         // n94n        iload b             n94n      iload b
+         // n93n  lstore c                  n93n  lstore c
+         // n98n    ==> ldiv                n98n    i2l
+         //                                 n100n     ==> idiv
+         //
+         // If the numerator of a division is itself a division operation and the
+         // denominator is unity (1), the trees might look like those on the left,
+         // while if the numerator was simply the value of a variable, it might
+         // look like those on the right:
+         //
+         // n199n DIVCHK                       n299n DIVCHK
+         // n198n   idiv                       n298n   idiv
+         // n197n     idiv                     n297n     iload a
+         // n196n       iload a                n296n     iconst 1
+         // n195n       iload b
+         // n194n     iconst 1
+         //
+         // For the trees on the left, the result of simplifying the child of the
+         // DIVCHK would be n197n, which is itself an idiv, while for the trees on
+         // the right, the result would be iload, n297n.  In both cases, the
+         // iremSimplifier would set _nodeToDivchk to NULL to indicate that the
+         // DIVCHK is no longer needed.
+         //
+         if (s->_nodeToDivchk == NULL)
+            {
+            if (s->trace())
+               {
+               traceMsg(s->comp(), "Simplifying DIVCHK n%un %p child resulted in no node to DIVCHK - replacing DIVCHK with treetop\n",
+                        node->getGlobalIndex(), node);
+               }
+
+            TR::Node::recreate(node, TR::treetop);
+            node->setChild(0, child);
+            return node;
+            }
+         else
+            {
+            if (s->trace())
+               {
+               traceMsg(s->comp(), "Simplifying DIVCHK child has left us with a node to DIVCHK - replacing child with n%un [%p]\n",
+                        s->_nodeToDivchk->getGlobalIndex(),  s->_nodeToDivchk);
+               }
+
+            // Simplifying the child has left us with a node that still needs to
+            // have a DIVCHK applied.  Replace the original child with the node
+            // that must have a DIVCHK - which could still be the original child.
+            //
+            node->setAndIncChild(0, s->_nodeToDivchk);
+            origChild->recursivelyDecReferenceCount();
+            s->_nodeToDivchk = NULL;
+            }
+         }
+      else
+         {
+         // Child of DIVCHK must be a division or remainder operation.  If it's not,
+         // eliminate the DIVCHK.
+         //
+         if (s->trace())
+            {
+            traceMsg(s->comp(), "DIVCHK n%un %p child is not a division or remainder operation - replacing DIVCHK with treetop\n", node->getGlobalIndex(), node);
+            }
+
+         TR::Node::recreate(node, TR::treetop);
+         return node;
+         }
+      }
+   else
+      {
+      // The child node has already been visited, so it must have been anchored
+      // at some earlier TR::TreeTop.  If it needed to be protected by a DIVCHK
+      // that DIVCHK would have appeared at that earlier point, so the current
+      // DIVCHK is no longer needed.  If the child is no longer a division or
+      // remainder operation, the DIVCHK must be removed - otherwise, allow
+      // performTransformation to gate its removal.
+      //
+      if ((!childOpCode.isDiv() && !childOpCode.isRem())
+          || performTransformation(s->comp(), "%sRemoved DIVCHK for commoned division operation in node[%s]\n", s->optDetailString(), node->getName(s->getDebug())))
+         {
+         TR::Node::recreate(node, TR::treetop);
+         return node;
+         }
       }
 
    // If the divisor is a non-zero constant, this check is redundant and
@@ -16711,7 +17173,7 @@ TR::Node *divchkSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 //
 TR::Node *bndchkSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node     * boundChild = node->getFirstChild();
    TR::Node     * indexChild = node->getSecondChild();
@@ -16813,7 +17275,7 @@ TR::Node *bndchkSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * 
 //
 TR::Node *arraycopybndchkSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node     * lhsChild = node->getFirstChild();
    TR::Node     * rhsChild = node->getSecondChild();
@@ -16947,7 +17409,7 @@ TR::Node *arraycopybndchkSimplifier(TR::Node * node, TR::Block * block, TR::Simp
 //
 TR::Node *bndchkwithspinechkSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    int32_t boundChildNum = 2;
    int32_t indexChildNum = 3;
@@ -17190,7 +17652,7 @@ TR::Node *lucmpSimplifier(TR::Node *node, TR::Block *block, TR::Simplifier * s)
 
 TR::Node *imaxminSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
    TR::Node * secondChild = node->getSecondChild();
@@ -17238,7 +17700,7 @@ TR::Node *imaxminSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 // Used for lmax, lumax, lmin, lumin
 TR::Node *lmaxminSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
    TR::Node * secondChild = node->getSecondChild();
@@ -17285,71 +17747,87 @@ TR::Node *lmaxminSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier *
 
 TR::Node *fmaxminSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node * firstChild = node->getFirstChild();
    TR::Node * secondChild = node->getSecondChild();
    bool isBothConst = firstChild->getOpCode().isLoadConst() && secondChild->getOpCode().isLoadConst();
    float fmin = 0, fmax = 0;
-   bool maxOpcode = node->getOpCodeValue() == TR::fmax;
+   bool isMaxOpcode = node->getOpCodeValue() == TR::fmax;
 
-   if (isBothConst)
+   if (!isBothConst) return node;
+
+   float first = firstChild->getFloat();
+   float second = secondChild->getFloat();
+
+   uint32_t firstBits = firstChild->getFloatBits();
+   uint32_t secondBits = secondChild->getFloatBits();
+
+   // if either or both operands is a NaN, the result is the first NaN.
+   // +0.0f compares as strictly greater than -0.0f
+   if (isNaNFloat(firstChild))
       {
-      if (isNaNFloat(firstChild))
-         fmin = fmax = firstChild->getFloat();
-      else if (isNaNFloat(secondChild))
-         fmin = fmax = secondChild->getFloat();
-      else
-         {
-         if (firstChild->getFloat() <= secondChild->getFloat())
-            {
-            fmin = firstChild->getFloat();
-            fmax = secondChild->getFloat();
-            }
-         else
-            {
-            fmin = secondChild->getFloat();
-            fmax = firstChild->getFloat();
-            }
-         }
-      foldFloatConstant(node, maxOpcode ? fmax : fmin, s);
+      fmin = fmax = first;
+      }
+   else if (isNaNFloat(secondChild))
+      {
+      fmin = fmax = second;
+      }
+   else if (first > second || (firstBits == 0 && secondBits == FLOAT_NEG_ZERO))
+      {
+      fmax = first;
+      fmin = second;
+      }
+   else
+      {
+      fmax = second;
+      fmin = first;
       }
 
+   foldFloatConstant(node, isMaxOpcode ? fmax : fmin, s);
    return node;
    }
 
 TR::Node *dmaxminSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    double min, max;
    TR::Node * firstChild = node->getFirstChild();
    TR::Node * secondChild = node->getSecondChild();
    bool isBothConst = firstChild->getOpCode().isLoadConst() && secondChild->getOpCode().isLoadConst();
-   bool maxOpcode = node->getOpCodeValue() == TR::dmax;
+   bool isMaxOpcode = node->getOpCodeValue() == TR::dmax;
 
-   if (isBothConst)
+   if (!isBothConst) return node;
+
+   double first = firstChild->getDouble();
+   double second = secondChild->getDouble();
+
+   uint64_t firstBits = firstChild->getDoubleBits();
+   uint64_t secondBits = secondChild->getDoubleBits();
+
+   // if either or both operands is a NaN, the result is the first NaN.
+   // +0.0d compares as strictly greater than -0.0d
+   if (isNaNDouble(firstChild))
       {
-      if (isNaNDouble(firstChild))
-         min = max = firstChild->getDouble();
-      else if (isNaNDouble(secondChild))
-         min = max = secondChild->getDouble();
-      else
-         {
-         if (firstChild->getDouble() <= secondChild->getDouble())
-            {
-            min = firstChild->getDouble();
-            max = secondChild->getDouble();
-            }
-         else
-            {
-            min = secondChild->getDouble();
-            max = firstChild->getDouble();
-            }
-         }
-      foldDoubleConstant(node, maxOpcode ? max : min, s);
+      min = max = first;
+      }
+   else if (isNaNDouble(secondChild))
+      {
+      min = max = second;
+      }
+   else if (first > second || (firstBits == 0L && secondBits == DOUBLE_NEG_ZERO))
+      {
+      max = first;
+      min = second;
+      }
+   else
+      {
+      max = second;
+      min = first;
       }
 
+   foldDoubleConstant(node, isMaxOpcode ? max : min, s);
    return node;
    }
 
@@ -17360,7 +17838,7 @@ TR::Node *computeCCSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier
    TR::Node *firstChild = node->getFirstChild();
    TR::ILOpCode& ccOriginalChildOp = firstChild->getOpCode();
 
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    OMR::TR_ConditionCodeNumber cc = s->getCC(firstChild);
    if (cc != OMR::ConditionCodeInvalid)
@@ -17381,7 +17859,7 @@ TR::Node *computeCCSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier
 
 TR::Node * arraysetSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    // Reduce Int64 fill to lower size fill - this generates much more efficient code on z, and there
    // is no reason not to do this if elem child has repeating pattern.
@@ -17391,6 +17869,10 @@ TR::Node * arraysetSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier
       {
       uint64_t fillVal = fill->getConst<uint64_t>();
       if ((fillVal & 0x0FFFFFFFFL) == ((fillVal >> 32) & 0x0FFFFFFFFL) &&
+#ifdef TR_TARGET_ARM64
+          /* 0 and -1 can be efficiently loaded and stored as 64-bit data on AArch64. */
+          (fillVal != 0) && (fillVal != -1) &&
+#endif /* TR_TARGET_ARM64 */
           performTransformation(s->comp(), "%sTransform large fill arrayset to 4byte fill arrayset [" POINTER_PRINTF_FORMAT "]\n",
                 s->optDetailString(), node))
          {
@@ -17406,7 +17888,7 @@ TR::Node * arraysetSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier
 //
 TR::Node *bitOpMemSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    if (s->comp()->getOption(TR_ScalarizeSSOps))
       {
       }
@@ -17415,7 +17897,7 @@ TR::Node *bitOpMemSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier 
 
 TR::Node *NewSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
    return node;
    }
 
@@ -17436,7 +17918,7 @@ TR::Node *lowerTreeSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier
 // Simplification of arrayLength operator
 TR::Node *arrayLengthSimplifier(TR::Node * node, TR::Block * block, TR::Simplifier * s)
    {
-   simplifyChildren(node, block, s);
+   s->simplifyChildren(node, block);
 
    TR::Node *firstChild = node->getFirstChild();
    TR::ILOpCodes firstChildOp = firstChild->getOpCodeValue();

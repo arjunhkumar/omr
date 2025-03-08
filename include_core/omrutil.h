@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMRUTIL_H_INCLUDED
@@ -300,7 +300,30 @@ omr_error_t detectVMDirectory(wchar_t *vmDirectory, size_t vmDirectoryLength, wc
 
 uintptr_t getStorageKey(void);
 
-#endif /*if defined(J9ZOS390)*/
+/* ---------------- zosversion.c ---------------- */
+
+#define ZOS_V1R10_RELEASE 20.00
+#define ZOS_V1R10_VERSION 3
+
+#define ZOS_V2R4_RELEASE 27.00
+#define ZOS_V2R4_VERSION 4
+
+/**
+ * Determine if the z/OS version is greater than or equal to a given
+ * release and version. The implementation is based on uname(),
+ * NOT on __osname() as the __osname() release numbers are not
+ * guaranteed to increase.
+ *
+ * For release and version numbers, see
+ * 	https://www.ibm.com/docs/en/zos/2.5.0?topic=functions-uname-display-current-operating-system-name
+ *
+ * @param[in] min_release the release to be checked.
+ * @param[in] min_version the version to be checked.
+ * @return TRUE if the z/OS version is greater than or equal to the given release and version,
+ *         FALSE otherwise.
+ */
+BOOLEAN zos_version_at_least(double min_release, double min_version);
+#endif /* defined(J9ZOS390) */
 
 /**
  * Returns a string representing the type of page indicated by the given pageFlags.

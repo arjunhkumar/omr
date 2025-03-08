@@ -17,7 +17,7 @@
 # [1] https://www.gnu.org/software/classpath/license.html
 # [2] https://openjdk.org/legal/assembly-exception.html
 #
-# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+# SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
 ###############################################################################
 
 include(OmrTest)
@@ -55,6 +55,7 @@ if(OMR_JITBUILDER_TEST_EXTENDED)
 	create_jitbuilder_test(fieldaddress      cpp/samples/FieldAddress.cpp)
 	create_jitbuilder_test(linkedlist        cpp/samples/LinkedList.cpp)
 	create_jitbuilder_test(localarray        cpp/samples/LocalArray.cpp)
+	create_jitbuilder_test(matmult           cpp/samples/MatMult.cpp)
 	create_jitbuilder_test(operandarraytests cpp/samples/OperandArrayTests.cpp)
 	create_jitbuilder_test(operandstacktests cpp/samples/OperandStackTests.cpp)
 	create_jitbuilder_test(pointer           cpp/samples/Pointer.cpp)
@@ -62,6 +63,7 @@ if(OMR_JITBUILDER_TEST_EXTENDED)
 	create_jitbuilder_test(structArray       cpp/samples/StructArray.cpp)
 	create_jitbuilder_test(switch            cpp/samples/Switch.cpp)
 	create_jitbuilder_test(tableswitch       cpp/samples/TableSwitch.cpp)
+	create_jitbuilder_test(thunk             cpp/samples/Thunk.cpp)
 	create_jitbuilder_test(toiltype          cpp/samples/ToIlType.cpp)
 	create_jitbuilder_test(union             cpp/samples/Union.cpp)
 	create_jitbuilder_test(vmregister        cpp/samples/VMRegister.cpp)

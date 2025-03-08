@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef LOOPVERSIONER_INCL
@@ -140,19 +140,19 @@ struct LoopTemps : public TR_Link<LoopTemps>
  * Class TR_LoopVersioner
  * ======================
  *
- * The loop versioner optimization eliminates loop invariant null checks, 
- * bound checks, div checks, checkcasts and inline guards (where 
- * the "this" pointer does not change in the loop) from loops by 
- * placing equivalent tests outside the loop. Also eliminates bound 
- * checks where the range of values of the index inside the loop is 
- * discovered (must be compile-time constant) and checks are inserted 
- * outside the loop that ensure that no bound checks fail inside the loop. 
- * This analysis uses induction variable information found by value 
- * propagation. 
- * 
- * Another versioning test that is emitted ensures the loop will not 
- * run for a very long period of time (in which case the async check 
- * inside the loop can be removed). This special versioning test depends 
+ * The loop versioner optimization eliminates loop invariant null checks,
+ * bound checks, div checks, checkcasts and inline guards (where
+ * the "this" pointer does not change in the loop) from loops by
+ * placing equivalent tests outside the loop. Also eliminates bound
+ * checks where the range of values of the index inside the loop is
+ * discovered (must be compile-time constant) and checks are inserted
+ * outside the loop that ensure that no bound checks fail inside the loop.
+ * This analysis uses induction variable information found by value
+ * propagation.
+ *
+ * Another versioning test that is emitted ensures the loop will not
+ * run for a very long period of time (in which case the async check
+ * inside the loop can be removed). This special versioning test depends
  * on the number of trees (code) inside the loop.
  *
  *
@@ -390,6 +390,18 @@ class TR_LoopVersioner : public TR_LoopTransformer
        * preserves optional flags such as TR::Node::isMaxLoopIterationGuard().
        */
       flags32_t _flags;
+
+      /// Determine whether this expression is a guard merged with an HCR guard.
+      bool mergedWithHCRGuard() const
+         {
+         return _op.isIf() && _guard != NULL && _guard->mergedWithHCRGuard();
+         }
+
+      /// Determine whether this expression is a guard merged with an OSR guard.
+      bool mergedWithOSRGuard() const
+         {
+         return _op.isIf() && _guard != NULL && _guard->mergedWithOSRGuard();
+         }
 
       bool operator<(const Expr &rhs) const;
       };
@@ -698,6 +710,20 @@ class TR_LoopVersioner : public TR_LoopTransformer
       /// Check and branch nodes that will be removed if privatization is allowed.
       TR::NodeChecklist _optimisticallyRemovableNodes;
 
+      /// Guards that will be removed as long as HCR guard versioning is allowed.
+      TR::NodeChecklist _guardsRemovableWithHCR;
+
+      /// Guards that will be removed as long as both privatization and HCR
+      /// guard versioning are allowed.
+      TR::NodeChecklist _guardsRemovableWithPrivAndHCR;
+
+      /// Guards that will be removed as long as OSR guard versioning is allowed.
+      TR::NodeChecklist _guardsRemovableWithOSR;
+
+      /// Guards that will be removed as long as both privatization and OSR
+      /// guard versioning are allowed.
+      TR::NodeChecklist _guardsRemovableWithPrivAndOSR;
+
       /// Branch nodes that, if removed, will be taken.
       TR::NodeChecklist _takenBranches;
 
@@ -718,6 +744,9 @@ class TR_LoopVersioner : public TR_LoopTransformer
 
       /// The result of the analysis to say whether OSR guards can be versioned.
       bool _osrGuardVersioningOK;
+
+      // Whether or not conditional is folded in the duplicated loop.
+      bool _foldConditionalInDuplicatedLoop;
       };
 
    class Hoist : public LoopImprovement
@@ -1118,10 +1147,10 @@ class TR_LoopVersioner : public TR_LoopTransformer
  * Class TR_LoopSpecializer
  * ========================
  *
- * The loop specializer optimization replaces loop-invariant expressions 
- * that are profiled and found to be constants, by the constant value 
- * after inserting a test outside the loop that compares the value to 
- * the constant. Note that this cannot be done in the the absence of 
+ * The loop specializer optimization replaces loop-invariant expressions
+ * that are profiled and found to be constants, by the constant value
+ * after inserting a test outside the loop that compares the value to
+ * the constant. Note that this cannot be done in the the absence of
  * value profiling infrastructure.
  */
 

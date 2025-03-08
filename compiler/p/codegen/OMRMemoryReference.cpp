@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stddef.h>
@@ -227,7 +227,7 @@ OMR::Power::MemoryReference::MemoryReference(TR::Node *rootLoadOrStore, uint32_t
             self()->setUnresolvedSnippet(new (cg->trHeapMemory()) TR::UnresolvedDataSnippet(cg, rootLoadOrStore, ref, isStore, false));
             cg->addSnippet(self()->getUnresolvedSnippet());
             }
-         // if an aconst feeds a iaload, we need to load the constant
+         // if an aconst feeds a aloadi, we need to load the constant
          if (base->getOpCode().isLoadConst())
             {
             cg->evaluate(base);
@@ -586,7 +586,10 @@ void OMR::Power::MemoryReference::populateMemoryReference(TR::Node *subTree, TR:
    {
    if (cg->comp()->useCompressedPointers())
       {
-      if (subTree->getOpCodeValue() == TR::l2a && subTree->getReferenceCount() == 1 && subTree->getRegister() == NULL)
+      if ((subTree->getOpCodeValue() == TR::l2a) &&
+          (subTree->getReferenceCount() == 1) &&
+          (subTree->getRegister() == NULL) &&
+          !self()->getUnresolvedSnippet())  // If there is unresolved data snippet, l2a cannot be skipped
          {
          cg->decReferenceCount(subTree);
          subTree = subTree->getFirstChild();
@@ -1487,7 +1490,7 @@ TR::Instruction *OMR::Power::MemoryReference::expandInstruction(TR::Instruction 
             cg,
             TR::InstOpCode::Op_st,
             node,
-            TR::MemoryReference::createWithDisplacement(cg, stackPtr, -saveLen, saveLen), 
+            TR::MemoryReference::createWithDisplacement(cg, stackPtr, -saveLen, saveLen),
             rX,
             prevInstruction
          );
@@ -1501,7 +1504,7 @@ TR::Instruction *OMR::Power::MemoryReference::expandInstruction(TR::Instruction 
             TR::InstOpCode::Op_load,
             node,
             rX,
-            TR::MemoryReference::createWithDisplacement(cg, stackPtr, -saveLen, saveLen), 
+            TR::MemoryReference::createWithDisplacement(cg, stackPtr, -saveLen, saveLen),
             currentInstruction
          );
          }
@@ -1593,6 +1596,12 @@ void OMR::Power::MemoryReference::accessStaticItem(TR::Node *node, TR::SymbolRef
          loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_BodyInfoAddressLoad);
          return;
          }
+      else if (symbol->isCatchBlockCounter() && cg->needRelocationsForBodyInfoData())
+         {
+         TR::Register *reg = _baseRegister = cg->allocateRegister();
+         loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_CatchBlockCounter);
+         return;
+         }
       else if (symbol->isCompiledMethod() && cg->needRelocationsForCurrentMethodPC())
          {
          TR::Register *reg = _baseRegister = cg->allocateRegister();
@@ -1621,6 +1630,24 @@ void OMR::Power::MemoryReference::accessStaticItem(TR::Node *node, TR::SymbolRef
          {
          TR::Register *reg = _baseRegister = cg->allocateRegister();
          loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_RecompQueuedFlag);
+         return;
+         }
+      else if ((symbol->isEnterEventHookAddress() || symbol->isExitEventHookAddress()) && cg->comp()->compileRelocatableCode())
+         {
+         TR::Register *reg = _baseRegister = cg->allocateRegister();
+         loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_MethodEnterExitHookAddress);
+         return;
+         }
+      else if (symbol->isCallSiteTableEntry() && !ref->isUnresolved() && cg->comp()->compileRelocatableCode())
+         {
+         TR::Register *reg = _baseRegister = cg->allocateRegister();
+         loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_CallsiteTableEntryAddress);
+         return;
+         }
+      else if (symbol->isMethodTypeTableEntry() && !ref->isUnresolved() && cg->comp()->compileRelocatableCode())
+         {
+         TR::Register *reg = _baseRegister = cg->allocateRegister();
+         loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_MethodTypeTableEntryAddress);
          return;
          }
       else
@@ -1743,6 +1770,12 @@ void OMR::Power::MemoryReference::accessStaticItem(TR::Node *node, TR::SymbolRef
          loadAddressConstant(cg, cg->needRelocationsForBodyInfoData(), nodeForSymbol, 0, reg, NULL, false, TR_BodyInfoAddressLoad);
          return;
          }
+      else if ((refIsUnresolved || cg->needRelocationsForBodyInfoData()) && symbol->isCatchBlockCounter())
+         {
+         TR::Register *reg = _baseRegister = cg->allocateRegister();
+         loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_CatchBlockCounter);
+         return;
+         }
       else if (symbol->isCompiledMethod() && (ref->isUnresolved() || cg->needRelocationsForCurrentMethodPC()))
          {
          TR::Register *reg = _baseRegister = cg->allocateRegister();
@@ -1767,7 +1800,24 @@ void OMR::Power::MemoryReference::accessStaticItem(TR::Node *node, TR::SymbolRef
          loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_RecompQueuedFlag);
          return;
          }
-
+      else if ((symbol->isEnterEventHookAddress() || symbol->isExitEventHookAddress()) && cg->comp()->compileRelocatableCode())
+         {
+         TR::Register *reg = _baseRegister = cg->allocateRegister();
+         loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_MethodEnterExitHookAddress);
+         return;
+         }
+      else if (symbol->isCallSiteTableEntry() && !refIsUnresolved && cg->comp()->compileRelocatableCode())
+         {
+         TR::Register *reg = _baseRegister = cg->allocateRegister();
+         loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_CallsiteTableEntryAddress);
+         return;
+         }
+      else if (symbol->isMethodTypeTableEntry() && !refIsUnresolved && cg->comp()->compileRelocatableCode())
+         {
+         TR::Register *reg = _baseRegister = cg->allocateRegister();
+         loadAddressConstant(cg, true, nodeForSymbol, 1, reg, NULL, false, TR_MethodTypeTableEntryAddress);
+         return;
+         }
       else if (refIsUnresolved || useUnresSnippetToAvoidRelo)
          {
          self()->setUnresolvedSnippet(new (cg->trHeapMemory()) TR::UnresolvedDataSnippet(cg, node, ref, isStore, false));

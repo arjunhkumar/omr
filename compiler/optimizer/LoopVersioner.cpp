@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "optimizer/LoopVersioner.hpp"
@@ -35,8 +35,6 @@
 #include "compile/VirtualGuard.hpp"
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
-#include "cs2/bitvectr.h"
-#include "cs2/llistof.h"
 #include "cs2/sparsrbit.h"
 #include "env/CompilerEnv.hpp"
 #include "env/ObjectModel.hpp"
@@ -2159,6 +2157,7 @@ bool TR_LoopVersioner::detectInvariantBoundChecks(List<TR::TreeTop> *boundCheckT
              _loopConditionInvariant &&
              (node->getOpCodeValue() == TR::BNDCHK || node->getOpCodeValue() == TR::BNDCHKwithSpineCHK))
             {
+            bool isIndexChildMultiplied = false;
             if (indexChild->getOpCode().hasSymbolReference())
                indexSymRef = indexChild->getSymbolReference();
             else
@@ -2167,6 +2166,9 @@ bool TR_LoopVersioner::detectInvariantBoundChecks(List<TR::TreeTop> *boundCheckT
                while (indexChild->getOpCode().isAdd() || indexChild->getOpCode().isSub() || indexChild->getOpCode().isAnd() ||
                       indexChild->getOpCode().isMul())
                   {
+                  if (indexChild->getOpCode().isMul())
+                     isIndexChildMultiplied = true;
+
                   if (indexChild->getSecondChild()->getOpCode().isLoadConst())
                      indexChild = indexChild->getFirstChild();
                   else
@@ -2247,7 +2249,16 @@ bool TR_LoopVersioner::detectInvariantBoundChecks(List<TR::TreeTop> *boundCheckT
 
                if (!isInductionVariable)
                   {
-                  bool isIndexChildMultiplied=false;
+                  if (isIndexChildMultiplied)
+                     {
+                     // Don't look through temps beneath a multiplication. The
+                     // versioning test to rule out overflow in multiplication
+                     // would generate a load of the temporary, which before
+                     // entering the loop has a value unrelated to its value in
+                     // the index expression and might even be uninitialized.
+                     break;
+                     }
+
                   TR::Node *mulNode=NULL;
                   TR::Node *strideNode=NULL;
                   bool indVarOccursAsSecondChildOfSub=false;
@@ -3444,7 +3455,7 @@ void TR_LoopVersioner::updateDefinitionsAndCollectProfiledExprs(TR::Node *parent
                 if ((valueInfo->getTopProbability() > MIN_PROFILED_FREQUENCY) &&
                     (valueInfo->getTotalFrequency() > 0) &&
                     !_containsCall &&
-                    !node->getByteCodeInfo().doNotProfile() && !node->isNodeCreatedByPRE() &&
+                    !node->getByteCodeInfo().doNotProfile() && node->canChkNodeCreatedByPRE() && !node->isNodeCreatedByPRE() &&
                     // Only collect nodes from unspecialized blocks to avoid specializing the same nodes twice
                     !block->isSpecialized())
                    {
@@ -4080,7 +4091,14 @@ void TR_LoopVersioner::versionNaturalLoop(TR_RegionStructure *whileLoop, List<TR
             _canPredictIters = false;
          }
 
-      if (!comp()->getOption(TR_DisableAsyncCheckVersioning) &&
+      // `_duplicateConditionalTree` is set only when `_conditionalTree` is set. `_conditionalTree`
+      // is set only when`_neitherLoopCold` is true. Therefore, if `_duplicateConditionalTree` exists,
+      // the loops are unbiased. When the loops are unbiased, do not version asynch check
+      // so that the conditional in both loops can be folded away.
+      bool asyncCheckVersioningOK = _duplicateConditionalTree ? false : true;
+
+      if (asyncCheckVersioningOK &&
+          !comp()->getOption(TR_DisableAsyncCheckVersioning) &&
           !refineAliases() && _canPredictIters && comp()->getProfilingMode() != JitProfiling &&
           performTransformation(comp(), "%s Creating test outside loop for deciding if async check is required\n", OPT_DETAILS_LOOP_VERSIONER))
          {
@@ -4302,6 +4320,16 @@ void TR_LoopVersioner::versionNaturalLoop(TR_RegionStructure *whileLoop, List<TR
        "loop %d: privatization should only allow more versioning",
        loopNum);
 
+   TR_ASSERT_FATAL(
+       _curLoop->_guardsRemovableWithPrivAndHCR.contains(_curLoop->_guardsRemovableWithHCR),
+       "loop %d: privatization should only allow more merged HCR guard versioning",
+       loopNum);
+
+   TR_ASSERT_FATAL(
+       _curLoop->_guardsRemovableWithPrivAndOSR.contains(_curLoop->_guardsRemovableWithOSR),
+       "loop %d: privatization should only allow more merged OSR guard versioning",
+       loopNum);
+
    // Detect the presence of HCR and/or OSR guards in the loop.
    TR_ScratchList<TR::TreeTop> hcrGuards(trMemory());
    TR_ScratchList<TR::TreeTop> osrGuards(trMemory());
@@ -4352,14 +4380,21 @@ void TR_LoopVersioner::versionNaturalLoop(TR_RegionStructure *whileLoop, List<TR
       feGetEnv("TR_disableWrtbarVersion") != NULL;
 
    _curLoop->_privatizationOK = _curLoop->_privatizationsRequested;
-   _curLoop->_hcrGuardVersioningOK = !hcrGuards.isEmpty() && !disableLoopHCR;
-   _curLoop->_osrGuardVersioningOK = !osrGuards.isEmpty() && !disableLoopOSR;
+
+   _curLoop->_hcrGuardVersioningOK =
+      (!hcrGuards.isEmpty() || !_curLoop->_guardsRemovableWithPrivAndHCR.isEmpty())
+      && !disableLoopHCR;
+
+   _curLoop->_osrGuardVersioningOK =
+      (!osrGuards.isEmpty() || !_curLoop->_guardsRemovableWithPrivAndOSR.isEmpty())
+      && !disableLoopOSR;
 
    bool awrtbariVersioningOK =
       !awrtbariTrees->isEmpty()
       && !disableWrtbarVersion
       && !shouldOnlySpecializeLoops()
-      && !refineAliases();
+      && !refineAliases()
+      && !_curLoop->_foldConditionalInDuplicatedLoop;
 
    bool alreadyAskedPermission = false; // permission to transform
 
@@ -4378,10 +4413,22 @@ void TR_LoopVersioner::versionNaturalLoop(TR_RegionStructure *whileLoop, List<TR
          removedNodes.add(_curLoop->_definitelyRemovableNodes);
 
       if (_curLoop->_hcrGuardVersioningOK)
+         {
          removedNodes.add(hcrGuardsSet);
+         if (_curLoop->_privatizationOK)
+            removedNodes.add(_curLoop->_guardsRemovableWithPrivAndHCR);
+         else
+            removedNodes.add(_curLoop->_guardsRemovableWithHCR);
+         }
 
       if (_curLoop->_osrGuardVersioningOK)
+         {
          removedNodes.add(osrGuardsSet);
+         if (_curLoop->_privatizationOK)
+            removedNodes.add(_curLoop->_guardsRemovableWithPrivAndOSR);
+         else
+            removedNodes.add(_curLoop->_guardsRemovableWithOSR);
+         }
 
       dumpOptDetails(
          comp(),
@@ -4557,7 +4604,7 @@ void TR_LoopVersioner::versionNaturalLoop(TR_RegionStructure *whileLoop, List<TR
          comparisonTrees.add(guard);
 
          bool reverseBranch = false, origLoop = true;
-         FoldConditional fold(this, NULL, guard, reverseBranch, origLoop);
+         FoldConditional fold(this, NULL, tt->getNode(), reverseBranch, origLoop);
          fold.improveLoop();
          }
       }
@@ -4565,16 +4612,20 @@ void TR_LoopVersioner::versionNaturalLoop(TR_RegionStructure *whileLoop, List<TR
    if (_curLoop->_osrGuardVersioningOK)
       {
       // All OSR guards will be patched by the same runtime assumptions, so only
-      // one OSR guard is added to branch to the slow loop.
-      TR_ASSERT_FATAL(
-         !osrGuards.isEmpty(), "unexpected attempt to version OSR guards");
+      // one OSR guard is added to branch to the slow loop. This is only needed
+      // if there are no virtual guards with merged OSR guards to be versioned,
+      // but it's more straightforward (and harmless) to generate it whenever
+      // there was originally a standalone OSR guard in the loop.
+      if (!osrGuards.isEmpty())
+         {
+         TR::Node *osrGuard = osrGuards.getListHead()->getData()->getNode();
+         TR::Node *guard = osrGuard->duplicateTree();
+         if (trace())
+            traceMsg(comp(), "OSRGuard n%dn has been created to guard against method invalidation\n", guard->getGlobalIndex());
 
-      TR::Node *osrGuard = osrGuards.getListHead()->getData()->getNode();
-      TR::Node *guard = osrGuard->duplicateTree();
-      if (trace())
-         traceMsg(comp(), "OSRGuard n%dn has been created to guard against method invalidation\n", guard->getGlobalIndex());
-      guard->setBranchDestination(clonedLoopInvariantBlock->getEntry());
-      comparisonTrees.add(guard);
+         guard->setBranchDestination(clonedLoopInvariantBlock->getEntry());
+         comparisonTrees.add(guard);
+         }
 
       ListIterator<TR::TreeTop> guardIt(&osrGuards);
       for (TR::TreeTop *tt = guardIt.getCurrent(); tt; tt = guardIt.getNext())
@@ -4596,7 +4647,9 @@ void TR_LoopVersioner::versionNaturalLoop(TR_RegionStructure *whileLoop, List<TR
       {
       LoopImprovement *improvement = *it;
       LoopEntryPrep *prep = improvement->_prep;
-      if (!prep->_requiresPrivatization || _curLoop->_privatizationOK)
+      if ((!prep->_requiresPrivatization || _curLoop->_privatizationOK)
+          && (!prep->_expr->mergedWithHCRGuard() || _curLoop->_hcrGuardVersioningOK)
+          && (!prep->_expr->mergedWithOSRGuard() || _curLoop->_osrGuardVersioningOK))
          {
          emitPrep(prep, &comparisonTrees);
          improvement->improveLoop();
@@ -5561,7 +5614,7 @@ void TR_LoopVersioner::RemoveArrayStoreCheck::improveLoop()
    TR::TreeTop *firstNewTree = TR::TreeTop::create(comp(), TR::Node::create(TR::treetop, 1, arrayStoreCheckNode->getFirstChild()), NULL, NULL);
    TR::Node *child = arrayStoreCheckNode->getFirstChild();
    if (child->getOpCodeValue() == TR::awrtbari && TR::Compiler->om.writeBarrierType() == gc_modron_wrtbar_none &&
-      performTransformation(comp(), "%sChanging awrtbari node [%p] to an iastore\n", OPT_DETAILS_LOOP_VERSIONER, child))
+      performTransformation(comp(), "%sChanging awrtbari node [%p] to an astorei\n", OPT_DETAILS_LOOP_VERSIONER, child))
       {
       TR::Node::recreate(child, TR::astorei);
       child->getChild(2)->recursivelyDecReferenceCount();
@@ -5575,7 +5628,7 @@ void TR_LoopVersioner::RemoveArrayStoreCheck::improveLoop()
       secondNewTree = TR::TreeTop::create(comp(), TR::Node::create(TR::treetop, 1, arrayStoreCheckNode->getSecondChild()), NULL, NULL);
       child = arrayStoreCheckNode->getSecondChild();
       if (child->getOpCodeValue() == TR::awrtbari && TR::Compiler->om.writeBarrierType() == gc_modron_wrtbar_none &&
-          performTransformation(comp(), "%sChanging awrtbari node [%p] to an iastore\n", OPT_DETAILS_LOOP_VERSIONER, child))
+          performTransformation(comp(), "%sChanging awrtbari node [%p] to an astorei\n", OPT_DETAILS_LOOP_VERSIONER, child))
          {
          TR::Node::recreate(child, TR::astorei);
          child->getChild(2)->recursivelyDecReferenceCount();
@@ -6369,6 +6422,8 @@ void TR_LoopVersioner::buildConditionalTree(
                      _duplicateConditionalTree,
                      reverseBranch,
                      /* original = */ false));
+
+               _curLoop->_foldConditionalInDuplicatedLoop = true;
                }
             }
          }
@@ -6639,7 +6694,7 @@ void TR_LoopVersioner::RemoveSpineCheck::improveLoop()
 
    //fixup node to have arraylets.
    // aiadd
-   //   iaload
+   //   aloadi
    //       aiadd
    //          aload a
    //          iadd
@@ -6849,7 +6904,7 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
             traceMsg(comp(), "Index invariant in each iter -> Creating %p (%s)\n", nextComparisonNode, nextComparisonNode->getOpCode().getName());
 
          if (comp()->requiresSpineChecks())
-             findAndReplaceContigArrayLen(NULL, nextComparisonNode ,comp()->incVisitCount());
+             findAndReplaceContigArrayLen(NULL, nextComparisonNode, comp()->incVisitCount());
 
          LoopEntryPrep *prep =
             createLoopEntryPrep(LoopEntryPrep::TEST, nextComparisonNode);
@@ -6863,7 +6918,7 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
             traceMsg(comp(), "Index invariant in each iter -> Creating %p (%s)\n", nextComparisonNode, nextComparisonNode->getOpCode().getName());
 
          if (comp()->requiresSpineChecks())
-            findAndReplaceContigArrayLen(NULL, nextComparisonNode ,comp()->incVisitCount());
+            findAndReplaceContigArrayLen(NULL, nextComparisonNode, comp()->incVisitCount());
 
          prep = createChainedLoopEntryPrep(
             LoopEntryPrep::TEST,
@@ -7268,7 +7323,7 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
             }
 
          if (comp()->requiresSpineChecks())
-            findAndReplaceContigArrayLen(NULL, nextComparisonNode ,comp()->incVisitCount());
+            findAndReplaceContigArrayLen(NULL, nextComparisonNode, comp()->incVisitCount());
 
          prep = createLoopEntryPrep(LoopEntryPrep::TEST, nextComparisonNode);
          dumpOptDetails(
@@ -7418,6 +7473,8 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
             else
                incrementI = incrementJ;
 
+            bool isIncreasingI = incrementI > 0; // check before taking abs just below
+
             if (incrementI < 0)
                incrementI = -incrementI;
             if (incrementJ < 0)
@@ -7426,81 +7483,34 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
             TR::Node *incrJNode = TR::Node::create(boundCheckNode, TR::iconst, 0, incrementJ);
             TR::Node *zeroNode = TR::Node::create(boundCheckNode, TR::iconst, 0, 0);
             numIterations = TR::Node::create(TR::idiv, 2, range, incrNode);
-            TR::Node *remNode = TR::Node::create(TR::irem, 2, range, incrNode);
-            TR::Node *ceilingNode = TR::Node::create(TR::icmpne, 2, remNode, zeroNode);
-            numIterations = TR::Node::create(TR::iadd, 2, numIterations, ceilingNode);
 
-            incrementJ = additiveConstantInStore;
-            int32_t condValue = 0;
-            bool adjustForDerivedIV = false;
-            switch (_loopTestTree->getNode()->getOpCodeValue())
+            TR::ILOpCode stayInLoopOp = _loopTestTree->getNode()->getOpCode();
+            if (reverseBranch)
+               stayInLoopOp = stayInLoopOp.getOpCodeForReverseBranch();
+
+            if (isIncreasingI == stayInLoopOp.isCompareTrueIfGreater())
                {
-               case TR::ificmpge:
-                  if (reverseBranch) // actually <
-                     {
-                     if (isLoopDrivingInductionVariable)
-                        incrementJ = incrementJ - 1;
-                     else //isDerivedInductionVariable
-                        adjustForDerivedIV = true;
-                     }
-                  else
-                     condValue = 1;
-                  break;
-               case TR::ificmple:
-                  if (reverseBranch) // actually >
-                     {
-                     if (isLoopDrivingInductionVariable)
-                        incrementJ = incrementJ + 1;
-                     else //isDerivedInductionVariable
-                        adjustForDerivedIV = true;
-                     }
-                  else
-                     condValue = 1;
-                  break;
-               case TR::ificmplt:
-                  if (reverseBranch) // actually >=
-                     condValue = 1;
-                  else
-                     {
-                     if (isLoopDrivingInductionVariable)
-                        incrementJ = incrementJ - 1;
-                     else //isDerivedInductionVariable
-                        adjustForDerivedIV = true;
-                     }
-                  break;
-               case TR::ificmpgt:
-                  if (reverseBranch) // actually <=
-                     condValue = 1;
-                  else
-                     {
-                     if (isLoopDrivingInductionVariable)
-                        incrementJ = incrementJ + 1;
-                     else //isDerivedInductionVariable
-                        adjustForDerivedIV = true;
-                     }
-                  break;
-               default:
-                     break;
+               dumpOptDetails(
+                  comp(),
+                  "Abandon versioning bound check because while condition %s "
+                  "is incompatible with %s loop driving IV\n",
+                  stayInLoopOp.getName(),
+                  isIncreasingI ? "an increasing" : "a decreasing");
+
+               nextTree = nextTree->getNextElement();
+               continue;
                }
 
-            if (adjustForDerivedIV)
+            bool strict = !stayInLoopOp.isCompareTrueIfEqual();
+            if (strict)
                {
-               if (isAddition)
-                  incrementJ = incrementJ - 1;
-               else
-                  incrementJ = incrementJ + 1;
+               TR::Node *remNode = TR::Node::create(TR::irem, 2, range, incrNode);
+               TR::Node *ceilingNode = TR::Node::create(TR::icmpne, 2, remNode, zeroNode);
+               numIterations = TR::Node::create(TR::iadd, 2, numIterations, ceilingNode);
                }
 
-            TR::Node *extraIter = TR::Node::create(TR::icmpeq, 2, remNode, zeroNode);
-            extraIter = TR::Node::create(TR::iand, 2, extraIter,
-                                        TR::Node::create(boundCheckNode, TR::iconst, 0, condValue));
-            numIterations = TR::Node::create(TR::iadd, 2, numIterations, extraIter);
             numIterations = TR::Node::create(TR::imul, 2, numIterations, incrJNode);
-            TR::Node *adjustMaxValue;
-            if(isIndexChildMultiplied)
-               adjustMaxValue = TR::Node::create(boundCheckNode, TR::iconst, 0, incrementJ+1);
-            else
-               adjustMaxValue = TR::Node::create(boundCheckNode, TR::iconst, 0, incrementJ);
+
             TR::Node *maxValue = NULL;
             TR::ILOpCodes addOp = TR::isub;
             if (isLoopDrivingInductionVariable)
@@ -7517,11 +7527,59 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
             if (isLoopDrivingInductionVariable)
                 entryNode = TR::Node::createLoad(boundCheckNode, loopDrivingSymRef);
             else
-                entryNode = TR::Node::createLoad(boundCheckNode, origIndexSymRef);
+                entryNode = TR::Node::createLoad(boundCheckNode, indexSymRef);
 
             maxValue = TR::Node::create(addOp, 2, entryNode, numIterations);
 
-            maxValue = TR::Node::create(TR::isub, 2, maxValue, adjustMaxValue);
+            if (strict)
+               {
+               TR::Node *adjustMaxValue = TR::Node::create(boundCheckNode, TR::iconst, 0, additiveConstantInStore);
+               maxValue = TR::Node::create(TR::isub, 2, maxValue, adjustMaxValue);
+               }
+
+            if (trace())
+               {
+               traceMsg(comp(), "%s: reverseBranch %d stayInLoopOp %s incrNode n%dn numIterations n%dn maxValue n%dn loopLimit n%dn loopDrivingInductionVariable n%dn\n", __FUNCTION__,
+                  reverseBranch, stayInLoopOp.getName(), incrNode->getGlobalIndex(), numIterations->getGlobalIndex(),
+                  maxValue->getGlobalIndex(), loopLimit->getGlobalIndex(), _storeTrees[loopDrivingInductionVariable]->getNode()->getFirstChild()->getGlobalIndex());
+               }
+            /*
+             * Loop test op code: <= or <
+             *   - (limit + step) should be greater than or equal to the limit, otherwise outside of the representable range
+             *
+             * Loop test op code: >= or >
+             *   - (limit - step) should be less than or equal to the limit, otherwise outside of the representable range
+             */
+            if (!_storeTrees[loopDrivingInductionVariable]->getNode()->getFirstChild()->cannotOverflow())
+               {
+               TR::Node *overflowComparisonNode = NULL;
+
+               // stayInLoopOp already considers whether or not the branch is reversed
+               if ((stayInLoopOp.getOpCodeValue() == TR::ificmple) || (stayInLoopOp.getOpCodeValue() == TR::ificmplt)) // <=, <
+                  {
+                  TR::Node *overLimit = TR::Node::create(TR::iadd, 2, loopLimit, incrNode);
+                  overflowComparisonNode = TR::Node::createif(TR::ificmplt, overLimit, loopLimit, _exitGotoTarget);
+                  }
+               else // >=, >
+                  {
+                  TR::Node *overLimit = TR::Node::create(TR::isub, 2, loopLimit, incrNode);
+                  overflowComparisonNode = TR::Node::createif(TR::ificmpgt, overLimit, loopLimit, _exitGotoTarget);
+                  }
+
+               if (comp()->requiresSpineChecks())
+                  findAndReplaceContigArrayLen(NULL, overflowComparisonNode, comp()->incVisitCount());
+
+               prep = createChainedLoopEntryPrep(
+                  LoopEntryPrep::TEST,
+                  overflowComparisonNode,
+                  prep);
+
+               dumpOptDetails(
+                  comp(),
+                  "Prep %p has been created for testing if exceed bounds\n",
+                  prep);
+               }
+
             loopLimit = maxValue;
             dumpOptDetails(comp(), "loopLimit has been adjusted to %p\n", loopLimit);
             }
@@ -7571,34 +7629,12 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
                {
                if (!indVarOccursAsSecondChildOfSub)
                   {
-                  if (isLoopDrivingInductionVariable)
-                     {
-                     if ((_loopTestTree->getNode()->getOpCodeValue() == TR::ificmple) ||
-                         (_loopTestTree->getNode()->getOpCodeValue() == TR::ificmpgt))
-                         nextComparisonNode = TR::Node::createif(TR::ifiucmpge, correctCheckNode, arrayLengthNode->duplicateTree(), _exitGotoTarget);
-                     }
-
-                  if (!nextComparisonNode)
-                     {
-                     if(isIndexChildMultiplied)
-                        nextComparisonNode = TR::Node::createif(TR::ifiucmpge, correctCheckNode, arrayLengthNode->duplicateTree(), _exitGotoTarget);
-                     else
-                        nextComparisonNode = TR::Node::createif(TR::ifiucmpgt, correctCheckNode, arrayLengthNode->duplicateTree(), _exitGotoTarget);
-                     }
-                     nextComparisonNode->setIsVersionableIfWithMaxExpr(comp());
+                  nextComparisonNode = TR::Node::createif(TR::ifiucmpge, correctCheckNode, arrayLengthNode->duplicateTree(), _exitGotoTarget);
+                  nextComparisonNode->setIsVersionableIfWithMaxExpr(comp());
                   }
                else
                   {
-                  if (isLoopDrivingInductionVariable)
-                     {
-                     if ((_loopTestTree->getNode()->getOpCodeValue() == TR::ificmplt) ||
-                         (_loopTestTree->getNode()->getOpCodeValue() == TR::ificmpge))
-                         nextComparisonNode = TR::Node::createif(TR::ificmple, correctCheckNode, TR::Node::create(boundCheckNode, TR::iconst, 0, -1), _exitGotoTarget);
-                     }
-
-                  if (!nextComparisonNode)
-                     nextComparisonNode = TR::Node::createif(TR::ificmplt, correctCheckNode, TR::Node::create(boundCheckNode, TR::iconst, 0, -1), _exitGotoTarget);
-
+                  nextComparisonNode = TR::Node::createif(TR::ificmplt, correctCheckNode, TR::Node::create(boundCheckNode, TR::iconst, 0, 0), _exitGotoTarget);
                   nextComparisonNode->setIsVersionableIfWithMinExpr(comp());
                   }
 
@@ -7609,35 +7645,12 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
                {
                if (!indVarOccursAsSecondChildOfSub)
                   {
-                  if (isLoopDrivingInductionVariable)
-                     {
-                     if ((_loopTestTree->getNode()->getOpCodeValue() == TR::ificmplt) ||
-                         (_loopTestTree->getNode()->getOpCodeValue() == TR::ificmpge))
-                        nextComparisonNode = TR::Node::createif(TR::ificmple, correctCheckNode, TR::Node::create(boundCheckNode, TR::iconst, 0, -1), _exitGotoTarget);
-                     }
-
-                  if (!nextComparisonNode)
-                     nextComparisonNode = TR::Node::createif(TR::ificmplt, correctCheckNode, TR::Node::create(boundCheckNode, TR::iconst, 0, -1), _exitGotoTarget);
-
+                  nextComparisonNode = TR::Node::createif(TR::ificmplt, correctCheckNode, TR::Node::create(boundCheckNode, TR::iconst, 0, 0), _exitGotoTarget);
                   nextComparisonNode->setIsVersionableIfWithMinExpr(comp());
                   }
                else
                   {
-                  if (isLoopDrivingInductionVariable)
-                     {
-                     if ((_loopTestTree->getNode()->getOpCodeValue() == TR::ificmple) ||
-                         (_loopTestTree->getNode()->getOpCodeValue() == TR::ificmpgt))
-                         nextComparisonNode = TR::Node::createif(TR::ifiucmpge, correctCheckNode, arrayLengthNode->duplicateTree(), _exitGotoTarget);
-                     }
-
-                  if (!nextComparisonNode)
-                     {
-                     if(isIndexChildMultiplied)
-                        nextComparisonNode = TR::Node::createif(TR::ifiucmpge, correctCheckNode, arrayLengthNode->duplicateTree(), _exitGotoTarget);
-                     else
-                        nextComparisonNode = TR::Node::createif(TR::ifiucmpgt, correctCheckNode, arrayLengthNode->duplicateTree(), _exitGotoTarget);
-                     }
-
+                  nextComparisonNode = TR::Node::createif(TR::ifiucmpge, correctCheckNode, arrayLengthNode->duplicateTree(), _exitGotoTarget);
                   nextComparisonNode->setIsVersionableIfWithMaxExpr(comp());
                   }
 
@@ -7647,7 +7660,7 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
             }
 
          if (comp()->requiresSpineChecks())
-           findAndReplaceContigArrayLen(NULL, nextComparisonNode ,comp()->incVisitCount());
+           findAndReplaceContigArrayLen(NULL, nextComparisonNode, comp()->incVisitCount());
 
          prep = createChainedLoopEntryPrep(
             LoopEntryPrep::TEST,
@@ -7722,7 +7735,7 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
                   traceMsg(comp(), "Induction variable added in each iter -> Creating %p (%s)\n", nextComparisonNode, nextComparisonNode->getOpCode().getName());
 
                if (comp()->requiresSpineChecks())
-                  findAndReplaceContigArrayLen(NULL, nextComparisonNode ,comp()->incVisitCount());
+                  findAndReplaceContigArrayLen(NULL, nextComparisonNode, comp()->incVisitCount());
 
                prep = createChainedLoopEntryPrep(
                   LoopEntryPrep::TEST,
@@ -7754,7 +7767,7 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
                nextComparisonNode = TR::Node::createif(TR::ificmplt, duplicateMulNode, TR::Node::create(boundCheckNode, TR::iconst, 0, 0), _exitGotoTarget);
                nextComparisonNode->setIsVersionableIfWithMaxExpr(comp());
                if (comp()->requiresSpineChecks())
-                  findAndReplaceContigArrayLen(NULL, nextComparisonNode ,comp()->incVisitCount());
+                  findAndReplaceContigArrayLen(NULL, nextComparisonNode, comp()->incVisitCount());
 
                prep = createChainedLoopEntryPrep(
                   LoopEntryPrep::TEST,
@@ -7768,7 +7781,7 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
                nextComparisonNode = TR::Node::createif(TR::ifiucmpgt, duplicateMulHNode, TR::Node::create(boundCheckNode, TR::iconst, 0, 0), _exitGotoTarget);
                nextComparisonNode->setIsVersionableIfWithMaxExpr(comp());
                if (comp()->requiresSpineChecks())
-                  findAndReplaceContigArrayLen(NULL, nextComparisonNode ,comp()->incVisitCount());
+                  findAndReplaceContigArrayLen(NULL, nextComparisonNode, comp()->incVisitCount());
 
                prep = createChainedLoopEntryPrep(
                   LoopEntryPrep::TEST,
@@ -7781,7 +7794,7 @@ void TR_LoopVersioner::buildBoundCheckComparisonsTree(
                //Adding multiplicative factor greater than zero check for multiplicative BNDCHKS a.i+b; a>0
                nextComparisonNode = TR::Node::createif(TR::ificmple, strideNode->duplicateTree(), TR::Node::create(boundCheckNode, TR::iconst, 0, 0), _exitGotoTarget);
                if (comp()->requiresSpineChecks())
-                  findAndReplaceContigArrayLen(NULL, nextComparisonNode ,comp()->incVisitCount());
+                  findAndReplaceContigArrayLen(NULL, nextComparisonNode, comp()->incVisitCount());
 
                prep = createChainedLoopEntryPrep(
                   LoopEntryPrep::TEST,
@@ -8008,6 +8021,9 @@ bool TR_LoopVersioner::requiresPrivatization(TR::Node *node)
    if (!node->getOpCode().hasSymbolReference())
       return false;
 
+   if (node->isDataAddrPointer())
+      return false;
+
    if (node->getOpCodeValue() == TR::loadaddr || node->getOpCode().isTreeTop())
       return false;
 
@@ -8090,7 +8106,7 @@ bool TR_LoopVersioner::suppressInvarianceAndPrivatization(TR::SymbolReference *s
          return true;
 
       // Class flags are mutable.
-      case TR::SymbolReferenceTable::isClassAndDepthFlagsSymbol:
+      case TR::SymbolReferenceTable::isClassDepthAndFlagsSymbol:
          return true;
 
 #ifdef J9_PROJECT_SPECIFIC
@@ -8179,19 +8195,26 @@ bool TR_LoopVersioner::depsForLoopEntryPrep(
    // If this is an indirect access
    //
    if (node->isInternalPointer() ||
-       (((node->getOpCode().isIndirect() && node->getOpCode().hasSymbolReference() && !node->getSymbolReference()->getSymbol()->isStatic()) || node->getOpCode().isArrayLength()) &&
-        !node->getFirstChild()->isInternalPointer()))
+         (((node->getOpCode().isIndirect() && node->getOpCode().hasSymbolReference() &&
+         !node->getSymbolReference()->getSymbol()->isStatic()) ||
+         node->getOpCode().isArrayLength()) && !node->getFirstChild()->isInternalPointer()))
       {
-      if (!node->getFirstChild()->isThisPointer())
+      TR::Node *firstChild = node->getFirstChild();
+      if (!firstChild->isThisPointer())
          {
-         dumpOptDetailsCreatingTest("null", node->getFirstChild());
-         TR::Node *ifacmpeqNode = TR::Node::createif(TR::ifacmpeq, node->getFirstChild(), TR::Node::aconst(node, 0), _exitGotoTarget);
+         // if we are dealing with dataAddr load use the child for null check.
+         // We can reach here either with dataAddr load or with parent of dataAddr load.
+         if (firstChild->isDataAddrPointer())
+            firstChild = firstChild->getFirstChild(); // Array base is the child of dataAddr load
+
+         dumpOptDetailsCreatingTest("null", firstChild);
+         TR::Node *ifacmpeqNode = TR::Node::createif(TR::ifacmpeq, firstChild, TR::Node::aconst(node, 0), _exitGotoTarget);
          LoopEntryPrep *nullTestPrep =
             addLoopEntryPrepDep(LoopEntryPrep::TEST, ifacmpeqNode, deps, visited);
 
          if (nullTestPrep == NULL)
             {
-            dumpOptDetailsFailedToCreateTest("null", node->getFirstChild());
+            dumpOptDetailsFailedToCreateTest("null", firstChild);
             return false;
             }
 
@@ -8199,7 +8222,6 @@ bool TR_LoopVersioner::depsForLoopEntryPrep(
          _curLoop->_nullTestPreps.insert(std::make_pair(refExpr, nullTestPrep));
          }
 
-      TR::Node *firstChild = node->getFirstChild();
       bool instanceOfReqd = true;
       TR_OpaqueClassBlock *otherClassObject = NULL;
       TR::Node *duplicateClassPtr = NULL;
@@ -8309,38 +8331,28 @@ bool TR_LoopVersioner::depsForLoopEntryPrep(
          {
          if (otherClassObject)
             {
-            dumpOptDetailsCreatingTest("type", node->getFirstChild());
-            TR::Node *instanceofNode = TR::Node::createWithSymRef(TR::instanceof, 2, 2, node->getFirstChild(), duplicateClassPtr, comp()->getSymRefTab()->findOrCreateInstanceOfSymbolRef(comp()->getMethodSymbol()));
+            dumpOptDetailsCreatingTest("type", firstChild);
+            TR::Node *instanceofNode = TR::Node::createWithSymRef(TR::instanceof, 2, 2, firstChild, duplicateClassPtr, comp()->getSymRefTab()->findOrCreateInstanceOfSymbolRef(comp()->getMethodSymbol()));
             TR::Node *ificmpeqNode =  TR::Node::createif(TR::ificmpeq, instanceofNode, TR::Node::create(node, TR::iconst, 0, 0), _exitGotoTarget);
             if (addLoopEntryPrepDep(LoopEntryPrep::TEST, ificmpeqNode, deps, visited) == NULL)
                {
-               dumpOptDetailsFailedToCreateTest("type", node->getFirstChild());
+               dumpOptDetailsFailedToCreateTest("type", firstChild);
                return false;
                }
             }
          else if (testIsArray)
             {
 #ifdef J9_PROJECT_SPECIFIC
-            dumpOptDetailsCreatingTest("array type", node->getFirstChild());
+            dumpOptDetailsCreatingTest("array type", firstChild);
 
-            TR::Node *vftLoad = TR::Node::createWithSymRef(TR::aloadi, 1, 1, node->getFirstChild(), comp()->getSymRefTab()->findOrCreateVftSymbolRef());
+            TR::Node *vftLoad = TR::Node::createWithSymRef(TR::aloadi, 1, 1, firstChild, comp()->getSymRefTab()->findOrCreateVftSymbolRef());
             //TR::Node *componentTypeLoad = TR::Node::create(TR::aloadi, 1, vftLoad, comp()->getSymRefTab()->findOrCreateArrayComponentTypeSymbolRef());
-            TR::Node *classFlag = NULL;
-            if (comp()->target().is32Bit())
-               {
-               classFlag = TR::Node::createWithSymRef(TR::iloadi, 1, 1, vftLoad, comp()->getSymRefTab()->findOrCreateClassAndDepthFlagsSymbolRef());
-               }
-            else
-               {
-               classFlag = TR::Node::createWithSymRef(TR::lloadi, 1, 1, vftLoad, comp()->getSymRefTab()->findOrCreateClassAndDepthFlagsSymbolRef());
-               classFlag = TR::Node::create(TR::l2i, 1, classFlag);
-               }
-            TR::Node *andConstNode = TR::Node::create(classFlag, TR::iconst, 0, TR::Compiler->cls.flagValueForArrayCheck(comp()));
-            TR::Node * andNode   = TR::Node::create(TR::iand, 2, classFlag, andConstNode);
-            TR::Node *cmp = TR::Node::createif(TR::ificmpne, andNode, andConstNode, _exitGotoTarget);
+            TR::Node *classFlag = comp()->fej9()->testIsClassArrayType(vftLoad);
+            TR::Node *zeroNode = TR::Node::iconst(classFlag, 0);
+            TR::Node *cmp = TR::Node::createif(TR::ificmpeq, classFlag, zeroNode, _exitGotoTarget);
             if (addLoopEntryPrepDep(LoopEntryPrep::TEST, cmp, deps, visited) == NULL)
                {
-               dumpOptDetailsFailedToCreateTest("array type", node->getFirstChild());
+               dumpOptDetailsFailedToCreateTest("array type", firstChild);
                return false;
                }
 #endif
@@ -8361,81 +8373,131 @@ bool TR_LoopVersioner::depsForLoopEntryPrep(
       // This is an array access; so we need to insert explicit
       // checks to mimic the bounds check for the access.
       //
-      TR::Node *offset = node->getFirstChild()->getSecondChild();
       TR::Node *childInRequiredForm = NULL;
       TR::Node *indexNode = NULL;
-
-      int32_t headerSize = static_cast<int32_t>(TR::Compiler->om.contiguousArrayHeaderSizeInBytes());
-      static struct temps
-         {
-         TR::ILOpCodes addOp;
-         TR::ILOpCodes constOp;
-         int32_t k;
-         }
-      a[] =
-         {{TR::iadd, TR::iconst,  headerSize},
-          {TR::isub, TR::iconst, -headerSize},
-          {TR::ladd, TR::lconst,  headerSize},
-          {TR::lsub, TR::lconst, -headerSize}};
-
-      for (int32_t index = sizeof(a)/sizeof(temps) - 1; index >= 0; --index)
-         {
-         if (offset->getOpCodeValue() == a[index].addOp &&
-             offset->getSecondChild()->getOpCodeValue() == a[index].constOp &&
-             offset->getSecondChild()->getInt() == a[index].k)
-            {
-            childInRequiredForm = offset->getFirstChild();
-            break;
-            }
-         }
-
-      TR::DataType type = offset->getType();
+      TR::DataType type = TR::NoType;
 
       // compute the right shift width
-      //
       int32_t dataWidth = TR::Symbol::convertTypeToSize(node->getDataType());
-      if (comp()->useCompressedPointers() &&
-            node->getDataType() == TR::Address)
+      if (comp()->useCompressedPointers() && node->getDataType() == TR::Address)
          dataWidth = TR::Compiler->om.sizeofReferenceField();
-      int32_t shiftWidth = TR::TransformUtil::convertWidthToShift(dataWidth);
 
-      if (childInRequiredForm)
+      // Holds the array node, or the dataAddr node for off heap
+      TR::Node *arrayBaseAddressNode = NULL;
+
+      if (node->getFirstChild()->isDataAddrPointer())
          {
-         if (childInRequiredForm->getOpCodeValue() == TR::ishl || childInRequiredForm->getOpCodeValue() == TR::lshl)
-            {
-            if (childInRequiredForm->getSecondChild()->getOpCode().isLoadConst() &&
-               (childInRequiredForm->getSecondChild()->getInt() == shiftWidth))
-               indexNode = childInRequiredForm->getFirstChild();
-            }
-         else if (childInRequiredForm->getOpCodeValue() == TR::imul || childInRequiredForm->getOpCodeValue() == TR::lmul)
-            {
-            if (childInRequiredForm->getSecondChild()->getOpCode().isLoadConst() &&
-               (childInRequiredForm->getSecondChild()->getInt() == dataWidth))
-               indexNode = childInRequiredForm->getFirstChild();
-            }
+         // This protects the case when off heap allocation is enabled and array
+         // access is for the first element in the array, eliminating offset tree.
+         // *loadi <== node
+         //    aloadi dataAddr_ptr (dataAddrPointer sharedMemory )
+         //       aload objt_ptr
+
+         // If array access does not have offset tree, its accessing the first element using the dataAddrPointer
+         arrayBaseAddressNode = node->getFirstChild();
+         indexNode = TR::Node::iconst(node, 0);
+         type = TR::Int32;
          }
-
-
-     if (!indexNode)
+      else
          {
-         if (!childInRequiredForm)
+         int32_t headerSize = static_cast<int32_t>(TR::Compiler->om.contiguousArrayHeaderSizeInBytes());
+         arrayBaseAddressNode = node->getFirstChild()->getFirstChild();
+         TR::Node *offset = node->getFirstChild()->getSecondChild();
+         type = offset->getType();
+
+         /* childInRequiredForm is expected to be shift/multiply node. When
+            off heap allocation is enabled and the sibling is dataAddr pointer
+            node, instead of using objt_ptr + header_size we load address of first
+            array element from dataAddr field in the header and add the offset. */
+         if (arrayBaseAddressNode->isDataAddrPointer())
             {
-            TR::Node *constNode = TR::Node::create(node, type.isInt32() ? TR::iconst : TR::lconst, 0, 0);
-            indexNode = TR::Node::create(type.isInt32() ? TR::isub : TR::lsub, 2, offset, constNode);
-            if (type.isInt64())
-               constNode->setLongInt((int64_t)headerSize);
-            else
-               constNode->setInt((int64_t)headerSize);
+            // This is what trees will look like with dataAddr load
+            // aloadi < node
+            //    aladd
+            //       ==>aload dataAddr_ptr (dataAddrPointer sharedMemory )
+            //       shl/mul < childInRequiredForm/offset
+            childInRequiredForm = node->getFirstChild()->getSecondChild();
             }
          else
-            indexNode = childInRequiredForm;
+            {
+            // aloadi < node
+            //    aladd
+            //       ==>aload objt_ptr
+            //       add < offset
+            //          shl/mul < childInRequiredForm
+            //          const array_header
+            static struct temps
+               {
+               TR::ILOpCodes addOp;
+               TR::ILOpCodes constOp;
+               int32_t k;
+               }
+            a[] =
+               {{TR::iadd, TR::iconst,  headerSize},
+               {TR::isub, TR::iconst, -headerSize},
+               {TR::ladd, TR::lconst,  headerSize},
+               {TR::lsub, TR::lconst, -headerSize}};
+            for (int32_t index = sizeof(a)/sizeof(temps) - 1; index >= 0; --index)
+               {
+               if (offset->getOpCodeValue() == a[index].addOp &&
+                  offset->getSecondChild()->getOpCodeValue() == a[index].constOp &&
+                  offset->getSecondChild()->getInt() == a[index].k)
+                  {
+                  childInRequiredForm = offset->getFirstChild();
+                  break;
+                  }
+               }
+            }
+
+         int32_t shiftWidth = TR::TransformUtil::convertWidthToShift(dataWidth);
+
+         if (childInRequiredForm)
+            {
+            if (childInRequiredForm->getOpCodeValue() == TR::ishl || childInRequiredForm->getOpCodeValue() == TR::lshl)
+               {
+               if (childInRequiredForm->getSecondChild()->getOpCode().isLoadConst() &&
+                  (childInRequiredForm->getSecondChild()->getInt() == shiftWidth))
+                  indexNode = childInRequiredForm->getFirstChild();
+               }
+            else if (childInRequiredForm->getOpCodeValue() == TR::imul || childInRequiredForm->getOpCodeValue() == TR::lmul)
+               {
+               if (childInRequiredForm->getSecondChild()->getOpCode().isLoadConst() &&
+                  (childInRequiredForm->getSecondChild()->getInt() == dataWidth))
+                  indexNode = childInRequiredForm->getFirstChild();
+               }
+            }
+
+         if (!indexNode)
+            {
+            if (!childInRequiredForm)
+               {
+               // We don't need to subtract the header size when we are using dataAddr pointer node
+               // because we already have a pointer to the first element in the array.
+               // For Reference see Walker.cpp:calculateElementAddressInContiguousArray
+               if (arrayBaseAddressNode->isDataAddrPointer())
+                  indexNode = offset;
+               else
+                  {
+                  TR::Node *constNode = TR::Node::create(node, type.isInt32() ? TR::iconst : TR::lconst, 0, 0);
+                  indexNode = TR::Node::create(type.isInt32() ? TR::isub : TR::lsub, 2, offset, constNode);
+                  if (type.isInt64())
+                     constNode->setLongInt((int64_t)headerSize);
+                  else
+                     constNode->setInt((int64_t)headerSize);
+                  }
+               }
+            else
+               indexNode = childInRequiredForm;
 
 
-         indexNode = TR::Node::create(type.isInt32() ? TR::iushr : TR::lushr, 2, indexNode,
-                                          TR::Node::create(node, TR::iconst, 0, shiftWidth));
+            indexNode = TR::Node::create(type.isInt32() ? TR::iushr : TR::lushr, 2, indexNode,
+                                             TR::Node::create(node, TR::iconst, 0, shiftWidth));
+            }
          }
 
-      TR::Node *base = node->getFirstChild()->getFirstChild();
+      TR::Node *base = arrayBaseAddressNode;
+      if (base->isDataAddrPointer())
+         base = base->getFirstChild();
       TR::Node *arrayLengthNode = TR::Node::create(TR::arraylength, 1, base);
 
       arrayLengthNode->setArrayStride(dataWidth);
@@ -9264,9 +9326,6 @@ bool TR_LoopVersioner::guardOkForExpr(TR::Node *node, bool onlySearching)
       case TR_MethodEnterExitGuard:
       case TR_InnerGuard:
       case TR_ArrayStoreCheckGuard:
-      case TR_RemovedProfiledGuard:
-      case TR_RemovedNonoverriddenGuard:
-      case TR_RemovedInterfaceGuard:
          return false;
 
       default:
@@ -9923,9 +9982,22 @@ void TR_LoopVersioner::nodeWillBeRemovedIfPossible(
    TR::Node *node,
    LoopEntryPrep *prep)
    {
-   _curLoop->_optimisticallyRemovableNodes.add(node);
+   TR::NodeChecklist *removableWithPriv = &_curLoop->_optimisticallyRemovableNodes;
+   TR::NodeChecklist *removableWithoutPriv = &_curLoop->_definitelyRemovableNodes;
+   if (prep->_expr->mergedWithHCRGuard())
+      {
+      removableWithPriv = &_curLoop->_guardsRemovableWithPrivAndHCR;
+      removableWithoutPriv = &_curLoop->_guardsRemovableWithHCR;
+      }
+   else if (prep->_expr->mergedWithOSRGuard())
+      {
+      removableWithPriv = &_curLoop->_guardsRemovableWithPrivAndOSR;
+      removableWithoutPriv = &_curLoop->_guardsRemovableWithOSR;
+      }
+
+   removableWithPriv->add(node);
    if (!prep->_requiresPrivatization)
-      _curLoop->_definitelyRemovableNodes.add(node);
+      removableWithoutPriv->add(node);
    }
 
 /**
@@ -10261,6 +10333,10 @@ TR_LoopVersioner::CurLoop::CurLoop(
    , _boundCheckPrepsWithSpineChecks(std::less<TR::Node*>(), memRegion)
    , _definitelyRemovableNodes(comp)
    , _optimisticallyRemovableNodes(comp)
+   , _guardsRemovableWithHCR(comp)
+   , _guardsRemovableWithPrivAndHCR(comp)
+   , _guardsRemovableWithOSR(comp)
+   , _guardsRemovableWithPrivAndOSR(comp)
    , _takenBranches(comp)
    , _loopImprovements(memRegion)
    , _privTemps(std::less<const Expr*>(), memRegion)
@@ -10268,6 +10344,7 @@ TR_LoopVersioner::CurLoop::CurLoop(
    , _privatizationOK(false)
    , _hcrGuardVersioningOK(false)
    , _osrGuardVersioningOK(false)
+   , _foldConditionalInDuplicatedLoop(false)
    {}
 
 /**

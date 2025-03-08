@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include "compile/SymbolReferenceTable.hpp"
@@ -151,6 +151,26 @@ OMR::SymbolReferenceTable::findOrCreateContiguousArraySizeSymbolRef()
    return element(contiguousArraySizeSymbol);
    }
 
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+TR::SymbolReference *
+OMR::SymbolReferenceTable::findOrCreateContiguousArrayDataAddrFieldShadowSymRef()
+   {
+   if (!element(contiguousArrayDataAddrFieldSymbol))
+      {
+      TR::Symbol * sym = TR::Symbol::createShadow(trHeapMemory(), TR::Int64);
+      sym->setContiguousArrayDataAddrFieldSymbol();
+      element(contiguousArrayDataAddrFieldSymbol) = new (trHeapMemory()) TR::SymbolReference(self(), contiguousArrayDataAddrFieldSymbol, sym);
+      element(contiguousArrayDataAddrFieldSymbol)->setOffset(TR::Compiler->om.offsetOfContiguousDataAddrField());
+      }
+   return element(contiguousArrayDataAddrFieldSymbol);
+   }
+#endif // defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+
+TR::SymbolReference *
+OMR::SymbolReferenceTable::findContiguousArrayDataAddrFieldShadowSymRef()
+   {
+   return element(contiguousArrayDataAddrFieldSymbol);
+   }
 
 TR::SymbolReference *
 OMR::SymbolReferenceTable::findOrCreateVftSymbolRef()
@@ -292,9 +312,9 @@ OMR::SymbolReferenceTable::findClassIsArraySymbolRef()
 
 
 TR::SymbolReference *
-OMR::SymbolReferenceTable::findClassAndDepthFlagsSymbolRef()
+OMR::SymbolReferenceTable::findClassDepthAndFlagsSymbolRef()
    {
-   return element(isClassAndDepthFlagsSymbol);
+   return element(isClassDepthAndFlagsSymbol);
    }
 
 
@@ -664,6 +684,19 @@ OMR::SymbolReferenceTable::findOrCreateArrayCmpSymbol()
    }
 
 TR::SymbolReference *
+OMR::SymbolReferenceTable::findOrCreateArrayCmpLenSymbol()
+   {
+   if (!element(arrayCmpLenSymbol))
+      {
+      TR::MethodSymbol * sym = TR::MethodSymbol::create(trHeapMemory(),TR_Helper);
+      sym->setHelper();
+
+      element(arrayCmpLenSymbol) = new (trHeapMemory()) TR::SymbolReference(self(), arrayCmpLenSymbol, sym);
+      }
+   return element(arrayCmpLenSymbol);
+   }
+
+TR::SymbolReference *
 OMR::SymbolReferenceTable::findOrCreateCurrentTimeMaxPrecisionSymbol()
    {
    if (!element(currentTimeMaxPrecisionSymbol))
@@ -699,11 +732,12 @@ OMR::SymbolReferenceTable::createKnownStaticDataSymbolRef(void *dataAddress, TR:
 TR::SymbolReference *
 OMR::SymbolReferenceTable::createKnownStaticReferenceSymbolRef(void *dataAddress, TR::KnownObjectTable::Index knownObjectIndex)
    {
-   char *name = "<known-static-reference>";
+   const char *name = "<known-static-reference>";
    if (knownObjectIndex != TR::KnownObjectTable::UNKNOWN)
       {
-      name = (char*)trMemory()->allocateMemory(25, heapAlloc);
-      sprintf(name, "<known-obj%d>", knownObjectIndex);
+      char *nameBuffer = (char *)trMemory()->allocateMemory(25, heapAlloc);
+      sprintf(nameBuffer, "<known-obj%d>", knownObjectIndex);
+      name = nameBuffer;
       }
    TR::StaticSymbol * sym = TR::StaticSymbol::createNamed(trHeapMemory(), TR::Address, dataAddress,name);
    return TR::SymbolReference::create(self(), sym, knownObjectIndex);
@@ -937,7 +971,7 @@ OMR::SymbolReferenceTable::findOrCreateMonitorEntrySymbolRef(TR::ResolvedMethodS
  */
 
 TR::SymbolReference *
-OMR::SymbolReferenceTable::methodSymRefFromName(TR::ResolvedMethodSymbol * owningMethodSymbol, char *className, char *methodName, char *methodSignature, TR::MethodSymbol::Kinds kind, int32_t cpIndex)
+OMR::SymbolReferenceTable::methodSymRefFromName(TR::ResolvedMethodSymbol * owningMethodSymbol, const char *className, const char *methodName, const char *methodSignature, TR::MethodSymbol::Kinds kind, int32_t cpIndex)
    {
    // Check _methodsBySignature to see if we've already created a symref for this one
    //
@@ -1494,7 +1528,7 @@ OMR::SymbolReferenceTable::findOrCreateMethodSymbol(
    if (!resolvedMethod)
       symRef->setUnresolved();
    else if (callKind == TR::MethodSymbol::Virtual && cpIndex != -1)
-      symRef->setOffset(resolvedMethod->virtualCallSelector(cpIndex));
+      symRef->setOffset(resolvedMethod->virtualCallSelector());
 
    aliasBuilder.methodSymRefs().set(symRef->getReferenceNumber());
 
@@ -2108,7 +2142,7 @@ const char *OMR::SymbolReferenceTable::_commonNonHelperSymbolNames[] =
    "<addressOfClassOfMethod>",
    "<componentClass>",
    "<isArray>",
-   "<isClassAndDepthFlags>",
+   "<isClassDepthAndFlags>",
    "<isClassFlags>",
    "<vft>",
    "<currentThread>",
@@ -2138,6 +2172,7 @@ const char *OMR::SymbolReferenceTable::_commonNonHelperSymbolNames[] =
    "<osrScratchBuffer>",
    "<osrFrameIndex>",
    "<osrReturnAddress>",
+   "<contiguousArrayDataAddrField>",
    "<potentialOSRPointHelper>",
    "<osrFearPointHelper>",
    "<eaEscapeHelper>",
@@ -2147,6 +2182,8 @@ const char *OMR::SymbolReferenceTable::_commonNonHelperSymbolNames[] =
    "<objectEqualityComparison>",
    "<objectInequalityComparison>",
    "<nonNullableArrayNullStoreCheck>",
+   "<loadFlattenableArrayElementNonHelper>",
+   "<storeFlattenableArrayElementNonHelper>",
    "<synchronizedFieldLoad>",
    "<atomicAdd>",
    "<atomicFetchAndAdd>",

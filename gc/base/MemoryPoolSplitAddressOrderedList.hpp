@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /**
@@ -169,6 +169,16 @@ public:
 	virtual void* contractWithRange(MM_EnvironmentBase* env, uintptr_t contractSize, void* lowAddress, void* highAddress);
 
 	virtual uintptr_t releaseFreeMemoryPages(MM_EnvironmentBase* env);
+
+#if defined(J9VM_OPT_CRIU_SUPPORT)
+	/**
+	 * Modify the Memory Pool split lists according to the updated GC thread count.
+	 *
+	 * @param[in] env the current environment.
+	 * @return boolean indicating whether the memory pool was successfully updated.
+	 */
+	virtual bool reinitializeForRestore(MM_EnvironmentBase *env);
+#endif /* defined(J9VM_OPT_CRIU_SUPPORT) */
 
 	/**
 	 * Create a MemoryPoolAddressOrderedList object.

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OMR_SIMPLIFIER_INCL
@@ -24,7 +24,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "cs2/hashtab.h"
 #include "env/IO.hpp"
 #include "env/TRMemory.hpp"
 #include "il/DataTypes.hpp"
@@ -64,9 +63,9 @@ typedef enum
  * Class Simplifier
  * ================
  *
- * Simple IL tree transformations like constant folding, strength reduction, 
- * canonicalizing expressions (e.g. an add with a constant child will have the 
- * constant as the second child), branch/switch simplification etc. 
+ * Simple IL tree transformations like constant folding, strength reduction,
+ * canonicalizing expressions (e.g. an add with a constant child will have the
+ * constant as the second child), branch/switch simplification etc.
  */
 
 class Simplifier : public TR::Optimization
@@ -90,6 +89,8 @@ class Simplifier : public TR::Optimization
    //
    void simplify(TR::Block *block);
    TR::TreeTop * simplifyExtendedBlock(TR::TreeTop *);
+
+   virtual void simplifyChildren(TR::Node * node, TR::Block * block);
 
    // Convert a conditional branch into either a goto or an unconditional
    // fall-through.
@@ -125,98 +126,98 @@ class Simplifier : public TR::Optimization
    void anchorOrderDependentNodesInSubtree(TR::Node *node, TR::Node *replacement, TR::TreeTop* anchorTree);
 
    /**
-    * Checks IL tree patterns to see if parent-child cancellation can be 
+    * Checks IL tree patterns to see if parent-child cancellation can be
     * done safely.
-    * 
+    *
     * @param[in] node The tree node that we are trying to unary cancel
     * @param[in] firstChild The first child of node
     * @param[in] opcode The opcode we compare @p firstChild's opcode against
     * @return Returns true if node can be canceled; false otherwise
     */
-   virtual bool isLegalToUnaryCancel(TR::Node *node, TR::Node *firstChild, TR::ILOpCodes opcode) 
+   virtual bool isLegalToUnaryCancel(TR::Node *node, TR::Node *firstChild, TR::ILOpCodes opcode)
       { return true; }
 
    /**
-    * Examines node and its first child to see if their operations can cancel 
+    * Examines node and its first child to see if their operations can cancel
     * each other out. If so, replaces node with its grandchild.
-    * 
-    * @param[in/out] node The tree node that we are examining and possibly 
+    *
+    * @param[in/out] node The tree node that we are examining and possibly
     * changing if appropriate
     * @param[in] firstChild The first child of @p node
-    * @param[in] anchorTree The tree to insert node's children in front of  
+    * @param[in] anchorTree The tree to insert node's children in front of
     * if @p anchorChildren is true
     * @param[in] opcode The opcode we compare @p firstChild's opcode against
     * @param[in] anchorChildren Boolean indicating whether we need to anchor
     * node's children when node is removed. The default is set to true
-    * @return Returns the grandchild node if cacenllation can be done; 
+    * @return Returns the grandchild node if cacenllation can be done;
     * NULL otherwise
     */
    virtual TR::Node *unaryCancelOutWithChild(TR::Node *node, TR::Node *firstChild, TR::TreeTop *anchorTree, TR::ILOpCodes opcode, bool anchorChildren=true);
 
    /**
     * Checks IL tree patterns to see if folding can be done safely.
-    * 
+    *
     * @param[in] node The tree node that we are trying to fold
     * @param[in] firstChild The first child of @p node
     * @return Returns true if node can be folded; false otherwise
     */
-   virtual bool isLegalToFold(TR::Node *node, TR::Node *firstChild) 
+   virtual bool isLegalToFold(TR::Node *node, TR::Node *firstChild)
       { return true; }
 
    /**
-    * Checks if the bound value is definitely greater than or equal to 
+    * Checks if the bound value is definitely greater than or equal to
     * the length value by examining the IL trees.
     *
     * @param[in] boundChild The tree node corresponding to the bound value
     * @param[in] lengthChild The tree node corresponding to the length value
-    * @return Returns true if bound is definitely great than or equal to 
+    * @return Returns true if bound is definitely great than or equal to
     * length; false otherwise
     */
    virtual bool isBoundDefinitelyGELength(TR::Node *boundChild, TR::Node *lengthChild);
 
    /**
-    * Checks to see if the icall method is a recognized method. If so, 
-    * transforms the call into a faster, but functionally equivalent 
+    * Checks to see if the icall method is a recognized method. If so,
+    * transforms the call into a faster, but functionally equivalent
     * sequence of IL trees.
     *
     * @param[in/out] node The tree node that is being simplified
     * @param[in] block The block that the node is in
-    * @return Returns a transformed node if the method is recognized and 
+    * @return Returns a transformed node if the method is recognized and
     * transformations are done; otherwise it returns the original node
     */
-   virtual TR::Node *simplifyiCallMethods(TR::Node *node, TR::Block *block) 
+   virtual TR::Node *simplifyiCallMethods(TR::Node *node, TR::Block *block)
       { return node; }
 
    /**
-    * Checks to see if the lcall method is a recognized method. If so, 
-    * transforms the call into a faster, but functionally equivalent 
+    * Checks to see if the lcall method is a recognized method. If so,
+    * transforms the call into a faster, but functionally equivalent
     * sequence of IL trees.
     *
     * @param[in/out] node The tree node that is being simplified
     * @param[in] block The block that the node is in
-    * @return Returns a transformed node if the method is recognized and 
+    * @return Returns a transformed node if the method is recognized and
     * transformations are done; otherwise it returns the original node
     */
-   virtual TR::Node *simplifylCallMethods(TR::Node *node, TR::Block *block) 
+   virtual TR::Node *simplifylCallMethods(TR::Node *node, TR::Block *block)
       { return node; }
 
    /**
-    * Checks to see if the acall method is a recognized method. If so, 
-    * transforms the call into a faster, but functionally equivalent 
+    * Checks to see if the acall method is a recognized method. If so,
+    * transforms the call into a faster, but functionally equivalent
     * sequence of IL trees.
     *
     * @param[in/out] node The tree node that is being simplified
     * @param[in] block The block that the node is in
-    * @return Returns a transformed node if the method is recognized and 
+    * @return Returns a transformed node if the method is recognized and
     * transformations are done; otherwise it returns the original node
     */
-   virtual TR::Node *simplifyaCallMethods(TR::Node * node, TR::Block * block) 
+   virtual TR::Node *simplifyaCallMethods(TR::Node * node, TR::Block * block)
       { return node; }
 
    /**
-    * simplifyiOrPatterns is called from iorSimplifier handler to recognize 
+    * simplifyiOrPatterns is called from iorSimplifier handler to recognize
     * any additional project-specific IL tree patterns to simplify.
-    * 
+    *
     * @param[in/out] node The tree node that is being checked and transformed
     * @return Returns a transformed node if the IL tree pattern under node
     * is recognized and transformations are done; NULL otherwise
@@ -225,51 +226,54 @@ class Simplifier : public TR::Optimization
       { return NULL; }
 
    /**
-    * simplifyi2sPatterns is called from i2sSimplifier handler to recognize 
+    * simplifyi2sPatterns is called from i2sSimplifier handler to recognize
     * any additional project-specific IL tree patterns to simplify.
-    * 
+    *
     * @param[in/out] node The tree node that is being checked and transformed
     * @return Returns a transformed node if the IL tree pattern under node
-    * is recognized and transformations are done; NULL otherwise 
+    * is recognized and transformations are done; NULL otherwise
     */
    virtual TR::Node *simplifyi2sPatterns(TR::Node *node)
       { return NULL; }
 
    /**
-    * simplifyd2fPatterns is called from d2fSimplifier handler to recognize 
+    * simplifyd2fPatterns is called from d2fSimplifier handler to recognize
     * any additional project-specific IL tree patterns to simplify.
-    * 
+    *
     * @param[in/out] node The tree node that is being checked and transformed
     * @return Returns a transformed node if the IL tree pattern under node
-    * is recognized and transformations are done; NULL otherwise 
+    * is recognized and transformations are done; NULL otherwise
     */
    virtual TR::Node *simplifyd2fPatterns(TR::Node *node)
       { return NULL; }
 
    /**
-    * simplifyIndirectLoadPatterns is called from indirectLoadSimplifier 
-    * handler to recognize any additional project-specific IL tree 
+    * simplifyIndirectLoadPatterns is called from indirectLoadSimplifier
+    * handler to recognize any additional project-specific IL tree
     * patterns to simplify.
-    * 
+    *
     * @param[in/out] node The tree node that is being checked and transformed
     * @return Returns a transformed node if the IL tree pattern under node
-    * is recognized and transformations are done; NULL otherwise 
+    * is recognized and transformations are done; NULL otherwise
     */
    virtual TR::Node *simplifyIndirectLoadPatterns(TR::Node *node)
       { return NULL; }
 
    /**
-    * This method allows a project to recursively set precision flags 
+    * This method allows a project to recursively set precision flags
     * to node and all of its children if it is needed.
     *
-    * @param[in] baseNode The tree node whose type determines if we need 
+    * @param[in] baseNode The tree node whose type determines if we need
     * to set the precision flags
     * @param[in/out] node The tree node whose precision flag is being modified
-    * @param[in/out] visited A check list to keep track of whether a 
+    * @param[in/out] visited A check list to keep track of whether a
     * particular node has been visited already
     */
    virtual void setNodePrecisionIfNeeded(TR::Node *baseNode, TR::Node *node, TR::NodeChecklist &visited)
       {}
+
+   virtual void preSimplification(TR::Node *node) {}
+   virtual void postSimplification(TR::Node *node) {}
 
    TR::TreeTop         *_curTree;
    TR_UseDefInfo      *_useDefInfo;      // Cached use/def info
@@ -287,6 +291,15 @@ class Simplifier : public TR::Optimization
    TR::TreeTop      *_performLowerTreeSimplifier;
    TR::Node         *_performLowerTreeNode;
    TR::list<std::pair<TR::TreeTop*, TR::Node*> > _performLowerTreeNodePairs;
+
+   /**
+    * This field is used as part of a handshake between the \ref divchkSimplifier
+    * and the integer division and remainder simplifiers.  If simplifying the
+    * child of a \c DIVCHK leaves us with a node that still must have a \c DIVCHK
+    * applied, the division or remainder simplifier will set this field to refer
+    * to that node; otherwise, it will set this field to \c NULL.
+    */
+   TR::Node         *_nodeToDivchk;
    };
 
 }

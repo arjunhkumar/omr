@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stdint.h>
@@ -633,6 +633,18 @@ void TR_LocalTransparency::updateUsesAndDefs(TR::Node *node, ContainerType *glob
                *globallySeenDefinedSymbolReferences |= *tempContainer;
                tempContainer->reset(symRefNum);
                *seenDefinedSymbolReferences |= *tempContainer;
+
+               // If this is a volatile store, it should kill any store node that has appeared
+               // earlier in the block. Otherwise, the store node could survive the block
+               // in local transparency but will be killed in _downwardExposedAnalysisInfo
+               // when the volatile store is processed in local anticipatability, which causes
+               // inconsistency between local transparency and local anticipatability.
+               // This matches how a call node is processed earlier.
+               if (node->mightHaveVolatileSymbolReference())
+                  {
+                  *tempContainer &= *seenStoredSymRefs;
+                  *symRefsDefinedAfterStored |= *tempContainer;
+                  }
                }
 
             seenStoredSymRefs->set(symRefNum);
@@ -716,7 +728,8 @@ void TR_LocalTransparency::updateInfoForSupportedNodes(TR::Node *node, Container
             }
          else
             {
-            if (child->getOpCode().isLoad() || child->getOpCodeValue() == TR::loadaddr)
+            if ((child->getOpCode().isLoad() || child->getOpCodeValue() == TR::loadaddr) &&
+                !child->isDataAddrPointer())
                {
                if (child->getOpCode().hasSymbolReference() &&
                    (loadaddrAsLoad() || child->getOpCodeValue() != TR::loadaddr))
@@ -741,7 +754,7 @@ void TR_LocalTransparency::updateInfoForSupportedNodes(TR::Node *node, Container
 
                         }
 
-                if (trace())
+                  if (trace())
                         traceMsg(comp(), "Expression %d (n%dn) killed by symRef #%d (loaded in child)\n", node->getLocalIndex(), node->getGlobalIndex(), childSymRefNum);
                      }
                   }
@@ -755,6 +768,8 @@ void TR_LocalTransparency::updateInfoForSupportedNodes(TR::Node *node, Container
                   adjustInfoForAddressAdd(node, firstGrandChild, seenDefinedSymbolReferences, seenStoredSymRefs);
                   adjustInfoForAddressAdd(node, secondGrandChild, seenDefinedSymbolReferences, seenStoredSymRefs);
                   }
+               else if (child->isDataAddrPointer())
+                  adjustInfoForAddressAdd(node, child->getFirstChild(), seenDefinedSymbolReferences, seenStoredSymRefs);
                else
                   {
                   _supportedNodes->reset(node->getLocalIndex());
@@ -885,7 +900,8 @@ void TR_LocalTransparency::adjustInfoForAddressAdd(TR::Node *node, TR::Node *chi
       }
    else
       {
-      if (child->getOpCode().isLoad() || child->getOpCodeValue() == TR::loadaddr)
+      if ((child->getOpCode().isLoad() || child->getOpCodeValue() == TR::loadaddr) &&
+          !child->isDataAddrPointer())
          {
          if (child->getOpCode().hasSymbolReference() &&
              (loadaddrAsLoad() || child->getOpCodeValue() != TR::loadaddr))

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <math.h>
@@ -243,14 +243,12 @@ TR_Debug::printLoadConst(TR::Node *node, TR_PrettyPrinterString& output)
       case TR::Address:
          if (node->getAddress() == 0)
             output.appends(" NULL");
-         else if (_comp->getOption(TR_MaskAddresses))
-            output.appends(" *Masked*");
          else
             output.appendf(" " UINT64_PRINTF_FORMAT_HEX, node->getAddress());
          if (node->isClassPointerConstant())
             {
             TR_OpaqueClassBlock *clazz = (TR_OpaqueClassBlock*)node->getAddress();
-            int32_t len; char *sig = TR::Compiler->cls.classNameChars(_comp, clazz, len);
+            int32_t len; const char *sig = TR::Compiler->cls.classNameChars(_comp, clazz, len);
             if (clazz)
                {
                if (TR::Compiler->cls.isInterfaceClass(_comp, clazz))
@@ -1571,11 +1569,9 @@ TR_Debug::printNodeInfo(TR::Node * node, TR_PrettyPrinterString& output, bool pr
          else
             output.appends(" Relative [");
 
-         if (!_comp->getOption(TR_MaskAddresses))
-            {
-            for (auto i = 0U; i < node->getNumRelocations(); ++i)
-               output.appendf(" " POINTER_PRINTF_FORMAT, node->getRelocationDestination(i));
-            }
+         for (auto i = 0U; i < node->getNumRelocations(); ++i)
+            output.appendf(" " POINTER_PRINTF_FORMAT, node->getRelocationDestination(i));
+
          output.appends(" ]");
          }
       }
@@ -1729,7 +1725,7 @@ TR_Debug::printNodeInfo(TR::Node * node, TR_PrettyPrinterString& output, bool pr
          {
          output.appends("   ; array type is ");
 
-         char *typeStr;
+         const char *typeStr;
          switch (node->getInt())
             {
             case 4:

@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <assert.h>
@@ -147,6 +147,21 @@ OMR::SymbolReference::getUseonlyAliasesBV(TR::SymbolReferenceTable * symRefTab)
             {
             return &symRefTab->aliasBuilder.defaultMethodUseAliases();
             }
+         if (symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::loadFlattenableArrayElementNonHelperSymbol) ||
+             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::storeFlattenableArrayElementNonHelperSymbol))
+            {
+            return &symRefTab->aliasBuilder.defaultMethodUseAliases();
+            }
+
+         if (symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::jitDispatchJ9MethodSymbol))
+            {
+            return &symRefTab->aliasBuilder.defaultMethodUseAliases();
+            }
+
+         if (symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::isIdentityObjectNonHelperSymbol))
+            {
+            return &symRefTab->aliasBuilder.defaultMethodUseAliases();
+            }
 
          if (!methodSymbol->isHelper())
             {
@@ -187,6 +202,7 @@ OMR::SymbolReference::getUseonlyAliasesBV(TR::SymbolReferenceTable * symRefTab)
             case TR_incompatibleReceiver:
             case TR_IncompatibleClassChangeError:
             case TR_aThrow:
+            case TR_identityException:
             case TR_aNewArray:
             case TR_monitorExit:
             case TR_transactionExit:
@@ -228,6 +244,10 @@ OMR::SymbolReference::getUseonlyAliasesBV(TR::SymbolReferenceTable * symRefTab)
                case TR::java_lang_Math_min_I:
                case TR::java_lang_Math_max_L:
                case TR::java_lang_Math_min_L:
+               case TR::java_lang_Math_max_F:
+               case TR::java_lang_Math_min_F:
+               case TR::java_lang_Math_max_D:
+               case TR::java_lang_Math_min_D:
                case TR::java_lang_Math_abs_I:
                case TR::java_lang_Math_abs_L:
                case TR::java_lang_Math_abs_F:
@@ -339,12 +359,19 @@ OMR::SymbolReference::getUseDefAliasesBV(bool isDirectCall, bool includeGCSafePo
              symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::eaEscapeHelperSymbol) ||
              symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::objectEqualityComparisonSymbol) ||
              symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::objectInequalityComparisonSymbol) ||
-             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::nonNullableArrayNullStoreCheckSymbol))
+             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::nonNullableArrayNullStoreCheckSymbol) ||
+             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::loadFlattenableArrayElementNonHelperSymbol) ||
+             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::storeFlattenableArrayElementNonHelperSymbol) ||
+             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::jitDispatchJ9MethodSymbol) ||
+             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::isIdentityObjectNonHelperSymbol))
             {
             return &symRefTab->aliasBuilder.defaultMethodDefAliases();
             }
 
-         if (symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::arrayCmpSymbol))
+         if (symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::arrayCmpSymbol) ||
+             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::arrayCmpLenSymbol) ||
+             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::jProfileValueSymbol) ||
+             symRefTab->isNonHelper(self(), TR::SymbolReferenceTable::jProfileValueWithNullCHKSymbol))
             return 0;
 
          switch (self()->getReferenceNumber())
@@ -358,6 +385,7 @@ OMR::SymbolReference::getUseDefAliasesBV(bool isDirectCall, bool includeGCSafePo
             case TR_divCheck:
             case TR_typeCheckArrayStore:
             case TR_arrayStoreException:
+            case TR_identityException:
             case TR_incompatibleReceiver:
             case TR_IncompatibleClassChangeError:
             case TR_reportFinalFieldModified:
@@ -380,7 +408,8 @@ OMR::SymbolReference::getUseDefAliasesBV(bool isDirectCall, bool includeGCSafePo
             case TR_jitProfileParseBuffer:
             case TR_jitLookupDynamicInterfaceMethod:
             case TR_jitLookupDynamicPublicInterfaceMethod:
-
+            case TR_jProfile32BitValue:
+            case TR_jProfile64BitValue:
                return 0;
 
             case TR_asyncCheck:
@@ -426,22 +455,23 @@ OMR::SymbolReference::getUseDefAliasesBV(bool isDirectCall, bool includeGCSafePo
 #ifdef J9_PROJECT_SPECIFIC
          TR::ResolvedMethodSymbol * resolvedMethodSymbol = _symbol->castToResolvedMethodSymbol();
 
-         if (!comp->getOption(TR_EnableHCR))
+         if (resolvedMethodSymbol->getRecognizedMethod() == TR::java_lang_System_arraycopy)
             {
+            TR_BitVector * aliases = new (aliasRegion) TR_BitVector(bvInitialSize, aliasRegion, growability);
+            *aliases |= symRefTab->aliasBuilder.arrayElementSymRefs();
+            if (comp->generateArraylets())
+               *aliases |= symRefTab->aliasBuilder.arrayletElementSymRefs();
+
+            return aliases;
+            }
+
+         if (!comp->getOption(TR_EnableHCR) || comp->fej9()->isIntrinsicCandidate(resolvedMethodSymbol->getResolvedMethod()))
+            {
+            if (resolvedMethodSymbol->isPureFunction())
+               return NULL;
+
             switch (resolvedMethodSymbol->getRecognizedMethod())
                {
-               case TR::java_lang_System_arraycopy:
-                  {
-                  TR_BitVector * aliases = new (aliasRegion) TR_BitVector(bvInitialSize, aliasRegion, growability);
-                  *aliases |= symRefTab->aliasBuilder.arrayElementSymRefs();
-                  if (comp->generateArraylets())
-                     *aliases |= symRefTab->aliasBuilder.arrayletElementSymRefs();
-                  return aliases;
-                  }
-
-                  if (resolvedMethodSymbol->isPureFunction())
-                      return NULL;
-
                case TR::java_lang_Double_longBitsToDouble:
                case TR::java_lang_Double_doubleToLongBits:
                case TR::java_lang_Float_intBitsToFloat:
@@ -458,6 +488,10 @@ OMR::SymbolReference::getUseDefAliasesBV(bool isDirectCall, bool includeGCSafePo
                case TR::java_lang_Math_min_I:
                case TR::java_lang_Math_max_L:
                case TR::java_lang_Math_min_L:
+               case TR::java_lang_Math_max_F:
+               case TR::java_lang_Math_min_F:
+               case TR::java_lang_Math_max_D:
+               case TR::java_lang_Math_min_D:
                case TR::java_lang_Math_abs_I:
                case TR::java_lang_Math_abs_L:
                case TR::java_lang_Math_abs_F:
@@ -487,9 +521,7 @@ OMR::SymbolReference::getUseDefAliasesBV(bool isDirectCall, bool includeGCSafePo
                	break;
                }
             }
-#endif //J9_PROJECT_SPECIFIC
 
-#ifdef J9_PROJECT_SPECIFIC
          TR_ResolvedMethod * method = resolvedMethodSymbol->getResolvedMethod();
          TR_PersistentMethodInfo * methodInfo = comp->getRecompilationInfo() ? TR_PersistentMethodInfo::get(method) : NULL;
          if (methodInfo && (methodInfo->hasRefinedAliasSets() ||
@@ -590,7 +622,7 @@ OMR::SymbolReference::getUseDefAliasesBV(bool isDirectCall, bool includeGCSafePo
             *aliases &= *methodAliases;
             return aliases;
             }
-#endif
+#endif  //J9_PROJECT_SPECIFIC
 
          return symRefTab->aliasBuilder.methodAliases(self());
          }
@@ -599,15 +631,7 @@ OMR::SymbolReference::getUseDefAliasesBV(bool isDirectCall, bool includeGCSafePo
          if ((self()->isUnresolved() && !_symbol->isConstObjectRef()) || _symbol->isVolatile() || self()->isLiteralPoolAddress() || self()->isFromLiteralPool() ||
              (_symbol->isUnsafeShadowSymbol() && !self()->reallySharesSymbol()))
             {
-            if (symRefTab->aliasBuilder.unsafeArrayElementSymRefs().get(self()->getReferenceNumber()))
-               {
-               TR_BitVector *aliases = new (aliasRegion) TR_BitVector(bvInitialSize, aliasRegion, growability);
-               *aliases |= comp->getSymRefTab()->aliasBuilder.defaultMethodDefAliasesWithoutImmutable();
-               *aliases -= symRefTab->aliasBuilder.cpSymRefs();
-               return aliases;
-               }
-            else
-               return &comp->getSymRefTab()->aliasBuilder.defaultMethodDefAliasesWithoutImmutable();
+            return &comp->getSymRefTab()->aliasBuilder.defaultMethodDefAliasesWithoutImmutable();
             }
 
          TR_BitVector *aliases = NULL;
@@ -745,11 +769,6 @@ OMR::SymbolReference::getUseDefAliasesBV(bool isDirectCall, bool includeGCSafePo
 
          if (aliases)
             aliases->set(self()->getReferenceNumber());
-
-         if (symRefTab->aliasBuilder.unsafeArrayElementSymRefs().get(self()->getReferenceNumber()))
-            *aliases -= symRefTab->aliasBuilder.cpSymRefs();
-         else if (symRefTab->aliasBuilder.cpSymRefs().get(self()->getReferenceNumber()))
-            *aliases -= symRefTab->aliasBuilder.unsafeArrayElementSymRefs();
 
          return aliases;
          }

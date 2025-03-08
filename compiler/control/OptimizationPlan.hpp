@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #ifndef OPTIMIZATION_PLAN_INCL
@@ -39,7 +39,7 @@ namespace TR { class Recompilation; }
 namespace TR { class Monitor; }
 struct TR_MethodToBeCompiled;
 
-#if defined(__IBMCPP__)
+#if defined(__IBMCPP__) || defined(__open_xl__)
 // GCC (and other compilers) may assume that operator new cannot return null
 // unless a nothrow specification is provided. For other reasons, we build
 // Testarossa with -qnoeh / -fnoeh to disable exceptions. This is all fine,
@@ -252,50 +252,4 @@ class TR_OptimizationPlan
    int32_t _gpuResult;
    };
 
-
-//---------------------------- TR::CompilationStrategy ---------------------------
-// Abstract class. Must derive strategies from it. The only pure virtual method
-// is processEevent() which needs to be defined in the derived classes.
-//-------------------------------------------------------------------------------
-namespace TR
-{
-class CompilationStrategy
-   {
-   public:
-   virtual TR_OptimizationPlan *processEvent(TR_MethodEvent *event, bool *newPlanCreated) = 0;
-   virtual bool adjustOptimizationPlan(TR_MethodToBeCompiled *entry, int32_t adj) {return false;}
-   virtual void beforeCodeGen(TR_OptimizationPlan *plan, TR::Recompilation *recomp) {}
-   virtual void postCompilation(TR_OptimizationPlan *plan, TR::Recompilation *recomp) {}
-   virtual void shutdown() {} // called at shutdown time; useful for stats
-   virtual bool enableSwitchToProfiling() { return false; } // turn profiling on during optimizations
-   };
-} // namespace TR
-
-//------------------------------- TR::CompilationController ------------------------
-// All methods and fields are static. The most important field is _compilationStrategy
-// that store the compilation strategy in use.
-//---------------------------------------------------------------------------------
-namespace TR
-{
-class CompilationController
-   {
-   public:
-   enum {LEVEL1=1, LEVEL2, LEVEL3}; // verbosity levels;
-   enum {DEFAULT, THRESHOLD}; // strategy codes
-   static bool    init(TR::CompilationInfo *);
-   static void    shutdown();
-   static bool    useController() { return _useController; }
-   static int32_t verbose() { return _verbose; }
-   static void    setVerbose(int32_t v) { _verbose = v; }
-   static TR::CompilationStrategy * getCompilationStrategy() { return _compilationStrategy; }
-   static TR::CompilationInfo     * getCompilationInfo() { return _compInfo; }
-   private:
-   static TR::CompilationStrategy *_compilationStrategy;
-   static TR::CompilationInfo     *_compInfo;        // stored here for convenience
-   static int32_t                 _verbose;
-   static bool                    _useController;
-   static bool                    _tlsCompObjCreated;
-   };
-
-} // namespace TR
 #endif

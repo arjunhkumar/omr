@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 /*  __   ___  __   __   ___  __       ___  ___  __
@@ -40,7 +40,6 @@
 #include "codegen/RegisterConstants.hpp"
 #include "compile/Method.hpp"
 #include "compile/VirtualGuard.hpp"
-#include "cs2/hashtab.h"
 #include "env/RawAllocator.hpp"
 #include "env/TRMemory.hpp"
 #include "env/jittypes.h"
@@ -374,6 +373,7 @@ namespace TR { class ARM64Src2Instruction; }
 namespace TR { class ARM64ZeroSrc2Instruction; }
 namespace TR { class ARM64Src1ImmCondInstruction; }
 namespace TR { class ARM64Src2CondInstruction; }
+namespace TR { class ARM64SynchronizationInstruction; }
 namespace TR { class ARM64HelperCallSnippet; }
 
 namespace TR { class LabelInstruction; }
@@ -463,11 +463,11 @@ public:
    virtual int32_t         findLogFile(const char *logFileName, TR::Options *aotCmdLineOptions, TR::Options *jitCmdLineOptions, TR::Options **optionsArray, int32_t arraySize);
    virtual void            dumpOptionHelp(TR::OptionTable *jitOptions, TR::OptionTable *feOptions, TR::SimpleRegex *nameFilter);
 
-   static void dumpOptions(char *optionsType, char *options, char *envOptions, TR::Options *cmdLineOptions, TR::OptionTable *jitOptions, TR::OptionTable *feOptions, void *, TR_FrontEnd *);
-   virtual char *          limitfileOption(char *, void *, TR::OptionTable *, TR::Options *, bool loadLimit, TR_PseudoRandomNumbersListElement **pseudoRandomListHeadPtr = 0);
-   virtual char *          inlinefileOption(char *, void *, TR::OptionTable *, TR::Options *);
-   virtual char *          limitOption(char *, void *, TR::OptionTable *, TR::Options *, bool loadLimit);
-   char *                  limitOption(char *, void *, TR::OptionTable *, TR::Options *, TR::CompilationFilters * &);
+   static void dumpOptions(const char *optionsType, const char *options, const char *envOptions, TR::Options *cmdLineOptions, TR::OptionTable *jitOptions, TR::OptionTable *feOptions, void *, TR_FrontEnd *);
+   virtual const char *    limitfileOption(const char *, void *, TR::OptionTable *, TR::Options *, bool loadLimit, TR_PseudoRandomNumbersListElement **pseudoRandomListHeadPtr = 0);
+   virtual const char *    inlinefileOption(const char *, void *, TR::OptionTable *, TR::Options *);
+   virtual const char *    limitOption(const char *, void *, TR::OptionTable *, TR::Options *, bool loadLimit);
+   const char *            limitOption(const char *, void *, TR::OptionTable *, TR::Options *, TR::CompilationFilters * &);
    virtual int32_t *       loadCustomStrategy(char *optFileName);
    virtual bool            methodCanBeCompiled(TR_Memory *mem, TR_ResolvedMethod *, TR_FilterBST * &);
    virtual bool            methodCanBeRelocated(TR_Memory *mem, TR_ResolvedMethod *, TR_FilterBST * &);
@@ -481,10 +481,10 @@ public:
    virtual void            clearFilters(TR::CompilationFilters *);
    void                    clearFilters(bool loadLimit);
    virtual bool            scanInlineFilters(FILE *, int32_t &, TR::CompilationFilters *);
-   virtual TR_FilterBST *  addFilter(char * &, int32_t, int32_t, int32_t, TR::CompilationFilters *);
-   virtual TR_FilterBST *  addFilter(char * &, int32_t, int32_t, int32_t, bool loadLimit);
+   virtual TR_FilterBST *  addFilter(const char *&, int32_t, int32_t, int32_t, TR::CompilationFilters *);
+   virtual TR_FilterBST *  addFilter(const char *&, int32_t, int32_t, int32_t, bool loadLimit);
    virtual TR_FilterBST *  addExcludedMethodFilter(bool loadLimit);
-   virtual int32_t         scanFilterName(char *, TR_FilterBST *);
+   virtual int32_t         scanFilterName(const char *, TR_FilterBST *);
    virtual void            printFilters(TR::CompilationFilters *);
    virtual void            printFilters();
    virtual void            print(TR_FilterBST * filter);
@@ -517,6 +517,7 @@ public:
    virtual const char * getName(void *, const char *, uint32_t, bool);
    virtual const char * getName(const char *s) { return s; }
    virtual const char * getName(const char *s, int32_t len) { return s; }
+   virtual const char * getName(TR_YesNoMaybe value);
    virtual const char * getVSSName(TR::AutomaticSymbol *sym);
    virtual const char * getWriteBarrierKindName(int32_t);
    virtual const char * getSpillKindName(uint8_t);
@@ -566,7 +567,6 @@ public:
    virtual void         dumpInstructionComments(TR::FILE *, TR::Instruction *, bool needsStartComment = true );
    virtual void         print(TR::FILE *, TR::Instruction *);
    virtual void         print(TR::FILE *, TR::Instruction *, const char *);
-   virtual void         print(TR::FILE *, List<TR::Snippet> &);
    virtual void         print(TR::FILE *, TR::list<TR::Snippet*> &);
    virtual void         print(TR::FILE *, TR::Snippet *);
 
@@ -592,8 +592,6 @@ public:
    virtual bool         performTransformationImpl(bool, const char *, ...);
 
    virtual void         printInstruction(TR::Instruction*);
-
-   virtual const char * getDiagnosticFormat(const char *, char *, int32_t);
 
    virtual void         dumpGlobalRegisterTable();
    virtual void         dumpSimulatedNode(TR::Node *node, char tagChar);
@@ -779,7 +777,7 @@ public:
    void printVCGEdges(TR::FILE *, TR_StructureSubGraphNode * node);
    void printVCG(TR::FILE *, TR::Block * block, int32_t vorder = -1, int32_t horder = -1);
 
-   void printByteCodeStack(int32_t parentStackIndex, uint16_t byteCodeIndex, char * indent);
+   void printByteCodeStack(int32_t parentStackIndex, uint16_t byteCodeIndex, size_t *indentLen);
    void print(TR::FILE *, TR::GCRegisterMap *);
 
    void verifyTreesPass1(TR::Node *node);
@@ -1168,6 +1166,7 @@ public:
    void print(TR::FILE *, TR::ARM64ZeroSrc2Instruction *);
    void print(TR::FILE *, TR::ARM64Src1ImmCondInstruction *);
    void print(TR::FILE *, TR::ARM64Src2CondInstruction *);
+   void print(TR::FILE *, TR::ARM64SynchronizationInstruction *);
 #ifdef J9_PROJECT_SPECIFIC
    void print(TR::FILE *, TR::ARM64VirtualGuardNOPInstruction *);
 #endif

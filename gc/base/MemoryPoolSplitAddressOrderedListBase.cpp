@@ -17,7 +17,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 
@@ -141,7 +141,10 @@ MM_MemoryPoolSplitAddressOrderedListBase::initialize(MM_EnvironmentBase* env)
 	 */
 	_sweepPoolManager = extensions->sweepPoolManagerSmallObjectArea;
 
-	_currentThreadFreeList = (uintptr_t*)extensions->getForge()->allocate(sizeof(uintptr_t) * _heapFreeListCount, OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
+	/* Allocate at least default _maximumHeapFreeListCount number of entries in the free list related tables. */
+	_maximumHeapFreeListCount = OMR_MAX(_maximumHeapFreeListCount, _heapFreeListCount);
+
+	_currentThreadFreeList = (uintptr_t*)extensions->getForge()->allocate(sizeof(uintptr_t) * _maximumHeapFreeListCount, OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
 	if (NULL == _currentThreadFreeList) {
 		return false;
 	} else {
@@ -150,11 +153,11 @@ MM_MemoryPoolSplitAddressOrderedListBase::initialize(MM_EnvironmentBase* env)
 		}
 	}
 
-	_heapFreeLists = (J9ModronFreeList*)extensions->getForge()->allocate(sizeof(J9ModronFreeList) * _heapFreeListCountExtended, OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
+	_heapFreeLists = (J9ModronFreeList*)extensions->getForge()->allocate(sizeof(J9ModronFreeList) * _maximumHeapFreeListCount, OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
 	if (NULL == _heapFreeLists) {
 		return false;
 	} else {
-		for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+		for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 			_heapFreeLists[i] = J9ModronFreeList();
 			if (!_heapFreeLists[i].initialize(env)) {
 				return false;
@@ -163,15 +166,9 @@ MM_MemoryPoolSplitAddressOrderedListBase::initialize(MM_EnvironmentBase* env)
 		_referenceHeapFreeList = &(_heapFreeLists[0]._freeList);
 	}
 
-#if defined(OMR_GC_MODRON_SCAVENGER)
-	/* this memoryPool can be used by scavenger, maximum tlh size should be max(_extensions->tlhMaximumSize, _extensions->scavengerScanCacheMaximumSize) */
-	uintptr_t tlhMaximumSize = OMR_MAX(_extensions->tlhMaximumSize, _extensions->scavengerScanCacheMaximumSize);
-#else /* OMR_GC_MODRON_SCAVENGER */
-	uintptr_t tlhMaximumSize = _extensions->tlhMaximumSize;
-#endif /* OMR_GC_MODRON_SCAVENGER */
 	/* set multiple factor = 2 for doubling _maxVeryLargeEntrySizes to avoid run out of _veryLargeEntryPool (minus count during decrement) */
 	_largeObjectAllocateStats = MM_LargeObjectAllocateStats::newInstance(env, (uint16_t)extensions->largeObjectAllocationProfilingTopK, extensions->largeObjectAllocationProfilingThreshold, extensions->largeObjectAllocationProfilingVeryLargeObjectThreshold, (float)extensions->largeObjectAllocationProfilingSizeClassRatio / (float)100.0,
-																		 _extensions->heap->getMaximumMemorySize(), tlhMaximumSize + _minimumFreeEntrySize, _extensions->tlhMinimumSize, 2);
+																		 _extensions->heap->getMaximumMemorySize(), getTlhMaximumSize() + _minimumFreeEntrySize, _extensions->tlhMinimumSize, 2);
 
 	if (NULL == _largeObjectAllocateStats) {
 		return false;
@@ -180,17 +177,17 @@ MM_MemoryPoolSplitAddressOrderedListBase::initialize(MM_EnvironmentBase* env)
 	/* If we ever subclass MM_LargeObjectAllocateStats we will have to allocate this as an array of pointers to MM_LargeObjectAllocateStats and invoke newInstance instead of just initialize
 	 * Than, we may also need to virtualize initialize() and tearDown().
 	 */
-	_largeObjectAllocateStatsForFreeList = (MM_LargeObjectAllocateStats*)extensions->getForge()->allocate(sizeof(MM_LargeObjectAllocateStats) * _heapFreeListCountExtended, OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
+	_largeObjectAllocateStatsForFreeList = (MM_LargeObjectAllocateStats*)extensions->getForge()->allocate(sizeof(MM_LargeObjectAllocateStats) * _maximumHeapFreeListCount, OMR::GC::AllocationCategory::FIXED, OMR_GET_CALLSITE());
 
 	if (NULL == _largeObjectAllocateStatsForFreeList) {
 		return false;
 	} else {
-		for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+		for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 			new (&_largeObjectAllocateStatsForFreeList[i]) MM_LargeObjectAllocateStats(env);
 
 			/* set multiple factor = 2 for doubling _maxVeryLargeEntrySizes to avoid run out of _veryLargeEntryPool (minus count during decrement) */
 			if (!_largeObjectAllocateStatsForFreeList[i].initialize(env, (uint16_t)extensions->largeObjectAllocationProfilingTopK, extensions->largeObjectAllocationProfilingThreshold, extensions->largeObjectAllocationProfilingVeryLargeObjectThreshold, (float)extensions->largeObjectAllocationProfilingSizeClassRatio / (float)100.0,
-																	_extensions->heap->getMaximumMemorySize(), tlhMaximumSize + _minimumFreeEntrySize, _extensions->tlhMinimumSize, 2)) {
+																	_extensions->heap->getMaximumMemorySize(), getTlhMaximumSize() + _minimumFreeEntrySize, _extensions->tlhMinimumSize, 2)) {
 				return false;
 			}
 		}
@@ -221,7 +218,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::tearDown(MM_EnvironmentBase* env)
 	}
 
 	if (NULL != _heapFreeLists) {
-		for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+		for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 			_heapFreeLists[i].tearDown();
 		}
 	}
@@ -236,7 +233,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::tearDown(MM_EnvironmentBase* env)
 	}
 
 	if (NULL != _largeObjectAllocateStatsForFreeList) {
-		for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+		for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 			_largeObjectAllocateStatsForFreeList[i].tearDown(env);
 		}
 		extensions->getForge()->free(_largeObjectAllocateStatsForFreeList);
@@ -328,7 +325,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::reset(Cause cause)
 	/* Call superclass first .. */
 	MM_MemoryPool::reset(cause);
 
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		_heapFreeLists[i].reset();
 
 		/* initialize frequent allocates for each free list based on cummulative large object stats for the pool */
@@ -391,7 +388,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::printFreeListValidity(MM_EnvironmentBa
 	bool const compressed = compressObjectReferences();
 
 	omrtty_printf("----- START SPLIT FREE LIST VALIDITY FOR 0x%p -----\n", this);
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		if ( _heapFreeListCount == i ) {
 			omrtty_printf("--- Reserved Free List ---\n");
 		}
@@ -426,7 +423,7 @@ bool
 MM_MemoryPoolSplitAddressOrderedListBase::isValidListOrdering()
 {
 	bool const compressed = compressObjectReferences();
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		MM_HeapLinkedFreeHeader* walk = _heapFreeLists[i]._freeList;
 		while (NULL != walk) {
 			if ((NULL != walk->getNext(compressed)) && (walk >= walk->getNext(compressed))) {
@@ -566,7 +563,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::findFreeEntryEndingAtAddr(MM_Environme
 	bool const compressed = compressObjectReferences();
 	MM_HeapLinkedFreeHeader* currentFreeEntry;
 
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		currentFreeEntry = _heapFreeLists[i]._freeList;
 
 		while (currentFreeEntry) {
@@ -601,7 +598,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::findFreeEntryTopStartingAtAddr(MM_Envi
 	bool const compressed = compressObjectReferences();
 	MM_HeapLinkedFreeHeader* currentFreeEntry;
 
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		currentFreeEntry = _heapFreeLists[i]._freeList;
 
 		while (currentFreeEntry) {
@@ -752,7 +749,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::moveHeap(MM_EnvironmentBase* env, void
 void
 MM_MemoryPoolSplitAddressOrderedListBase::lock(MM_EnvironmentBase* env)
 {
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		_heapFreeLists[i]._lock.acquire();
 	}
 }
@@ -763,7 +760,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::lock(MM_EnvironmentBase* env)
 void
 MM_MemoryPoolSplitAddressOrderedListBase::unlock(MM_EnvironmentBase* env)
 {
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		_heapFreeLists[i]._lock.release();
 	}
 }
@@ -778,7 +775,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::printCurrentFreeList(MM_EnvironmentBas
 	omrtty_printf("Analysis of %s freelist: \n", area);
 	bool const compressed = compressObjectReferences();
 
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		MM_HeapLinkedFreeHeader* currentFreeEntry = _heapFreeLists[i]._freeList;
 		while (currentFreeEntry) {
 			const char * msg = "Free chunk %p -> %p (%i) \n";
@@ -802,7 +799,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::recalculateMemoryPoolStatistics(MM_Env
 	uintptr_t freeEntryCount = 0;
 	bool const compressed = compressObjectReferences();
 
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		MM_HeapLinkedFreeHeader* freeHeader = _heapFreeLists[i]._freeList;
 		while (NULL != freeHeader) {
 			if (freeHeader->getSize() > largestFreeEntry) {
@@ -821,7 +818,7 @@ uintptr_t
 MM_MemoryPoolSplitAddressOrderedListBase::getActualFreeMemorySize()
 {
 	uintptr_t result = 0;
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		result += _heapFreeLists[i]._freeSize;
 	}
 	return result;
@@ -831,7 +828,7 @@ uintptr_t
 MM_MemoryPoolSplitAddressOrderedListBase::getActualFreeEntryCount()
 {
 	uintptr_t result = 0;
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		result += _heapFreeLists[i]._freeCount;
 	}
 	return result;
@@ -843,7 +840,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::resetLargeObjectAllocateStats()
 	_largeObjectAllocateStats->resetCurrent();
 	_largeObjectAllocateStats->getTlhAllocSizeClassStats()->resetCounts();
 
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		_largeObjectAllocateStatsForFreeList[i].resetCurrent();
 		_largeObjectAllocateStatsForFreeList[i].getTlhAllocSizeClassStats()->resetCounts();
 	}
@@ -852,7 +849,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::resetLargeObjectAllocateStats()
 void
 MM_MemoryPoolSplitAddressOrderedListBase::mergeFreeEntryAllocateStats()
 {
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		_largeObjectAllocateStats->getFreeEntrySizeClassStats()->merge(_largeObjectAllocateStatsForFreeList[i].getFreeEntrySizeClassStats());
 		_largeObjectAllocateStatsForFreeList[i].getFreeEntrySizeClassStats()->resetCounts();
 	}
@@ -862,7 +859,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::mergeFreeEntryAllocateStats()
 void
 MM_MemoryPoolSplitAddressOrderedListBase::mergeTlhAllocateStats()
 {
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		_largeObjectAllocateStats->getTlhAllocSizeClassStats()->merge(_largeObjectAllocateStatsForFreeList[i].getTlhAllocSizeClassStats());
 		_largeObjectAllocateStatsForFreeList[i].getTlhAllocSizeClassStats()->resetCounts();
 	}
@@ -873,7 +870,7 @@ MM_MemoryPoolSplitAddressOrderedListBase::mergeLargeObjectAllocateStats()
 {
 	_largeObjectAllocateStats->resetCurrent();
 
-	for (uintptr_t i = 0; i < _heapFreeListCountExtended; ++i) {
+	for (uintptr_t i = 0; i < _heapFreeListCount; ++i) {
 		_largeObjectAllocateStats->mergeCurrent(&_largeObjectAllocateStatsForFreeList[i]);
 	}
 }

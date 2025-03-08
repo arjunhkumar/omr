@@ -3,7 +3,7 @@
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
- * distribution and is available at http://eclipse.org/legal/epl-2.0
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
  * or the Apache License, Version 2.0 which accompanies this distribution
  * and is available at https://www.apache.org/licenses/LICENSE-2.0.
  *
@@ -16,7 +16,7 @@
  * [1] https://www.gnu.org/software/classpath/license.html
  * [2] https://openjdk.org/legal/assembly-exception.html
  *
- * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-exception-2.0 OR LicenseRef-GPL-2.0 WITH Assembly-exception
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
 #include <stddef.h>
@@ -2151,7 +2151,7 @@ TR::Register *OMR::X86::TreeEvaluator::signedIntegerDivOrRemAnalyser(TR::Node *n
          // MIN_INT or MIN_LONG divisor
          //
          TR::Register *quotientRegister = cg->allocateRegister();
-         generateRegRegInstruction(TR::InstOpCode::XORRegReg(nodeIs64Bit), node, quotientRegister, quotientRegister, cg);
+         generateRegRegInstruction(TR::InstOpCode::XOR4RegReg, node, quotientRegister, quotientRegister, cg);
 
          if (nodeIs64Bit)
             {
@@ -2387,7 +2387,7 @@ TR::Register *OMR::X86::TreeEvaluator::integerDivOrRemEvaluator(TR::Node *node, 
       //
       if (!nodeIs64Bit && node->isUnsigned())
          {
-         generateRegRegInstruction(TR::InstOpCode::XORRegReg(nodeIs64Bit), node, edxRegister, edxRegister, edxDeps, cg);
+         generateRegRegInstruction(TR::InstOpCode::XOR4RegReg, node, edxRegister, edxRegister, edxDeps, cg);
 
          if (divisorRegister)
             {
@@ -2483,7 +2483,7 @@ TR::X86RegInstruction  *OMR::X86::TreeEvaluator::generateRegisterShift(TR::Node 
       intptr_t shiftAmount = TR::TreeEvaluator::integerConstNodeValue(secondChild, cg) & TR::TreeEvaluator::shiftMask(nodeIs64Bit);
       if (shiftAmount == 0)
          {
-         targetRegister = cg->evaluate(firstChild);
+         targetRegister = TR::TreeEvaluator::intOrLongClobberEvaluate(firstChild, (SHIFT_MAY_HAVE_ADDRESS_CHILD) ? TR::TreeEvaluator::getNodeIs64Bit(firstChild, cg) : nodeIs64Bit, cg);
          }
       else
          {
