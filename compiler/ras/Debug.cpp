@@ -5310,12 +5310,25 @@ void TR_Debug::printDebugCounters(TR::DebugCounterGroup *counterGroup, const cha
       if (!keep)
          counterArray[i] = NULL;
       }
-
+   /** AR07 - SSRA Debug Counter*/
+   bool isDynDC= false;
+   if(strncmp(name,"Dynamic debug counters",22)==0)
+   {
+      createStaticProfileOutFile();
+      isDynDC = true;
+   }
+   /** AR07 - SSRA Debug Counter*/
    for (i = 0; i < count; i++)
       {
       c = counterArray[i];
       if (c && c->getCount() != 0)
          {
+         /** AR07 - SSRA Debug Counter*/
+         if(isStaticProfilingMode && !c->isDenominator() && isDynDC)
+         {
+            printSSRADebugCounterOut(c->getName(),c->getCount());
+         }
+         /** AR07 - SSRA Debug Counter*/
          fprintf(counterFile, "%3d: %-*s | %12.0f | ", i, longestName, c->getName(), (double)(c->getCount()));
          printDenominators(c->getDenominator(), c->getCount(), counterFile);
          fprintf(counterFile, "  __ %3d __\n", i);
@@ -5323,3 +5336,121 @@ void TR_Debug::printDebugCounters(TR::DebugCounterGroup *counterGroup, const cha
       }
 
    }
+/** AR07 - File to print output of profiling out done based SSRA */
+static void createStaticProfileOutFile()
+{
+   FILE *result = NULL;
+   result = fopen("profile-ssra.out", "w");
+   if(result)
+   {
+      fclose(result);
+   }
+   result = fopen("profile-ls.out", "w");
+   if(result)
+   {
+      fclose(result);
+   }
+}
+
+
+static FILE * getLSProfileOutFile()
+{
+   FILE *result = NULL;
+   result = fopen("profile-ls.out", "a");
+   return result;
+}
+
+static FILE * getSSRAProfileOutFile()
+{
+   FILE *result = NULL;
+   result = fopen("profile-ssra.out", "a");
+   return result;
+}
+
+static void writeToSSRAProfileOut(const char * debugCounterID, int64_t count, const char * debutType)
+{
+   FILE *outFile = getSSRAProfileOutFile();
+   if(outFile)
+   {
+      fprintf(outFile, "%s\t%s\t%li\n",debutType,debugCounterID,count);
+      fclose(outFile);
+   }
+}
+
+
+static void writeToLSProfileOut(const char * debugCounterID, int64_t count, const char * debutType)
+{
+   FILE *outFile = getLSProfileOutFile();
+   if(outFile)
+   {
+      fprintf(outFile, "%s\t%s\t%li\n",debutType,debugCounterID,count);
+      fclose(outFile);
+   }
+}
+
+const char * CALLSITE_COUNTER_PREFIX = "SSRA/CSC/";
+const char * RETURNSITE_COUNTER_PREFIX = "SSRA/RSC/";
+const char * STATICASSIGNSITE_COUNTER_PREFIX = "SSRA/SASC/";
+const char * CASTSITE_COUNTER_PREFIX = "SSRA/TCSC/";
+const char * EQUALSSITE_COUNTER_PREFIX = "SSRA/ESC/";
+const char * PROFILE_LOAD_PREFIX = "SSRA/LOAD/";
+const char * PROFILE_STORE_PREFIX = "SSRA/STORE/";
+
+static void printSSRADebugCounterOut(const char * counterName, int64_t count)
+{
+   if(NULL != counterName)
+   {  
+      if(strncmp(counterName,PROFILE_LOAD_PREFIX,10)==0)
+      {
+         std::string counter_name_string(counterName);
+         std::string ID = counter_name_string.substr(10,strlen(counterName));
+         const char * idChars = ID.c_str();
+         writeToLSProfileOut(idChars,count,"LOAD");
+         
+      }
+      else if(strncmp(counterName,PROFILE_STORE_PREFIX,11)==0)
+      {
+         std::string counter_name_string(counterName);
+         std::string ID = counter_name_string.substr(11,strlen(counterName));
+         const char * idChars = ID.c_str();
+         writeToLSProfileOut(idChars,count,"STORE");
+      }
+      else if(strncmp(counterName,CALLSITE_COUNTER_PREFIX,9)==0)
+      {
+         std::string counter_name_string(counterName);
+         std::string ID = counter_name_string.substr(9,strlen(counterName));
+         const char * idChars = ID.c_str();
+         writeToSSRAProfileOut(idChars,count,"CSC");
+      }
+      else if(strncmp(counterName,RETURNSITE_COUNTER_PREFIX,9)==0)
+      {
+         std::string counter_name_string(counterName);
+         std::string ID = counter_name_string.substr(9,strlen(counterName));
+         const char * idChars = ID.c_str();
+         writeToSSRAProfileOut(idChars,count,"RSC");
+      }
+      else if(strncmp(counterName,STATICASSIGNSITE_COUNTER_PREFIX,10)==0)
+      {
+         std::string counter_name_string(counterName);
+         std::string ID = counter_name_string.substr(10,strlen(counterName));
+         const char * idChars = ID.c_str();
+         writeToSSRAProfileOut(idChars,count,"SASC");
+      }
+      else if(strncmp(counterName,CASTSITE_COUNTER_PREFIX,10)==0)
+      {
+         std::string counter_name_string(counterName);
+         std::string ID = counter_name_string.substr(10,strlen(counterName));
+         const char * idChars = ID.c_str();
+         writeToSSRAProfileOut(idChars,count,"TCSC");
+      }
+      else if(strncmp(counterName,EQUALSSITE_COUNTER_PREFIX,9)==0)
+      {
+         std::string counter_name_string(counterName);
+         std::string ID = counter_name_string.substr(9,strlen(counterName));
+         const char * idChars = ID.c_str();
+         writeToSSRAProfileOut(idChars,count,"ESC");
+      }
+   }
+}
+
+/** AR07 - File to print output of profiling out done based SSRA */

@@ -728,8 +728,9 @@ public:
 
    char * printSymbolName(TR::FILE *, TR::Symbol *, TR::SymbolReference *, TR::MemoryReference *mr=NULL)  ;
    bool isBranchToTrampoline(TR::SymbolReference *, uint8_t *, int32_t &);
-
-   virtual void printDebugCounters(TR::DebugCounterGroup *counterGroup, const char *name);
+   /** AR07 - Function modified for SSRA */
+   virtual void printDebugCounters(TR::DebugCounterGroup *counterGroup, const char *name, bool isStaticProfilingMode);
+   /** AR07 - Function modified for SSRA */
 
 
 
