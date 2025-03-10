@@ -5251,7 +5251,9 @@ static void qsort(void *array, int32_t nitems, int32_t elemSize, int (*cmpFunc)(
    }
 
 
-void TR_Debug::printDebugCounters(TR::DebugCounterGroup *counterGroup, const char *name)
+static void printSSRADebugCounterOut(const char * counterName, int64_t count);
+static void createStaticProfileOutFile();
+void TR_Debug::printDebugCounters(TR::DebugCounterGroup *counterGroup, const char *name, bool isStaticProfilingMode)
    {
    ListBase<TR::DebugCounter> &counters = counterGroup->_counters;
    if (counters.isEmpty())
